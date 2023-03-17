@@ -1,0 +1,27 @@
+# Docs available at https://github.com/rustyscreeps/cargo-screeps/
+
+default_deploy_mode = "pserver"
+
+[pserver]
+username = "your username"
+password = "your password"
+hostname = "private server hostname"
+port = 21025
+ssl = false
+
+[mmo]
+auth_token = "your screeps.com auth token"
+
+[ptr]
+auth_token = "your screeps.com auth token"
+prefix = "ptr"
+
+[copy]
+destination = "path to your local code directory from your game client, without branch directory"
+
+[season]
+auth_token = "your screeps.com auth token"
+prefix = "season"
+
+[season.build]
+extra_options = ["--features=my-crate-season-1-feature"]

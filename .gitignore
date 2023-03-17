@@ -1,0 +1,5 @@
+/Cargo.lock
+/.idea
+/pkg
+/target
+/screeps.toml
