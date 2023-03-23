@@ -35,13 +35,13 @@ pub fn init_logging(verbosity: log::LevelFilter) {
     fern::Dispatch::new()
         .level(verbosity)
         .format(|out, message, record| {
-            if record.level() <= Debug {
+            if record.level() >= Debug {
                 out.finish(format_args!(
                     "<span style=\"color: #6666bb\">{}: {}</span>",
                     record.target(),
                     message
                 ))
-            } else if record.level() >= Warn {
+            } else if record.level() <= Warn {
                 out.finish(format_args!(
                     "<span style=\"color: #ff9999\">[{}] {}: {}</span>",
                     record.level(),

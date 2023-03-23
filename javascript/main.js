@@ -7,6 +7,30 @@ function displayError(...args) {
     Game.notify(args.join(' '));
 }
 
+function wrap(f) {
+    return function(...args) {
+        try {
+            if (wasm_module && wasm_module.__wasm) {
+                f(...args);
+            } else {
+                displayError('WASM VM is not ready.')
+            }
+        } catch (ex) {
+            displayError('Caught exception:', ex);
+            if (ex.stack) {
+                displayError('Stacktrace:', ex.stack);
+            }
+            displayError('Restarting the bot next tick.');
+            wasm_module.__wasm = null;
+            Game.cpu.halt();
+        }
+    }
+}
+
+global.set_room_blueprint = wrap(function(roomName, blueprintJSON) {
+    wasm_module.set_room_blueprint(roomName, blueprintJSON);
+});
+
 module.exports.loop = function () {
     try {
         if (wasm_module && wasm_module.__wasm) {
@@ -33,7 +57,8 @@ module.exports.loop = function () {
         if (ex.stack) {
             displayError('Stacktrace:', ex.stack);
         }
-        displayError('Restarting the WASM VM next tick.');
+        displayError('Restarting the bot next tick.');
         wasm_module.__wasm = null;
+        Game.cpu.halt();
     }
 }
