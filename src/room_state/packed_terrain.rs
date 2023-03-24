@@ -1,7 +1,7 @@
 use screeps::{ROOM_SIZE, RoomTerrain, RoomXY, Terrain};
 use num_traits::cast::FromPrimitive;
+use crate::consts::ROOM_AREA;
 
-pub const ROOM_AREA: usize = (ROOM_SIZE as usize) * (ROOM_SIZE as usize);
 pub const PACKED_TERRAIN_DATA_SIZE: usize = ROOM_AREA / 4;
 
 pub struct PackedTerrain {
@@ -30,6 +30,13 @@ impl PackedTerrain {
         // Set the data in tha tile.
         self.data[index] |= terrain as u8;
     }
+
+    pub fn iter(&self) -> PackedTerrainIterator {
+        return PackedTerrainIterator {
+            packed_terrain: &self,
+            curr: 0,
+        }
+    }
 }
 
 impl From<RoomTerrain> for PackedTerrain {
@@ -44,6 +51,30 @@ impl From<RoomTerrain> for PackedTerrain {
             }
         };
         packed_terrain
+    }
+}
+
+pub struct PackedTerrainIterator<'a> {
+    packed_terrain: &'a PackedTerrain,
+    curr: usize,
+}
+
+impl<'a> Iterator for PackedTerrainIterator<'a> {
+    type Item = (RoomXY, Terrain);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.curr >= ROOM_AREA - 1 {
+            None
+        } else {
+            self.curr += 1;
+            let xy = unsafe {
+                RoomXY::unchecked_new(
+                    (self.curr % ROOM_SIZE as usize) as u8,
+                    (self.curr / ROOM_SIZE as usize) as u8
+                )
+            };
+            Some((xy, self.packed_terrain.get(xy)))
+        }
     }
 }
 

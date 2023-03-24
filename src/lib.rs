@@ -11,6 +11,9 @@ mod logging;
 mod test_process;
 mod room_state;
 mod blueprint;
+mod algorithms;
+mod consts;
+mod error;
 
 // add wasm_bindgen to any function you would like to expose for call from js
 #[wasm_bindgen]
