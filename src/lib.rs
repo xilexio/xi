@@ -1,8 +1,5 @@
 use crate::config::*;
-use log::{debug, error, info, trace, warn};
-use screeps::{game, RoomXY, StructureType};
 use wasm_bindgen::prelude::*;
-use room_visual_ext::RoomVisualExt;
 
 mod config;
 mod geometry;
@@ -13,7 +10,6 @@ mod room_state;
 mod blueprint;
 mod algorithms;
 mod consts;
-mod error;
 
 // add wasm_bindgen to any function you would like to expose for call from js
 #[wasm_bindgen]

@@ -1,5 +1,6 @@
+use std::error::Error;
+use std::fmt::{Display, Formatter};
 use screeps::RoomXY;
-use crate::error::GenericError;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Rect {
@@ -10,13 +11,13 @@ pub struct Rect {
 #[derive(Debug, Clone)]
 pub struct InvalidRectError;
 
-impl From<InvalidRectError> for GenericError {
-    fn from(_value: InvalidRectError) -> Self {
-        GenericError {
-            description: "Rect does not have a positive area".to_owned(),
-        }
+impl Display for InvalidRectError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Rect does not have a positive area")
     }
 }
+
+impl Error for InvalidRectError {}
 
 impl Rect {
     pub fn new(top_left: RoomXY, bottom_right: RoomXY) -> Result<Self, InvalidRectError> {

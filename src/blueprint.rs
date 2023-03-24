@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use screeps::{RoomXY, StructureType};
 use crate::room_state::{Buildings, MineralInfo, SourceInfo};
+use screeps::RoomXY;
+use std::collections::HashMap;
 
 pub struct Blueprint {
     pub name: String,

@@ -32,8 +32,8 @@ impl PackedTerrain {
     }
 
     pub fn iter(&self) -> PackedTerrainIterator {
-        return PackedTerrainIterator {
-            packed_terrain: &self,
+        PackedTerrainIterator {
+            packed_terrain: self,
             curr: 0,
         }
     }

@@ -91,64 +91,59 @@ mod tests {
     use crate::algorithms::grid_bfs_distances::restricted_grid_bfs_distances;
     use crate::algorithms::matrix_common::MatrixCommon;
     use crate::consts::{OBSTACLE_COST, UNREACHABLE_COST};
-    use crate::error::GenericError;
     use crate::geometry::rect::Rect;
     use screeps::RoomXY;
+    use std::error::Error;
 
     #[test]
-    fn test_restricted_grid_bfs_distances() {
-        unsafe {
-            let slice =
-                Rect::unchecked_new(RoomXY::unchecked_new(10, 10), RoomXY::unchecked_new(12, 12));
-            let dists = restricted_grid_bfs_distances(
-                [RoomXY::unchecked_new(10, 10)].iter(),
-                [
-                    RoomXY::unchecked_new(11, 11),
-                    RoomXY::unchecked_new(12, 11),
-                    RoomXY::unchecked_new(11, 12),
-                ]
-                .iter(),
-                slice,
-                10,
-            );
-            assert_eq!(dists.get(RoomXY::unchecked_new(10, 10)), 0);
-            assert_eq!(dists.get(RoomXY::unchecked_new(11, 10)), 1);
-            assert_eq!(dists.get(RoomXY::unchecked_new(12, 10)), 2);
-            assert_eq!(dists.get(RoomXY::unchecked_new(10, 11)), 1);
-            assert_eq!(dists.get(RoomXY::unchecked_new(11, 11)), OBSTACLE_COST);
-            assert_eq!(dists.get(RoomXY::unchecked_new(12, 11)), OBSTACLE_COST);
-            assert_eq!(dists.get(RoomXY::unchecked_new(10, 12)), 2);
-            assert_eq!(dists.get(RoomXY::unchecked_new(11, 12)), OBSTACLE_COST);
-            assert_eq!(dists.get(RoomXY::unchecked_new(12, 12)), UNREACHABLE_COST);
-        }
+    fn test_restricted_grid_bfs_distances() -> Result<(), Box<dyn Error>> {
+        let slice = Rect::new(RoomXY::try_from((10, 10))?, RoomXY::try_from((12, 12))?)?;
+        let dists = restricted_grid_bfs_distances(
+            [RoomXY::try_from((10, 10))?].iter(),
+            [
+                RoomXY::try_from((11, 11))?,
+                RoomXY::try_from((12, 11))?,
+                RoomXY::try_from((11, 12))?,
+            ]
+            .iter(),
+            slice,
+            10,
+        );
+        assert_eq!(dists.get(RoomXY::try_from((10, 10))?), 0);
+        assert_eq!(dists.get(RoomXY::try_from((11, 10))?), 1);
+        assert_eq!(dists.get(RoomXY::try_from((12, 10))?), 2);
+        assert_eq!(dists.get(RoomXY::try_from((10, 11))?), 1);
+        assert_eq!(dists.get(RoomXY::try_from((11, 11))?), OBSTACLE_COST);
+        assert_eq!(dists.get(RoomXY::try_from((12, 11))?), OBSTACLE_COST);
+        assert_eq!(dists.get(RoomXY::try_from((10, 12))?), 2);
+        assert_eq!(dists.get(RoomXY::try_from((11, 12))?), OBSTACLE_COST);
+        assert_eq!(dists.get(RoomXY::try_from((12, 12))?), UNREACHABLE_COST);
+        Ok(())
     }
 
     #[test]
-    fn test_restricted_grid_bfs_distances_with_max_distance() -> Result<(), GenericError> {
-        unsafe {
-            let s = Rect::new(RoomXY::try_from((10, 10))?, RoomXY::try_from((12, 12))?)?;
-            let slice = Rect::unchecked_new(RoomXY::unchecked_new(10, 10), RoomXY::unchecked_new(12, 12));
-            let dists = restricted_grid_bfs_distances(
-                [RoomXY::unchecked_new(10, 10)].iter(),
-                [
-                    RoomXY::unchecked_new(11, 11),
-                    RoomXY::unchecked_new(12, 11),
-                    RoomXY::unchecked_new(11, 12),
-                ]
-                .iter(),
-                slice,
-                1,
-            );
-            assert_eq!(dists.get(RoomXY::unchecked_new(10, 10)), 0);
-            assert_eq!(dists.get(RoomXY::unchecked_new(11, 10)), 1);
-            assert_eq!(dists.get(RoomXY::unchecked_new(12, 10)), UNREACHABLE_COST);
-            assert_eq!(dists.get(RoomXY::unchecked_new(10, 11)), 1);
-            assert_eq!(dists.get(RoomXY::unchecked_new(11, 11)), OBSTACLE_COST);
-            assert_eq!(dists.get(RoomXY::unchecked_new(12, 11)), OBSTACLE_COST);
-            assert_eq!(dists.get(RoomXY::unchecked_new(10, 12)), UNREACHABLE_COST);
-            assert_eq!(dists.get(RoomXY::unchecked_new(11, 12)), OBSTACLE_COST);
-            assert_eq!(dists.get(RoomXY::unchecked_new(12, 12)), UNREACHABLE_COST);
-        };
+    fn test_restricted_grid_bfs_distances_with_max_distance() -> Result<(), Box<dyn Error>> {
+        let slice = Rect::new(RoomXY::try_from((10, 10))?, RoomXY::try_from((12, 12))?)?;
+        let dists = restricted_grid_bfs_distances(
+            [RoomXY::try_from((10, 10))?].iter(),
+            [
+                RoomXY::try_from((11, 11))?,
+                RoomXY::try_from((12, 11))?,
+                RoomXY::try_from((11, 12))?,
+            ]
+            .iter(),
+            slice,
+            1,
+        );
+        assert_eq!(dists.get(RoomXY::try_from((10, 10))?), 0);
+        assert_eq!(dists.get(RoomXY::try_from((11, 10))?), 1);
+        assert_eq!(dists.get(RoomXY::try_from((12, 10))?), UNREACHABLE_COST);
+        assert_eq!(dists.get(RoomXY::try_from((10, 11))?), 1);
+        assert_eq!(dists.get(RoomXY::try_from((11, 11))?), OBSTACLE_COST);
+        assert_eq!(dists.get(RoomXY::try_from((12, 11))?), OBSTACLE_COST);
+        assert_eq!(dists.get(RoomXY::try_from((10, 12))?), UNREACHABLE_COST);
+        assert_eq!(dists.get(RoomXY::try_from((11, 12))?), OBSTACLE_COST);
+        assert_eq!(dists.get(RoomXY::try_from((12, 12))?), UNREACHABLE_COST);
         Ok(())
     }
 }
