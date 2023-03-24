@@ -1,11 +1,13 @@
 [package]
 name = "xi"
 version = "0.0.0"
-authors = []
+authors = ["Xilexio <xilexio@xilexio.eu.org>"]
 edition = "2021"
-repository = "https://github.com/xilexio/xi/"
+repository = "https://github.com/xilexio/xi.git"
+homepage = "https://github.com/xilexio/xi"
 license-file = "LICENSE"
 description = "A Screeps bot."
+keywords = ["screeps"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -14,7 +16,7 @@ crate-type = ["cdylib", "rlib"]
 js-sys = "0.3"
 log = "0.4"
 fern = "0.6"
-screeps-game-api = "0.10"
+screeps-game-api = { git = "https://github.com/xilexio/screeps-game-api.git" }
 wasm-bindgen = "0.2"
 web-sys = { version = "0.3", features = ["console"] }
 serde = { version = "1.0", features = ["derive"] }
