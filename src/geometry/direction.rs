@@ -1,5 +1,6 @@
 use screeps::Direction;
 
+#[inline]
 pub fn offset_from_direction(direction: Direction) -> (i8, i8) {
     let i = direction as i8;
     (

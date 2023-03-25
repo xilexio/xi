@@ -7,22 +7,22 @@ use crate::geometry::room_xy::RoomXYUtils;
 use screeps::RoomXY;
 use std::cmp::min;
 
-pub fn grid_bfs_distances<S, O>(start: S, obstacles: O) -> RoomMatrix<u8>
+pub fn grid_bfs_distances<'a, 'b, S, O>(start: S, obstacles: O) -> RoomMatrix<u8>
 where
-    S: Iterator<Item = RoomXY>,
-    O: Iterator<Item = RoomXY>,
+    S: Iterator<Item = &'a RoomXY>,
+    O: Iterator<Item = &'b RoomXY>,
 {
     let mut result = RoomMatrix::new_custom_filled(UNREACHABLE_COST);
 
     for xy in obstacles {
-        result.set(xy, OBSTACLE_COST);
+        result.set(*xy, OBSTACLE_COST);
     }
 
     let mut layer = Vec::new();
 
     for xy in start {
-        result.set(xy, 0);
-        layer.push(xy);
+        result.set(*xy, 0);
+        layer.push(*xy);
     }
 
     let mut distance = 1u8;

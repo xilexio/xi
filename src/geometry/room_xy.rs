@@ -28,18 +28,28 @@ impl RoomXYUtils for RoomXY {
     fn around(&self) -> Vec<RoomXY> {
         let mut result = Vec::new();
         let (x, y) = (self.x.u8() as i8, self.y.u8() as i8);
-        for d in Direction::into_enum_iter() {
-            let (dx, dy) = offset_from_direction(d);
-            let (near_x, near_y) = (x + dx, y + dy);
-            if 0 <= near_x
-                && (near_x as u8) < ROOM_SIZE
-                && 0 <= near_y
-                && (near_y as u8) < ROOM_SIZE
-            {
-                // (near_x, near_y) was already checked to be within bounds, so it is safe.
-                result.push(unsafe { RoomXY::unchecked_new(near_x as u8, near_y as u8) });
+        for near_y in (y - 1)..(y + 2) {
+            for near_x in (x - 1)..(x + 2) {
+                if (near_y != y || near_x != x) && 0 <= near_x
+                        && (near_x as u8) < ROOM_SIZE
+                        && 0 <= near_y && (near_y as u8) < ROOM_SIZE {
+                    // (near_x, near_y) was already checked to be within bounds, so it is safe.
+                    result.push(unsafe { RoomXY::unchecked_new(near_x as u8, near_y as u8) });
+                }
             }
         }
+        // for d in Direction::into_enum_iter() {
+        //     let (dx, dy) = offset_from_direction(d);
+        //     let (near_x, near_y) = (x + dx, y + dy);
+        //     if 0 <= near_x
+        //         && (near_x as u8) < ROOM_SIZE
+        //         && 0 <= near_y
+        //         && (near_y as u8) < ROOM_SIZE
+        //     {
+        //         // (near_x, near_y) was already checked to be within bounds, so it is safe.
+        //         result.push(unsafe { RoomXY::unchecked_new(near_x as u8, near_y as u8) });
+        //     }
+        // }
         result
     }
 

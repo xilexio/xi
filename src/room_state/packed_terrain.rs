@@ -1,5 +1,7 @@
+use std::iter::FilterMap;
 use screeps::{ROOM_SIZE, RoomTerrain, RoomXY, Terrain};
 use num_traits::cast::FromPrimitive;
+use screeps::Terrain::Wall;
 use crate::consts::ROOM_AREA;
 
 pub const PACKED_TERRAIN_DATA_SIZE: usize = ROOM_AREA / 4;
@@ -29,6 +31,10 @@ impl PackedTerrain {
         self.data[index] &= !(0x3 << offset);
         // Set the data in tha tile.
         self.data[index] |= terrain as u8;
+    }
+
+    pub fn walls(&self) -> impl Iterator<Item = RoomXY> + '_ {
+        self.iter().filter_map(|(xy, t)| (t == Wall).then_some(xy))
     }
 
     pub fn iter(&self) -> PackedTerrainIterator {

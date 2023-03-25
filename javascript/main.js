@@ -22,7 +22,6 @@ function wrap(f) {
             }
             displayError('Restarting the bot next tick.');
             wasm_module.__wasm = null;
-            Game.cpu.halt();
         }
     }
 }
@@ -58,7 +57,8 @@ module.exports.loop = function () {
             displayError('Stacktrace:', ex.stack);
         }
         displayError('Restarting the bot next tick.');
-        wasm_module.__wasm = null;
-        Game.cpu.halt();
+        if (wasm_module !== undefined) {
+            wasm_module.__wasm = null;
+        }
     }
 }
