@@ -22,10 +22,11 @@ web-sys = { version = "0.3", features = ["console"] }
 serde = { version = "1.0", features = ["derive"] }
 serde-wasm-bindgen = "0.5.0"
 num-traits = "0.2"
-room_visual_ext = "0.1.0"
+room_visual_ext = { git = "https://github.com/xilexio/room_visual_ext.git" }
 enum-iterator = "0.7"
-nanorand = { version = "0.7.0", default = false, features = ["std", "tls", "wyrand", "getrandom"] }
 petgraph = "0.6.3"
+more-asserts = "0.3.1"
+tap = "1.0.1"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"

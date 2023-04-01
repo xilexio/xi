@@ -21,14 +21,15 @@ use nanorand::{Rng, WyRand};
 
 fn benchmark() {
     if game::cpu::bucket() > 500 {
+        let n = 100;
+        let number_of_obstacles = 1000;
+        // This RNG is pretty slow compared to the JS version.
+        let mut rng = WyRand::new_seed(game::time() as u64);
+        let obstacles: Vec<RoomXY> = (0..number_of_obstacles).map(|_| RoomXY::try_from((rng.generate_range(1..ROOM_SIZE), rng.generate_range(1..ROOM_SIZE))).unwrap()).collect();
+        let start = [RoomXY::try_from((0, 0)).unwrap()];
         measure_time("grid_bfs_distances", || {
-            let n = 100;
-            let number_of_obstacles = 1000;
             let mut total = 0.0;
-            let mut rng = WyRand::new_seed(game::time() as u64);
             for i in 0..n {
-                let obstacles: Vec<RoomXY> = (0..number_of_obstacles).map(|_| RoomXY::try_from((rng.generate_range(1..ROOM_SIZE), rng.generate_range(1..ROOM_SIZE))).unwrap()).collect();
-                let start = [RoomXY::try_from((0, 0)).unwrap()];
                 let result = grid_bfs_distances(start.iter(), obstacles.iter());
                 total += result.get(RoomXY::try_from((25, 25)).unwrap()) as f64;
             }

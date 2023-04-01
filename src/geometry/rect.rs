@@ -1,6 +1,8 @@
+use std::cmp::min;
+use screeps::{RoomXY, ROOM_SIZE};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use screeps::RoomXY;
+use crate::geometry::room_coordinate::RoomCoordinateUtils;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Rect {
@@ -55,11 +57,32 @@ impl Rect {
         (self.width() as usize) * (self.height() as usize)
     }
 
-    pub fn inside(self, xy: RoomXY) -> bool {
+    pub fn is_inside(self, xy: RoomXY) -> bool {
         self.top_left.x <= xy.x
             && xy.x <= self.bottom_right.x
             && self.top_left.y <= xy.y
             && xy.y <= self.bottom_right.y
+    }
+
+    pub fn boundary(self) -> impl Iterator<Item = RoomXY> {
+        unsafe {
+            let top = (1..self.width()).map(move |dx| (self.top_left.x.add_diff(dx as i8), self.top_left.y).into());
+            let right = (1..self.height()).map(move |dy| (self.bottom_right.x, self.top_left.y.add_diff(dy as i8)).into());
+            let bottom = (1..self.width()).map(move |dx| (self.bottom_right.x.add_diff(-(dx as i8)), self.bottom_right.y).into());
+            let left = (1..self.height()).map(move |dy| (self.top_left.x, self.bottom_right.y.add_diff(-(dy as i8))).into());
+
+            top.chain(right).chain(bottom).chain(left)
+        }
+    }
+
+    pub fn iter(self) -> impl Iterator<Item = RoomXY> {
+        let tlx = self.top_left.x.u8();
+        let tly = self.top_left.y.u8();
+        let w = self.width() as u16;
+        let h = self.height() as u16;
+        (0..(w * h)).map(move |i| unsafe {
+            RoomXY::unchecked_new(tlx + ((i % w) as u8), tly + ((i / w) as u8))
+        })
     }
 }
 
@@ -68,5 +91,51 @@ impl TryFrom<(RoomXY, RoomXY)> for Rect {
 
     fn try_from(xy_pair: (RoomXY, RoomXY)) -> Result<Self, Self::Error> {
         Rect::new(xy_pair.0, xy_pair.1)
+    }
+}
+
+pub fn room_rect() -> Rect {
+    unsafe {
+        Rect::unchecked_new(
+            RoomXY::unchecked_new(0, 0),
+            RoomXY::unchecked_new(ROOM_SIZE - 1, ROOM_SIZE - 1),
+        )
+    }
+}
+
+/// A ball (square) with given center and radius (r=0 is a single tile, r=1 is 3x3).
+pub fn ball(center: RoomXY, r: u8) -> Rect {
+    unsafe {
+        Rect {
+            top_left: RoomXY::unchecked_new(
+                if center.x.u8() <= r { 0 } else { center.x.u8() - r },
+                if center.y.u8() <= r { 0 } else { center.y.u8() - r },
+            ),
+            bottom_right: RoomXY::unchecked_new(
+                min(center.x.u8() + r, ROOM_SIZE - 1),
+                min(center.y.u8() + r, ROOM_SIZE - 1),
+            )
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::geometry::rect::Rect;
+    use screeps::{RoomXY, ROOM_SIZE};
+    #[test]
+    fn test_iter() {
+        let rect = unsafe {
+            Rect::unchecked_new(
+                RoomXY::unchecked_new(0, 0),
+                RoomXY::unchecked_new(ROOM_SIZE - 1, 5),
+            )
+        };
+        let mut number_of_points = 0;
+        for xy in rect.iter() {
+            number_of_points += 1
+        }
+        assert_eq!(number_of_points, rect.area());
+        assert_eq!(rect.iter().next(), Some((0, 0).try_into().unwrap()));
     }
 }

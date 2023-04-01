@@ -1,3 +1,4 @@
+use std::cmp::{max, min};
 use crate::geometry::direction::offset_from_direction;
 use crate::geometry::rect::Rect;
 use crate::geometry::room_coordinate::RoomCoordinateUtils;
@@ -9,22 +10,27 @@ pub trait RoomXYUtils {
     unsafe fn rect_index(&self, rect: Rect) -> usize;
     fn around(&self) -> Vec<RoomXY>;
     unsafe fn restricted_around(&self, rect: Rect) -> Vec<RoomXY>;
+    fn exit_distance(&self) -> u8;
 
-    fn sub_diff(self, other: Self) -> (i8, i8);
-    unsafe fn sub(self, other: Self) -> Self;
+    fn sub(self, other: Self) -> (i8, i8);
     unsafe fn add_diff(self, diff: (i8, i8)) -> Self;
+
+    fn cdist(self, other: Self) -> u8;
 }
 
 impl RoomXYUtils for RoomXY {
+    #[inline]
     fn to_index(&self) -> usize {
         (self.x.u8() as usize) + (ROOM_SIZE as usize) * (self.y.u8() as usize)
     }
 
     unsafe fn rect_index(&self, rect: Rect) -> usize {
-        let relative_xy = self.sub(rect.top_left);
-        (relative_xy.x.u8() as usize) + (rect.width() as usize) * (relative_xy.y.u8() as usize)
+        let (dx, dy) = self.sub(rect.top_left);
+        (dx as usize) + (rect.width() as usize) * (dy as usize)
     }
 
+    // TODO to iter and js benchmark of this and table-based
+    #[inline]
     fn around(&self) -> Vec<RoomXY> {
         let mut result = Vec::new();
         let (x, y) = (self.x.u8() as i8, self.y.u8() as i8);
@@ -38,18 +44,6 @@ impl RoomXYUtils for RoomXY {
                 }
             }
         }
-        // for d in Direction::into_enum_iter() {
-        //     let (dx, dy) = offset_from_direction(d);
-        //     let (near_x, near_y) = (x + dx, y + dy);
-        //     if 0 <= near_x
-        //         && (near_x as u8) < ROOM_SIZE
-        //         && 0 <= near_y
-        //         && (near_y as u8) < ROOM_SIZE
-        //     {
-        //         // (near_x, near_y) was already checked to be within bounds, so it is safe.
-        //         result.push(unsafe { RoomXY::unchecked_new(near_x as u8, near_y as u8) });
-        //     }
-        // }
         result
     }
 
@@ -58,23 +52,31 @@ impl RoomXYUtils for RoomXY {
         let mut result = Vec::new();
         for d in Direction::into_enum_iter() {
             let near = self.add_diff(offset_from_direction(d));
-            if rect.inside(near) {
+            if rect.is_inside(near) {
                 result.push(near);
             }
         }
         result
     }
 
-    fn sub_diff(self, other: Self) -> (i8, i8) {
-        (self.x.sub_diff(other.x), self.y.sub_diff(other.y))
+    #[inline]
+    fn exit_distance(&self) -> u8 {
+        min(
+            min(self.x.u8(), self.y.u8()),
+            min(ROOM_SIZE - 1 - self.x.u8(), ROOM_SIZE - 1 - self.y.u8())
+        )
     }
 
-    unsafe fn sub(self, other: Self) -> Self {
-        (self.x.sub(other.x), self.y.sub(other.y)).into()
+    fn sub(self, other: Self) -> (i8, i8) {
+        (self.x.sub(other.x), self.y.sub(other.y))
     }
 
     unsafe fn add_diff(self, diff: (i8, i8)) -> Self {
         (self.x.add_diff(diff.0), self.y.add_diff(diff.1)).into()
+    }
+
+    fn cdist(self, other: Self) -> u8 {
+        max((self.x.u8() as i8 - other.x.u8() as i8).abs(), (self.y.u8() as i8 - other.y.u8() as i8).abs()) as u8
     }
 }
 
@@ -147,6 +149,17 @@ mod tests {
                     RoomXY::unchecked_new(0, 43),
                 ]
             );
+        }
+    }
+
+    #[test]
+    fn test_exit_distance() {
+        unsafe {
+            assert_eq!(RoomXY::unchecked_new(0, 0).exit_distance(), 0);
+            assert_eq!(RoomXY::unchecked_new(2, 4).exit_distance(), 2);
+            assert_eq!(RoomXY::unchecked_new(ROOM_SIZE - 1, ROOM_SIZE - 1).exit_distance(), 0);
+            assert_eq!(RoomXY::unchecked_new(ROOM_SIZE - 2, ROOM_SIZE - 3).exit_distance(), 1);
+            assert_eq!(RoomXY::unchecked_new(10, 13).exit_distance(), 10);
         }
     }
 }

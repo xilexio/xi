@@ -1,4 +1,3 @@
-use std::iter::FilterMap;
 use screeps::{ROOM_SIZE, RoomTerrain, RoomXY, Terrain};
 use num_traits::cast::FromPrimitive;
 use screeps::Terrain::Wall;
@@ -21,7 +20,7 @@ impl PackedTerrain {
     pub fn get(&self, xy: RoomXY) -> Terrain {
         let index = (xy.x.u8() as usize + (ROOM_SIZE as usize) * (xy.y.u8() as usize)) / 4;
         let offset = 2 * (xy.x.u8() as usize % 4);
-        Terrain::from_u8(self.data[index] << offset).unwrap()
+        Terrain::from_u8((self.data[index] >> offset) & 3).unwrap()
     }
 
     pub fn set(&mut self, xy: RoomXY, terrain: Terrain) {
@@ -30,18 +29,23 @@ impl PackedTerrain {
         // Zero the data in that tile.
         self.data[index] &= !(0x3 << offset);
         // Set the data in tha tile.
-        self.data[index] |= terrain as u8;
+        self.data[index] |= (terrain as u8) << offset;
     }
 
     pub fn walls(&self) -> impl Iterator<Item = RoomXY> + '_ {
         self.iter().filter_map(|(xy, t)| (t == Wall).then_some(xy))
     }
 
-    pub fn iter(&self) -> PackedTerrainIterator {
-        PackedTerrainIterator {
-            packed_terrain: self,
-            curr: 0,
-        }
+    pub fn iter(&self) -> impl Iterator<Item = (RoomXY, Terrain)> + '_ {
+        (0..ROOM_AREA).map(|i| {
+            let xy = unsafe {
+                RoomXY::unchecked_new(
+                    (i % ROOM_SIZE as usize) as u8,
+                    (i / ROOM_SIZE as usize) as u8
+                )
+            };
+            (xy, self.get(xy))
+        })
     }
 }
 
@@ -51,37 +55,62 @@ impl From<RoomTerrain> for PackedTerrain {
         let raw = value.get_raw_buffer();
         for y in 0..ROOM_SIZE {
             for x in 0..ROOM_SIZE {
-                let index = (x as usize + (ROOM_SIZE as usize) * (y as usize)) / 4;
-                let offset = 2 * (x as usize % 4);
-                packed_terrain.data[index] |= raw.get_index(index as u32) >> offset;
+                let index = x as usize + (ROOM_SIZE as usize) * (y as usize);
+                let offset = 2 * (x % 4);
+                packed_terrain.data[index / 4] |= raw.get_index(index as u32) << offset;
             }
         };
         packed_terrain
     }
 }
 
-pub struct PackedTerrainIterator<'a> {
-    packed_terrain: &'a PackedTerrain,
-    curr: usize,
-}
+#[cfg(test)]
+mod tests {
+    use screeps::Terrain::{Plain, Swamp, Wall};
+    use crate::consts::ROOM_AREA;
+    use crate::room_state::packed_terrain::PackedTerrain;
 
-impl<'a> Iterator for PackedTerrainIterator<'a> {
-    type Item = (RoomXY, Terrain);
+    #[test]
+    fn test_set_get() {
+        let mut terrain = PackedTerrain::new();
+        terrain.set((1, 0).try_into().unwrap(), Plain);
+        assert_eq!(terrain.get((1, 0).try_into().unwrap()), Plain);
+        terrain.set((2, 1).try_into().unwrap(), Swamp);
+        assert_eq!(terrain.get((2, 1).try_into().unwrap()), Swamp);
+        terrain.set((3, 2).try_into().unwrap(), Wall);
+        assert_eq!(terrain.get((3, 2).try_into().unwrap()), Wall);
+        terrain.set((4, 3).try_into().unwrap(), Swamp);
+        assert_eq!(terrain.get((4, 3).try_into().unwrap()), Swamp);
 
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.curr >= ROOM_AREA - 1 {
-            None
-        } else {
-            self.curr += 1;
-            let xy = unsafe {
-                RoomXY::unchecked_new(
-                    (self.curr % ROOM_SIZE as usize) as u8,
-                    (self.curr / ROOM_SIZE as usize) as u8
-                )
-            };
-            Some((xy, self.packed_terrain.get(xy)))
+        terrain.set((0, 0).try_into().unwrap(), Plain);
+        terrain.set((1, 0).try_into().unwrap(), Swamp);
+        terrain.set((2, 0).try_into().unwrap(), Wall);
+        terrain.set((3, 0).try_into().unwrap(), Swamp);
+        assert_eq!(terrain.get((0, 0).try_into().unwrap()), Plain);
+        assert_eq!(terrain.get((1, 0).try_into().unwrap()), Swamp);
+        assert_eq!(terrain.get((2, 0).try_into().unwrap()), Wall);
+        assert_eq!(terrain.get((3, 0).try_into().unwrap()), Swamp);
+    }
+
+    #[test]
+    fn test_iter() {
+        let mut terrain = PackedTerrain::new();
+        terrain.set((10, 10).try_into().unwrap(), Wall);
+        terrain.set((11, 10).try_into().unwrap(), Wall);
+        terrain.set((10, 11).try_into().unwrap(), Wall);
+        let mut number_of_tiles = 0;
+        let mut walls = Vec::new();
+        for (xy, t) in terrain.iter() {
+            number_of_tiles += 1;
+            if t == Wall {
+                walls.push(xy);
+            }
         }
+        assert_eq!(number_of_tiles, ROOM_AREA);
+        assert_eq!(walls, vec![
+            (10, 10).try_into().unwrap(),
+            (11, 10).try_into().unwrap(),
+            (10, 11).try_into().unwrap(),
+        ]);
     }
 }
-
-// TODO tests

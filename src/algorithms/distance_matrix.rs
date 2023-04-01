@@ -7,22 +7,22 @@ use crate::geometry::room_xy::RoomXYUtils;
 use screeps::RoomXY;
 use std::cmp::min;
 
-pub fn grid_bfs_distances<'a, 'b, S, O>(start: S, obstacles: O) -> RoomMatrix<u8>
+pub fn distance_matrix<S, O>(start: S, obstacles: O) -> RoomMatrix<u8>
 where
-    S: Iterator<Item = &'a RoomXY>,
-    O: Iterator<Item = &'b RoomXY>,
+    S: Iterator<Item = RoomXY>,
+    O: Iterator<Item = RoomXY>,
 {
     let mut result = RoomMatrix::new_custom_filled(UNREACHABLE_COST);
 
     for xy in obstacles {
-        result.set(*xy, OBSTACLE_COST);
+        result.set(xy, OBSTACLE_COST);
     }
 
     let mut layer = Vec::new();
 
     for xy in start {
-        result.set(*xy, 0);
-        layer.push(*xy);
+        result.set(xy, 0);
+        layer.push(xy);
     }
 
     let mut distance = 1u8;
@@ -44,27 +44,27 @@ where
     result
 }
 
-pub fn restricted_grid_bfs_distances<'a, 'b, S, O>(
+pub fn restricted_distance_matrix<S, O>(
     start: S,
     obstacles: O,
     slice: Rect,
     max_distance: u8,
 ) -> RoomMatrixSlice<u8>
 where
-    S: Iterator<Item = &'a RoomXY>,
-    O: Iterator<Item = &'b RoomXY>,
+    S: Iterator<Item = RoomXY>,
+    O: Iterator<Item = RoomXY>,
 {
     let mut result = RoomMatrixSlice::new_custom_filled(slice, UNREACHABLE_COST);
 
     for xy in obstacles {
-        result.set(*xy, OBSTACLE_COST);
+        result.set(xy, OBSTACLE_COST);
     }
 
     let mut layer = Vec::new();
 
     for xy in start {
-        result.set(*xy, 0);
-        layer.push(*xy);
+        result.set(xy, 0);
+        layer.push(xy);
     }
 
     let mut distance = 1u8;
@@ -88,7 +88,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::algorithms::grid_bfs_distances::restricted_grid_bfs_distances;
+    use crate::algorithms::distance_matrix::restricted_distance_matrix;
     use crate::algorithms::matrix_common::MatrixCommon;
     use crate::consts::{OBSTACLE_COST, UNREACHABLE_COST};
     use crate::geometry::rect::Rect;
@@ -98,14 +98,14 @@ mod tests {
     #[test]
     fn test_restricted_grid_bfs_distances() -> Result<(), Box<dyn Error>> {
         let slice = Rect::new(RoomXY::try_from((10, 10))?, RoomXY::try_from((12, 12))?)?;
-        let dists = restricted_grid_bfs_distances(
-            [RoomXY::try_from((10, 10))?].iter(),
+        let dists = restricted_distance_matrix(
+            [RoomXY::try_from((10, 10))?].into_iter(),
             [
                 RoomXY::try_from((11, 11))?,
                 RoomXY::try_from((12, 11))?,
                 RoomXY::try_from((11, 12))?,
             ]
-            .iter(),
+            .into_iter(),
             slice,
             10,
         );
@@ -124,14 +124,14 @@ mod tests {
     #[test]
     fn test_restricted_grid_bfs_distances_with_max_distance() -> Result<(), Box<dyn Error>> {
         let slice = Rect::new(RoomXY::try_from((10, 10))?, RoomXY::try_from((12, 12))?)?;
-        let dists = restricted_grid_bfs_distances(
-            [RoomXY::try_from((10, 10))?].iter(),
+        let dists = restricted_distance_matrix(
+            [RoomXY::try_from((10, 10))?].into_iter(),
             [
                 RoomXY::try_from((11, 11))?,
                 RoomXY::try_from((12, 11))?,
                 RoomXY::try_from((11, 12))?,
             ]
-            .iter(),
+            .into_iter(),
             slice,
             1,
         );

@@ -1,13 +1,16 @@
-use std::collections::HashMap;
+use crate::room_state::packed_terrain::PackedTerrain;
+use js_sys::{Object, Reflect};
 use log::info;
-use screeps::{Mineral, ObjectId, ResourceType, RoomName, RoomXY, Source, StructureController, StructureType};
+use screeps::{
+    Mineral, ObjectId, ResourceType, RoomName, RoomXY, Source, StructureController, StructureType,
+};
+use std::collections::HashMap;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
-use crate::room_state::packed_terrain::PackedTerrain;
 
-pub mod scan;
-mod room_states;
 pub mod packed_terrain;
+pub mod room_states;
+pub mod scan;
 
 // TODO make it serializable and put in memory in serialized form
 pub struct RoomState {
@@ -60,19 +63,22 @@ pub struct Plan {
 pub fn set_room_blueprint(room_name: String, blueprint: JsValue) {
     info!("Room name: {}", room_name);
 
-    // let blueprint_obj: &Object = blueprint.unchecked_ref();
-    // let buildings = Reflect::get(&blueprint, &"buildings".into()).unwrap();
-    // for structure_type in Reflect::own_keys(&buildings).unwrap().iter() {
-    //     info!("{}:", structure_type.as_string().unwrap());
-    //     let xy_array = Reflect::get(&buildings, &structure_type).unwrap();
-    //     let length = Reflect::get(&xy_array, &"length".into()).unwrap().as_f64().unwrap();
-    //     for i in 0..(length as u32) {
-    //         let xy = Reflect::get_u32(&xy_array, i).unwrap();
-    //         let x = Reflect::get(&xy, &"x".into()).unwrap().as_f64().unwrap();
-    //         let y = Reflect::get(&xy, &"y".into()).unwrap().as_f64().unwrap();
-    //         info!("({}, {})", x, y);
-    //     }
-    // };
+    let blueprint_obj: &Object = blueprint.unchecked_ref();
+    let buildings = Reflect::get(&blueprint, &"buildings".into()).unwrap();
+    for structure_type in Reflect::own_keys(&buildings).unwrap().iter() {
+        info!("{}:", structure_type.as_string().unwrap());
+        let xy_array = Reflect::get(&buildings, &structure_type).unwrap();
+        let length = Reflect::get(&xy_array, &"length".into())
+            .unwrap()
+            .as_f64()
+            .unwrap();
+        for i in 0..(length as u32) {
+            let xy = Reflect::get_u32(&xy_array, i).unwrap();
+            let x = Reflect::get(&xy, &"x".into()).unwrap().as_f64().unwrap();
+            let y = Reflect::get(&xy, &"y".into()).unwrap().as_f64().unwrap();
+            info!("({}, {})", x, y);
+        }
+    }
 }
 
 impl RoomState {
