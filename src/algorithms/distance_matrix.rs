@@ -12,7 +12,7 @@ where
     S: Iterator<Item = RoomXY>,
     O: Iterator<Item = RoomXY>,
 {
-    let mut result = RoomMatrix::new_custom_filled(UNREACHABLE_COST);
+    let mut result = RoomMatrix::new(UNREACHABLE_COST);
 
     for xy in obstacles {
         result.set(xy, OBSTACLE_COST);
@@ -30,10 +30,10 @@ where
     while !layer.is_empty() {
         let mut next_layer = Vec::new();
         for xy in layer {
-            for near in xy.around().iter() {
-                if result.get(*near) == UNREACHABLE_COST {
-                    result.set(*near, distance);
-                    next_layer.push(*near);
+            for near in xy.around() {
+                if result.get(near) == UNREACHABLE_COST {
+                    result.set(near, distance);
+                    next_layer.push(near);
                 }
             }
         }
@@ -54,7 +54,7 @@ where
     S: Iterator<Item = RoomXY>,
     O: Iterator<Item = RoomXY>,
 {
-    let mut result = RoomMatrixSlice::new_custom_filled(slice, UNREACHABLE_COST);
+    let mut result = RoomMatrixSlice::new(slice, UNREACHABLE_COST);
 
     for xy in obstacles {
         result.set(xy, OBSTACLE_COST);
@@ -72,10 +72,10 @@ where
     while !layer.is_empty() && distance <= max_distance {
         let mut next_layer = Vec::new();
         for xy in layer {
-            for near in unsafe { xy.restricted_around(slice).iter() } {
-                if result.get(*near) == UNREACHABLE_COST {
-                    result.set(*near, distance);
-                    next_layer.push(*near);
+            for near in unsafe { xy.restricted_around(slice) } {
+                if result.get(near) == UNREACHABLE_COST {
+                    result.set(near, distance);
+                    next_layer.push(near);
                 }
             }
         }

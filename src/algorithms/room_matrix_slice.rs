@@ -1,9 +1,9 @@
 use crate::algorithms::matrix_common::MatrixCommon;
-use crate::consts::ROOM_AREA;
 use crate::geometry::rect::Rect;
 use crate::geometry::room_xy::RoomXYUtils;
-use screeps::{RoomXY, ROOM_SIZE};
+use screeps::RoomXY;
 
+#[derive(Clone)]
 pub struct RoomMatrixSlice<T> {
     pub rect: Rect,
     pub data: Vec<T>,
@@ -11,13 +11,9 @@ pub struct RoomMatrixSlice<T> {
 
 impl<T> RoomMatrixSlice<T>
 where
-    T: Default + num_traits::PrimInt,
+    T: Clone + Copy + PartialEq,
 {
-    pub fn new(rect: Rect) -> Self {
-        RoomMatrixSlice::new_custom_filled(rect, T::default())
-    }
-
-    pub fn new_custom_filled(rect: Rect, fill: T) -> Self {
+    pub fn new(rect: Rect, fill: T) -> Self {
         let mut data = Vec::new();
         data.resize_with(rect.area(), || fill);
         RoomMatrixSlice { rect, data }
@@ -26,7 +22,7 @@ where
 
 impl<T> MatrixCommon<T> for RoomMatrixSlice<T>
 where
-    T: num_traits::PrimInt + 'static,
+    T: Clone + Copy + PartialEq,
 {
     #[inline]
     fn get(&self, xy: RoomXY) -> T {

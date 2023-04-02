@@ -1,18 +1,30 @@
 use screeps::Direction;
 
+pub const OFFSET_BY_DIRECTION: [(i8, i8); 9] = [
+    (0, 0),
+    (0, -1),
+    (1, -1),
+    (1, 0),
+    (1, 1),
+    (0, 1),
+    (-1, 1),
+    (-1, 0),
+    (-1, -1),
+];
+
 #[inline]
 pub fn offset_from_direction(direction: Direction) -> (i8, i8) {
     let i = direction as i8;
     (
         ((((i - 1) & 2) >> 1) | ((i - 1) & 1)) * (1 - (((i - 1) & 4) >> 1)),
-        ((((i + 5) & 2) >> 1) | ((i + 5) & 1)) * (1 - (((i + 5) & 4) >> 1))
+        ((((i + 5) & 2) >> 1) | ((i + 5) & 1)) * (1 - (((i + 5) & 4) >> 1)),
     )
 }
 
 #[cfg(test)]
 mod tests {
-    use screeps::Direction;
     use crate::geometry::direction::offset_from_direction;
+    use screeps::Direction;
 
     #[test]
     fn test_offset_from_direction() {

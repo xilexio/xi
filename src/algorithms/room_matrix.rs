@@ -1,24 +1,21 @@
-use std::fmt::{Display, Formatter, LowerHex};
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::consts::ROOM_AREA;
-use crate::geometry::room_xy::RoomXYUtils;
-use screeps::{ROOM_SIZE, RoomXY};
 use crate::geometry::rect::room_rect;
+use crate::geometry::room_xy::RoomXYUtils;
+use screeps::{RoomXY, ROOM_SIZE};
+use std::fmt::{Display, Formatter, LowerHex};
 
 /// A `ROOM_SIZE` x `ROOM_SIZE` matrix backed by an array with size known at compile time.
+#[derive(Clone)]
 pub struct RoomMatrix<T> {
     pub data: [T; ROOM_AREA],
 }
 
 impl<T> RoomMatrix<T>
 where
-    T: Default + num_traits::PrimInt + 'static,
+    T: Clone + Copy + PartialEq,
 {
-    pub fn new() -> Self {
-        RoomMatrix::new_custom_filled(T::default())
-    }
-
-    pub fn new_custom_filled(fill: T) -> Self {
+    pub fn new(fill: T) -> Self {
         RoomMatrix {
             data: [fill; ROOM_AREA],
         }
@@ -31,7 +28,7 @@ where
 
 impl<T> MatrixCommon<T> for RoomMatrix<T>
 where
-    T: num_traits::PrimInt + 'static,
+    T: Clone + Copy + PartialEq,
 {
     #[inline]
     fn get(&self, xy: RoomXY) -> T {
@@ -45,7 +42,12 @@ where
 
     fn iter(&self) -> impl Iterator<Item = (RoomXY, T)> + '_ {
         (0..ROOM_AREA).map(|i| {
-            let xy = unsafe { RoomXY::unchecked_new((i % (ROOM_SIZE as usize)) as u8, (i / (ROOM_SIZE as usize)) as u8) };
+            let xy = unsafe {
+                RoomXY::unchecked_new(
+                    (i % (ROOM_SIZE as usize)) as u8,
+                    (i / (ROOM_SIZE as usize)) as u8,
+                )
+            };
             (xy, self.get(xy))
         })
     }
@@ -53,7 +55,7 @@ where
 
 impl<T> Display for RoomMatrix<T>
 where
-    T: LowerHex + num_traits::PrimInt + 'static,
+    T: Clone + Copy + PartialEq + LowerHex,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for y in 0..ROOM_SIZE {

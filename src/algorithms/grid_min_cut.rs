@@ -181,7 +181,7 @@ pub fn grid_min_cut(costs: RoomMatrix<u8>) -> Vec<RoomXY> {
                         dead_end = false;
                         dfs_stack.push((near_node, edge));
 
-                        debug_assert!(grid_node_to_xy(near_node).cdist(grid_node_to_xy(node)) <= 1);
+                        debug_assert!(grid_node_to_xy(near_node).dist(grid_node_to_xy(node)) <= 1);
                     }
                 });
                 if dead_end {
@@ -540,7 +540,7 @@ mod tests {
                 assert_eq!(edge_target_node(edge), output_node);
             } else {
                 let xy = grid_node_to_xy(edge_target_node(edge));
-                assert_eq!(xy.cdist(node_xy), 1);
+                assert_eq!(xy.dist(node_xy), 1);
             }
         });
 
@@ -550,7 +550,7 @@ mod tests {
 
     #[test]
     fn test_grid_min_cut_on_empty_room() {
-        let mut costs = RoomMatrix::new_custom_filled(1);
+        let mut costs = RoomMatrix::new(1);
         unsafe {
             costs.set_xy(25, 25, 0);
         }
@@ -560,7 +560,7 @@ mod tests {
 
     #[test]
     fn test_grid_min_cut_on_empty_room_and_multiple_points() {
-        let mut costs = RoomMatrix::new_custom_filled(1);
+        let mut costs = RoomMatrix::new(1);
         unsafe {
             costs.set_xy(24, 24, 0);
             costs.set_xy(25, 24, 0);
@@ -578,7 +578,7 @@ mod tests {
 
     #[test]
     fn test_grid_min_cut_on_room_with_obstacles() {
-        let mut costs = RoomMatrix::new_custom_filled(1);
+        let mut costs = RoomMatrix::new(1);
         unsafe {
             // # # . # #
             // # . S . #
@@ -603,7 +603,7 @@ mod tests {
 
     #[test]
     fn test_grid_min_cut_on_room_with_more_obstacles() {
-        let mut costs = RoomMatrix::new_custom_filled(1);
+        let mut costs = RoomMatrix::new(1);
         unsafe {
             for xy in Rect::unchecked_new(RoomXY::unchecked_new(15, 15), RoomXY::unchecked_new(40, 40)).iter() {
                 costs.set(xy, 0);

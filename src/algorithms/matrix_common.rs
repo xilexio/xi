@@ -2,7 +2,7 @@ use screeps::RoomXY;
 
 pub trait MatrixCommon<T>
 where
-    T: num_traits::PrimInt + 'static,
+    T: Clone + Copy + PartialEq,
 {
     fn get(&self, xy: RoomXY) -> T;
     fn set(&mut self, xy: RoomXY, value: T);
@@ -21,7 +21,19 @@ where
 
     fn iter(&self) -> impl Iterator<Item = (RoomXY, T)> + '_;
 
-    fn find_xy(&self, value: T) -> impl Iterator<Item = RoomXY> + '_ {
-        self.iter().filter_map(move |(xy, v)| (v == value).then_some(xy))
+    fn find_xy<'a>(&'a self, value: T) -> impl Iterator<Item = RoomXY> + 'a
+    where
+        T: 'a,
+    {
+        self.iter()
+            .filter_map(move |(xy, v)| (v == value).then_some(xy))
+    }
+
+    fn find_not_xy<'a>(&'a self, value: T) -> impl Iterator<Item = RoomXY> + 'a
+    where
+        T: 'a,
+    {
+        self.iter()
+            .filter_map(move |(xy, v)| (v != value).then_some(xy))
     }
 }

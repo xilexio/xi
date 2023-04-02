@@ -5,7 +5,7 @@ fn benchmark() {
         scan(room_name).unwrap_throw();
         with_room_state(room_name, |state| {
             let mut room_visual_ext = RoomVisualExt::new(room_name);
-            let mut costs = RoomMatrix::new_custom_filled(10);
+            let mut costs = RoomMatrix::new(10);
             for y in 0..ROOM_SIZE {
                 for x in 0..ROOM_SIZE {
                     costs.set((x, y).try_into().unwrap_throw(), (1.0 + random() * 10.0) as u8);

@@ -93,7 +93,7 @@ mod test {
 
     #[test]
     fn test_distance_transform() {
-        let mut matrix = RoomMatrix::new_custom_filled(0);
+        let mut matrix = RoomMatrix::new(0);
         for y in 20..23 {
             for x in 10..13 {
                 unsafe {
