@@ -7,6 +7,8 @@ function displayError(...args) {
     Game.notify(args.join(' '));
 }
 
+let restartNextTick = false;
+
 function wrap(f) {
     return function(...args) {
         try {
@@ -21,7 +23,7 @@ function wrap(f) {
                 displayError('Stacktrace:', ex.stack);
             }
             displayError('Restarting the bot next tick.');
-            wasm_module.__wasm = null;
+            restartNextTick = true;
         }
     }
 }
@@ -31,6 +33,10 @@ global.set_room_blueprint = wrap(function(roomName, blueprintJSON) {
 });
 
 module.exports.loop = function () {
+    if (restartNextTick) {
+        Game.cpu.halt();
+    }
+
     try {
         if (wasm_module && wasm_module.__wasm) {
             wasm_module.loop();
@@ -57,8 +63,6 @@ module.exports.loop = function () {
             displayError('Stacktrace:', ex.stack);
         }
         displayError('Restarting the bot next tick.');
-        if (wasm_module !== undefined) {
-            wasm_module.__wasm = null;
-        }
+        restartNextTick = true;
     }
 }

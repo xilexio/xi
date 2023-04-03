@@ -64,6 +64,13 @@ impl Rect {
             && xy.y <= self.bottom_right.y
     }
 
+    pub fn is_i8xy_inside(self, x: i8, y: i8) -> bool {
+        self.top_left.x.u8() as i8 <= x
+            && x <= self.bottom_right.x.u8() as i8
+            && self.top_left.y.u8() as i8 <= y
+            && y <= self.bottom_right.y.u8() as i8
+    }
+
     pub fn boundary(self) -> impl Iterator<Item = RoomXY> {
         unsafe {
             let top = (1..self.width()).map(move |dx| (self.top_left.x.add_diff(dx as i8), self.top_left.y).into());

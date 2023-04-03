@@ -1,10 +1,10 @@
 use crate::room_state::RoomState;
 use screeps::RoomName;
-use std::collections::HashMap;
 use std::cell::RefCell;
+use rustc_hash::FxHashMap;
 
 thread_local! {
-    pub static ROOM_STATES: RefCell<HashMap<RoomName, RoomState>> = RefCell::new(HashMap::new());
+    pub static ROOM_STATES: RefCell<FxHashMap<RoomName, RoomState>> = RefCell::new(FxHashMap::default());
 }
 
 pub fn with_room_state<F, R>(room_name: RoomName, f: F) -> Option<R>

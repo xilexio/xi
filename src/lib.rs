@@ -1,14 +1,21 @@
 #![feature(type_alias_impl_trait)]
+#![feature(map_try_insert)]
 #![feature(return_position_impl_trait_in_trait)]
 
+use crate::algorithms::chunk_graph::chunk_graph;
 use crate::algorithms::distance_matrix::distance_matrix;
+use crate::algorithms::matrix_common::MatrixCommon;
 use crate::config::*;
+use crate::room_state::room_states::with_room_state;
+use crate::room_state::scan::scan;
+use crate::visualization::{Visualization, Visualizer};
+use js_sys::Math::random;
 use log::debug;
+use profiler::measure_time;
 use screeps::{game, RoomXY, ROOM_SIZE};
 use wasm_bindgen::prelude::*;
-use crate::algorithms::matrix_common::MatrixCommon;
-use profiler::measure_time;
-use js_sys::Math::random;
+use crate::algorithms::distance_transform::distance_transform;
+use tap::prelude::*;
 
 mod algorithms;
 mod blueprint;
@@ -20,6 +27,7 @@ mod logging;
 mod profiler;
 mod room_state;
 mod test_process;
+mod visualization;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]
@@ -42,29 +50,23 @@ pub fn game_loop() {
     // kern.schedule(Box::new(new_process));
     // kern.run();
 
-    debug!("Tick {}", game::time());
+    debug!("Tick: {} -- Bucket: {}", game::time(), game::cpu::bucket());
 
-    if game::cpu::bucket() > 500 {
-        let n = 100;
-        let number_of_obstacles = 1000;
-        let obstacles: Vec<RoomXY> = (0..number_of_obstacles)
-            .map(|_| {
-                RoomXY::try_from((
-                    (1.0 + random() * (ROOM_SIZE as f64 - 1.0)) as u8,
-                    (1.0 + random() * (ROOM_SIZE as f64 - 1.0)) as u8,
-                ))
-                .unwrap()
-            })
-            .collect();
-        let start = [RoomXY::try_from((0, 0)).unwrap()];
-        measure_time("distance_matrix", || {
-            let mut total = 0.0;
-            for i in 0..n {
-                let result = distance_matrix(start.into_iter(), obstacles.iter().copied());
-                total += result.get(RoomXY::try_from((25, 25)).unwrap()) as f64;
-            }
-            debug!("avg dist (0, 0) - (25, 25): {}", total / (n as f64));
+    if game::cpu::bucket() > 1000 {
+        let spawn = game::spawns().values().next().unwrap_throw();
+        let room_name = spawn.room().unwrap_throw().name();
+        scan(room_name).unwrap_throw();
+        let visualizer = Visualizer {};
+        let cg = measure_time("chunk_graph", || {
+            with_room_state(room_name, |state| {
+                chunk_graph(&state.terrain.to_obstacle_matrix(), 5)
+            }).unwrap()
         });
+        visualizer.visualize(
+            room_name,
+            &Visualization::Matrix(cg.xy_chunks.map(|ix| ix.index() as u8)),
+        );
+        visualizer.visualize(room_name, &Visualization::Graph(cg.graph));
     }
 
     // trace!("test");

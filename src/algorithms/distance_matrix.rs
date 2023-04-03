@@ -72,7 +72,7 @@ where
     while !layer.is_empty() && distance <= max_distance {
         let mut next_layer = Vec::new();
         for xy in layer {
-            for near in unsafe { xy.restricted_around(slice) } {
+            for near in xy.restricted_around(slice) {
                 if result.get(near) == UNREACHABLE_COST {
                     result.set(near, distance);
                     next_layer.push(near);

@@ -13,7 +13,10 @@ impl log::Log for JsLog {
     }
 
     fn log(&self, record: &log::Record<'_>) {
+        #[cfg(not(test))]
         console::log_1(&JsString::from(format!("{}", record.args())));
+        #[cfg(test)]
+        println!("{}", record.args());
     }
 
     fn flush(&self) {}
@@ -25,6 +28,7 @@ impl log::Log for JsNotify {
     }
 
     fn log(&self, record: &log::Record<'_>) {
+        #[cfg(not(test))]
         game::notify(&format!("{}", record.args()), None);
     }
 

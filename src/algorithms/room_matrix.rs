@@ -24,6 +24,16 @@ where
     pub fn exits(&self) -> impl Iterator<Item = (RoomXY, T)> + '_ {
         room_rect().boundary().map(|xy| (xy, self.get(xy)))
     }
+
+    pub fn map<F, S>(&self, f: F) -> RoomMatrix<S>
+    where
+        F: FnMut(T) -> S,
+        S: Clone + Copy + PartialEq,
+    {
+        RoomMatrix {
+            data: self.data.map(f),
+        }
+    }
 }
 
 impl<T> MatrixCommon<T> for RoomMatrix<T>

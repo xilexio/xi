@@ -4,9 +4,9 @@ use log::info;
 use screeps::{
     Mineral, ObjectId, ResourceType, RoomName, RoomXY, Source, StructureController, StructureType,
 };
-use std::collections::HashMap;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
+use rustc_hash::FxHashMap;
 
 pub mod packed_terrain;
 pub mod room_states;
@@ -51,7 +51,7 @@ pub struct MineralInfo {
     pub mineral_type: ResourceType,
 }
 
-pub type Buildings = HashMap<StructureType, Vec<RoomXY>>;
+pub type Buildings = FxHashMap<StructureType, Vec<RoomXY>>;
 
 pub struct Plan {
     pub rcl: u8,
@@ -92,7 +92,7 @@ impl RoomState {
             controller: None,
             sources: Vec::new(),
             mineral: None,
-            buildings: HashMap::new(),
+            buildings: FxHashMap::default(),
             plan: None,
         }
     }

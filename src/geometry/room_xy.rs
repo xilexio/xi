@@ -1,4 +1,4 @@
-use crate::geometry::direction::{OFFSET_BY_DIRECTION, offset_from_direction};
+use crate::geometry::direction::{OFFSET_BY_DIRECTION};
 use crate::geometry::rect::Rect;
 use crate::geometry::room_coordinate::RoomCoordinateUtils;
 use enum_iterator::IntoEnumIterator;
@@ -9,11 +9,11 @@ pub trait RoomXYUtils
 where
     Self: Sized,
 {
-    fn to_index(&self) -> usize;
-    unsafe fn rect_index(&self, rect: Rect) -> usize;
-    fn around(&self) -> impl Iterator<Item = RoomXY> + '_;
-    unsafe fn restricted_around(&self, rect: Rect) -> impl Iterator<Item = RoomXY>;
-    fn exit_distance(&self) -> u8;
+    fn to_index(self) -> usize;
+    unsafe fn rect_index(self, rect: Rect) -> usize;
+    fn around(self) -> impl Iterator<Item = RoomXY>;
+    fn restricted_around(self, rect: Rect) -> impl Iterator<Item = RoomXY>;
+    fn exit_distance(self) -> u8;
 
     fn sub(self, other: Self) -> (i8, i8);
     unsafe fn add_diff(self, diff: (i8, i8)) -> Self;
@@ -24,11 +24,11 @@ where
 
 impl RoomXYUtils for RoomXY {
     #[inline]
-    fn to_index(&self) -> usize {
+    fn to_index(self) -> usize {
         (self.x.u8() as usize) + (ROOM_SIZE as usize) * (self.y.u8() as usize)
     }
 
-    unsafe fn rect_index(&self, rect: Rect) -> usize {
+    unsafe fn rect_index(self, rect: Rect) -> usize {
         let (dx, dy) = self.sub(rect.top_left);
         (dx as usize) + (rect.width() as usize) * (dy as usize)
     }
@@ -39,7 +39,7 @@ impl RoomXYUtils for RoomXY {
     // 0.44ms with direction iter + offset_from_direction implementation
     // 0.44ms with direction item + OFFSET_BY_DIRECTION implementation
     #[inline]
-    fn around(&self) -> impl Iterator<Item = RoomXY> + '_ {
+    fn around(self) -> impl Iterator<Item = RoomXY> {
         // let mut result = Vec::new();
         // let (x, y) = (self.x.u8() as i8, self.y.u8() as i8);
         // for near_y in (y - 1)..(y + 2) {
@@ -54,23 +54,25 @@ impl RoomXYUtils for RoomXY {
         // }
         // result.into_iter()
         // Direction::into_enum_iter().filter_map(|d| self.try_add_diff(offset_from_direction(d)).ok())
-        Direction::into_enum_iter().filter_map(|d| self.try_add_diff(OFFSET_BY_DIRECTION[d as usize]).ok())
+        Direction::into_enum_iter().filter_map(move |d| self.try_add_diff(OFFSET_BY_DIRECTION[d as usize]).ok())
     }
 
-    // The function is safe if and only if the rect is within room bounds.
-    unsafe fn restricted_around(&self, rect: Rect) -> impl Iterator<Item = RoomXY> {
-        let mut result = Vec::new();
-        for d in Direction::into_enum_iter() {
-            let near = self.add_diff(offset_from_direction(d));
-            if rect.is_inside(near) {
-                result.push(near);
+    fn restricted_around(self, rect: Rect) -> impl Iterator<Item = RoomXY> {
+        // The function is safe because valid Rect consists of RoomCoordinate which are withing room bounds.
+        Direction::into_enum_iter().filter_map(move |d| {
+            let (dx, dy) = OFFSET_BY_DIRECTION[d as usize];
+            let x = self.x.u8() as i8 + dx;
+            let y = self.y.u8() as i8 + dy;
+            if rect.is_i8xy_inside(x, y) {
+                Some((x as u8, y as u8).try_into().unwrap())
+            } else {
+                None
             }
-        }
-        result.into_iter()
+        })
     }
 
     #[inline]
-    fn exit_distance(&self) -> u8 {
+    fn exit_distance(self) -> u8 {
         min(
             min(self.x.u8(), self.y.u8()),
             min(ROOM_SIZE - 1 - self.x.u8(), ROOM_SIZE - 1 - self.y.u8()),

@@ -1,6 +1,6 @@
 use crate::room_state::{Buildings, MineralInfo, SourceInfo};
 use screeps::RoomXY;
-use std::collections::HashMap;
+use rustc_hash::FxHashMap;
 
 pub struct Blueprint {
     pub name: String,
@@ -23,7 +23,7 @@ impl Blueprint {
             controller: None,
             sources: Vec::new(),
             mineral: None,
-            buildings: HashMap::new(),
+            buildings: FxHashMap::default(),
         }
     }
 }
