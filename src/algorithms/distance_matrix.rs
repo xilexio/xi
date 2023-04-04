@@ -88,18 +88,19 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::algorithms::distance_matrix::restricted_distance_matrix;
+    use crate::algorithms::distance_matrix::{distance_matrix, restricted_distance_matrix};
     use crate::algorithms::matrix_common::MatrixCommon;
     use crate::consts::{OBSTACLE_COST, UNREACHABLE_COST};
     use crate::geometry::rect::Rect;
     use screeps::RoomXY;
     use std::error::Error;
+    use std::iter::once;
 
     #[test]
     fn test_restricted_grid_bfs_distances() -> Result<(), Box<dyn Error>> {
         let slice = Rect::new(RoomXY::try_from((10, 10))?, RoomXY::try_from((12, 12))?)?;
         let dists = restricted_distance_matrix(
-            [RoomXY::try_from((10, 10))?].into_iter(),
+            once(RoomXY::try_from((10, 10))?),
             [
                 RoomXY::try_from((11, 11))?,
                 RoomXY::try_from((12, 11))?,
@@ -145,5 +146,24 @@ mod tests {
         assert_eq!(dists.get(RoomXY::try_from((11, 12))?), OBSTACLE_COST);
         assert_eq!(dists.get(RoomXY::try_from((12, 12))?), UNREACHABLE_COST);
         Ok(())
+    }
+
+    #[test]
+    fn distance_matrix_starting_from_an_obstacle() {
+        let dm = distance_matrix(
+            once((25, 25).try_into().unwrap()),
+            [
+                (24, 25).try_into().unwrap(),
+                (25, 25).try_into().unwrap(),
+                (26, 25).try_into().unwrap(),
+            ]
+            .into_iter(),
+        );
+
+        assert_eq!(dm.get((25, 25).try_into().unwrap()), 0);
+        assert_eq!(dm.get((24, 25).try_into().unwrap()), OBSTACLE_COST);
+        assert_eq!(dm.get((24, 24).try_into().unwrap()), 1);
+        assert_eq!(dm.get((24, 26).try_into().unwrap()), 1);
+        assert_eq!(dm.get((23, 25).try_into().unwrap()), 2);
     }
 }

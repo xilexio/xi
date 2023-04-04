@@ -21,7 +21,7 @@ where
         }
     }
 
-    pub fn exits(&self) -> impl Iterator<Item = (RoomXY, T)> + '_ {
+    pub fn boundary(&self) -> impl Iterator<Item = (RoomXY, T)> + '_ {
         room_rect().boundary().map(|xy| (xy, self.get(xy)))
     }
 
@@ -50,15 +50,14 @@ where
         self.data[xy.to_index()] = value;
     }
 
-    fn iter(&self) -> impl Iterator<Item = (RoomXY, T)> + '_ {
+    fn iter_xy<'a, 'b>(&'a self) -> impl Iterator<Item=RoomXY> + 'b {
         (0..ROOM_AREA).map(|i| {
-            let xy = unsafe {
+            unsafe {
                 RoomXY::unchecked_new(
                     (i % (ROOM_SIZE as usize)) as u8,
                     (i / (ROOM_SIZE as usize)) as u8,
                 )
-            };
-            (xy, self.get(xy))
+            }
         })
     }
 }

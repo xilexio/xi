@@ -11,6 +11,7 @@ use petgraph::Undirected;
 use rustc_hash::FxHashMap;
 use screeps::RoomXY;
 use std::cmp::Reverse;
+use std::iter::once;
 use tap::prelude::*;
 
 pub type ChunkId = NodeIndex<u16>;
@@ -33,7 +34,7 @@ pub fn invalid_chunk_node_index() -> ChunkId {
 /// The obstacles matrix should have OBSTACLE_COST on obstacle tiles and 0 on the rest.
 pub fn chunk_graph(terrain: &RoomMatrix<u8>, chunk_radius: u8) -> ChunkGraph {
     let exits: Vec<RoomXY> = terrain
-        .exits()
+        .boundary()
         .filter_map(|(xy, value)| (value == 0).then_some(xy))
         .collect();
 
@@ -96,7 +97,7 @@ pub fn chunk_graph(terrain: &RoomMatrix<u8>, chunk_radius: u8) -> ChunkGraph {
         let chunk_ball = ball(chunk_center, chunk_radius);
 
         let chunk_distance_matrix = restricted_distance_matrix(
-            [chunk_center].into_iter(),
+            once(chunk_center),
             chunk_ball
                 .iter()
                 .filter(|xy| terrain.get(*xy) == OBSTACLE_COST),

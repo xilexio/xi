@@ -7,6 +7,7 @@ use screeps::{
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
 use rustc_hash::FxHashMap;
+use crate::room_planner::plan::Plan;
 
 pub mod packed_terrain;
 pub mod room_states;
@@ -35,16 +36,19 @@ pub enum RoomDesignation {
     NeutralRoom,
 }
 
+#[derive(Copy, Clone)]
 pub struct ControllerInfo {
     pub id: ObjectId<StructureController>,
     pub xy: RoomXY,
 }
 
+#[derive(Copy, Clone)]
 pub struct SourceInfo {
     pub id: ObjectId<Source>,
     pub xy: RoomXY,
 }
 
+#[derive(Copy, Clone)]
 pub struct MineralInfo {
     pub id: ObjectId<Mineral>,
     pub xy: RoomXY,
@@ -52,12 +56,6 @@ pub struct MineralInfo {
 }
 
 pub type Buildings = FxHashMap<StructureType, Vec<RoomXY>>;
-
-pub struct Plan {
-    pub rcl: u8,
-    pub score: i16,
-    pub buildings: Buildings,
-}
 
 #[wasm_bindgen]
 pub fn set_room_blueprint(room_name: String, blueprint: JsValue) {

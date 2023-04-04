@@ -1,5 +1,3 @@
-#![feature(type_alias_impl_trait)]
-#![feature(map_try_insert)]
 #![feature(return_position_impl_trait_in_trait)]
 
 use crate::algorithms::chunk_graph::chunk_graph;
@@ -28,6 +26,7 @@ mod profiler;
 mod room_state;
 mod test_process;
 mod visualization;
+mod room_planner;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]

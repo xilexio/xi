@@ -36,16 +36,15 @@ where
         }
     }
 
-    fn iter(&self) -> impl Iterator<Item = (RoomXY, T)> + '_ {
+    fn iter_xy<'a, 'b>(&'a self) -> impl Iterator<Item=RoomXY> + 'b {
         let base_x = self.rect.top_left.x.u8();
         let base_y = self.rect.top_left.y.u8();
         let width = self.rect.width() as u16;
         let height = self.rect.height() as u16;
         (0..(width * height)).map(move |i| {
-            let xy = unsafe {
+            unsafe {
                 RoomXY::unchecked_new(base_x + (i % width) as u8, base_y + (i / width) as u8)
-            };
-            (xy, self.get(xy))
+            }
         })
     }
 }
