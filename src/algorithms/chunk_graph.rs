@@ -41,7 +41,7 @@ pub fn chunk_graph(terrain: &RoomMatrix<u8>, chunk_radius: u8) -> ChunkGraph {
     let exit_distances = distance_matrix(exits.iter().copied(), terrain.find_xy(OBSTACLE_COST));
 
     let dt = terrain
-        .map(|t| OBSTACLE_COST - t)
+        .map(|_, t| OBSTACLE_COST - t)
         .tap_mut(|t| distance_transform(t));
 
     let tiles = terrain

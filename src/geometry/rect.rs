@@ -1,8 +1,8 @@
-use std::cmp::min;
+use crate::geometry::room_coordinate::RoomCoordinateUtils;
 use screeps::{RoomXY, ROOM_SIZE};
+use std::cmp::{max, min};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use crate::geometry::room_coordinate::RoomCoordinateUtils;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Rect {
@@ -23,10 +23,7 @@ impl Error for InvalidRectError {}
 
 impl Rect {
     pub fn new(top_left: RoomXY, bottom_right: RoomXY) -> Result<Self, InvalidRectError> {
-        let result = Rect {
-            top_left,
-            bottom_right,
-        };
+        let result = Rect { top_left, bottom_right };
         if result.is_valid() {
             Ok(result)
         } else {
@@ -35,10 +32,15 @@ impl Rect {
     }
 
     pub unsafe fn unchecked_new(top_left: RoomXY, bottom_right: RoomXY) -> Self {
-        Rect {
-            top_left,
-            bottom_right,
-        }
+        Rect { top_left, bottom_right }
+    }
+
+    pub fn top_right(self) -> RoomXY {
+        (self.bottom_right.x, self.top_left.y).into()
+    }
+
+    pub fn bottom_left(&self) -> RoomXY {
+        (self.top_left.x, self.bottom_right.y).into()
     }
 
     pub fn is_valid(self) -> bool {
@@ -58,10 +60,7 @@ impl Rect {
     }
 
     pub fn contains(self, xy: RoomXY) -> bool {
-        self.top_left.x <= xy.x
-            && xy.x <= self.bottom_right.x
-            && self.top_left.y <= xy.y
-            && xy.y <= self.bottom_right.y
+        self.top_left.x <= xy.x && xy.x <= self.bottom_right.x && self.top_left.y <= xy.y && xy.y <= self.bottom_right.y
     }
 
     pub fn contains_i8xy(self, x: i8, y: i8) -> bool {
@@ -71,12 +70,22 @@ impl Rect {
             && y <= self.bottom_right.y.u8() as i8
     }
 
+    pub fn extended(self, xy: RoomXY) -> Rect {
+        Rect {
+            top_left: (min(self.top_left.x, xy.x), min(self.top_left.y, xy.y)).into(),
+            bottom_right: (max(self.bottom_right.x, xy.x), max(self.bottom_right.y, xy.y)).into(),
+        }
+    }
+
     pub fn boundary(self) -> impl Iterator<Item = RoomXY> {
         unsafe {
             let top = (1..self.width()).map(move |dx| (self.top_left.x.add_diff(dx as i8), self.top_left.y).into());
-            let right = (1..self.height()).map(move |dy| (self.bottom_right.x, self.top_left.y.add_diff(dy as i8)).into());
-            let bottom = (1..self.width()).map(move |dx| (self.bottom_right.x.add_diff(-(dx as i8)), self.bottom_right.y).into());
-            let left = (1..self.height()).map(move |dy| (self.top_left.x, self.bottom_right.y.add_diff(-(dy as i8))).into());
+            let right =
+                (1..self.height()).map(move |dy| (self.bottom_right.x, self.top_left.y.add_diff(dy as i8)).into());
+            let bottom = (1..self.width())
+                .map(move |dx| (self.bottom_right.x.add_diff(-(dx as i8)), self.bottom_right.y).into());
+            let left =
+                (1..self.height()).map(move |dy| (self.top_left.x, self.bottom_right.y.add_diff(-(dy as i8))).into());
 
             top.chain(right).chain(bottom).chain(left)
         }
@@ -87,9 +96,7 @@ impl Rect {
         let tly = self.top_left.y.u8();
         let w = self.width() as u16;
         let h = self.height() as u16;
-        (0..(w * h)).map(move |i| unsafe {
-            RoomXY::unchecked_new(tlx + ((i % w) as u8), tly + ((i / w) as u8))
-        })
+        (0..(w * h)).map(move |i| unsafe { RoomXY::unchecked_new(tlx + ((i % w) as u8), tly + ((i / w) as u8)) })
     }
 }
 
@@ -121,9 +128,22 @@ pub fn ball(center: RoomXY, r: u8) -> Rect {
             bottom_right: RoomXY::unchecked_new(
                 min(center.x.u8() + r, ROOM_SIZE - 1),
                 min(center.y.u8() + r, ROOM_SIZE - 1),
-            )
+            ),
         }
     }
+}
+
+/// Minimum rectangle that contains all given points.
+pub fn bounding_rect<T>(mut points: T) -> Rect
+where
+    T: Iterator<Item = RoomXY>,
+{
+    let first = points.next().unwrap();
+    let mut result = unsafe { Rect::unchecked_new(first, first) };
+    for xy in points {
+        result = result.extended(xy);
+    }
+    result
 }
 
 #[cfg(test)]
@@ -132,12 +152,7 @@ mod tests {
     use screeps::{RoomXY, ROOM_SIZE};
     #[test]
     fn test_iter() {
-        let rect = unsafe {
-            Rect::unchecked_new(
-                RoomXY::unchecked_new(0, 0),
-                RoomXY::unchecked_new(ROOM_SIZE - 1, 5),
-            )
-        };
+        let rect = unsafe { Rect::unchecked_new(RoomXY::unchecked_new(0, 0), RoomXY::unchecked_new(ROOM_SIZE - 1, 5)) };
         let mut number_of_points = 0;
         for xy in rect.iter() {
             number_of_points += 1

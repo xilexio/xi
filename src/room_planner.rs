@@ -7,13 +7,19 @@ use std::error::Error;
 use std::iter::once;
 use log::debug;
 use screeps::StructureType::{Rampart, Road};
+use screeps::Terrain::Wall;
 use thiserror::Error;
 use crate::algorithms::grid_min_cut::grid_min_cut;
+use crate::algorithms::interior_matrix::interior_matrix;
 use crate::algorithms::matrix_common::MatrixCommon;
-use crate::algorithms::shortest_path_by_matrix::shortest_path_by_matrix;
+use crate::algorithms::max_boundary_distance::max_boundary_distance;
+use crate::algorithms::shortest_path_by_matrix::{shortest_path_by_matrix, shortest_path_by_matrix_with_preference};
 use crate::algorithms::room_matrix::RoomMatrix;
 use crate::consts::{OBSTACLE_COST, UNREACHABLE_COST};
+use crate::geometry::rect::{bounding_rect, room_rect};
 use crate::room_planner::packed_tile_structures::PackedTileStructures;
+use crate::visualization::Visualization::Matrix;
+use crate::visualization::Visualizer;
 
 pub mod plan;
 pub mod packed_tile_structures;
@@ -67,18 +73,39 @@ pub fn plan_room(state: &RoomState) -> Result<Plan, Box<dyn Error>> {
 
     debug!("Triple point in {}.", min_dist_xy);
 
+    let exits = room_rect().boundary()
+        .filter_map(|xy| (state.terrain.get(xy) != Wall).then_some(xy))
+        .collect::<Vec<_>>();
+
+    let exits_dm = distance_matrix(exits.iter().copied(), walls.iter().copied()).map(|_, value| 255 - value);
+
     for dm in once(&controller_dm).chain(source_dms.iter()) {
-        for xy in shortest_path_by_matrix(dm, min_dist_xy, 1).into_iter() {
+        for xy in shortest_path_by_matrix_with_preference(dm, &exits_dm, min_dist_xy, 1).into_iter() {
             buildings_matrix.set(xy, Road.into());
             midpoint_roads_min_cut_matrix.set(xy, 0);
         }
     }
 
-    let midpoint_roads_min_cut = grid_min_cut(midpoint_roads_min_cut_matrix);
+    let midpoint_roads_min_cut = grid_min_cut(&midpoint_roads_min_cut_matrix);
 
     for &xy in midpoint_roads_min_cut.iter() {
         buildings_matrix.set(xy, Rampart.into());
     }
+
+    let interior = interior_matrix(&midpoint_roads_min_cut_matrix, midpoint_roads_min_cut.iter().copied());
+    let min_cut_rect = bounding_rect(midpoint_roads_min_cut.iter().copied());
+    let min_cut_max_distances = max_boundary_distance(min_cut_rect);
+
+    debug!("{}", interior.map(|_, value| [0, 255][value as usize]));
+
+    let visualizer = Visualizer {};
+    visualizer.visualize(state.name, &Matrix(min_cut_max_distances.map(|xy, value| {
+        if interior.get(xy) {
+            value
+        } else {
+            OBSTACLE_COST
+        }
+    })));
 
     // TODO find places that have minimal max distance to all ramparts
 

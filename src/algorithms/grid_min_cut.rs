@@ -16,7 +16,7 @@ use std::fmt::{Display, Formatter};
 ///
 /// The costs matrix represents costs for tiles, 0 for starting tiles or OBSTACLE_COST for
 /// obstacles.
-pub fn grid_min_cut(costs: RoomMatrix<u8>) -> Vec<RoomXY> {
+pub fn grid_min_cut(costs: &RoomMatrix<u8>) -> Vec<RoomXY> {
     let mut capacity: [u8; GRID_EDGE_ID_CAPACITY as usize] = [0; GRID_EDGE_ID_CAPACITY as usize];
     let mut initial_nodes: Vec<GridGraphNode> = Vec::new();
 
@@ -567,7 +567,7 @@ mod tests {
         unsafe {
             costs.set_xy(25, 25, 0);
         }
-        let min_cut = grid_min_cut(costs);
+        let min_cut = grid_min_cut(&costs);
         assert_eq!(min_cut.len(), 8);
     }
 
@@ -585,7 +585,7 @@ mod tests {
             costs.set_xy(26, 26, 0);
             costs.set_xy(25, 27, 0);
         }
-        let min_cut = grid_min_cut(costs);
+        let min_cut = grid_min_cut(&costs);
         assert_eq!(min_cut.len(), 18);
     }
 
@@ -610,7 +610,7 @@ mod tests {
             costs.set_xy(25, 27, OBSTACLE_COST);
             costs.set_xy(27, 27, OBSTACLE_COST);
         }
-        let min_cut = grid_min_cut(costs);
+        let min_cut = grid_min_cut(&costs);
         assert_eq!(min_cut.len(), 4);
     }
 
@@ -626,7 +626,7 @@ mod tests {
         for xy in Rect::new((0, 11).try_into()?, (10, ROOM_SIZE - 1).try_into()?)?.iter() {
             costs.set(xy, OBSTACLE_COST);
         }
-        let min_cut = grid_min_cut(costs);
+        let min_cut = grid_min_cut(&costs);
         assert_eq!(min_cut.len(), 61);
         Ok(())
     }
@@ -648,7 +648,7 @@ mod tests {
         for xy in Rect::new((10, 5).try_into()?, (40, 5).try_into()?)?.iter() {
             costs.set(xy, 0);
         }
-        let min_cut = grid_min_cut(costs);
+        let min_cut = grid_min_cut(&costs);
         assert_eq!(min_cut.len(), 46);
         for &xy in min_cut.iter() {
             assert_eq!(xy.y.u8(), 45);

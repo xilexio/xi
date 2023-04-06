@@ -27,11 +27,15 @@ where
 
     pub fn map<F, S>(&self, f: F) -> RoomMatrix<S>
     where
-        F: FnMut(T) -> S,
-        S: Clone + Copy + PartialEq,
+        F: Fn(RoomXY, T) -> S,
+        S: Clone + Copy + PartialEq + Default,
     {
+        let mut data = [S::default(); ROOM_AREA];
+        for (xy, value) in self.iter() {
+            data[xy.to_index()] = f(xy, value);
+        }
         RoomMatrix {
-            data: self.data.map(f),
+            data,
         }
     }
 }

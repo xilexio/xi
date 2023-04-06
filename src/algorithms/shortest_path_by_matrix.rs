@@ -37,7 +37,7 @@ pub fn shortest_path_by_matrix_with_preference<M, N, D, P>(distance_matrix: &M, 
     let mut current_dist = distance_matrix.get(current);
     let mut current_preference = preference_matrix.get(current);
     while current_dist > final_dist {
-        let mut found_next = false;
+        let prev_dist = current_dist;
         for near in current.around() {
             let near_dist = distance_matrix.get(near);
             let near_preference = preference_matrix.get(near);
@@ -45,11 +45,11 @@ pub fn shortest_path_by_matrix_with_preference<M, N, D, P>(distance_matrix: &M, 
                 current = near;
                 current_dist = near_dist;
                 current_preference = near_preference;
-                path.push(near);
-                found_next = true;
             }
         }
-        if !found_next {
+        if current_dist < prev_dist {
+            path.push(current);
+        } else {
             break;
         }
     }
