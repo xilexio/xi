@@ -150,15 +150,11 @@ mod tests {
 
     #[test]
     fn distance_matrix_starting_from_an_obstacle() {
-        let dm = distance_matrix(
-            once((25, 25).try_into().unwrap()),
-            [
-                (24, 25).try_into().unwrap(),
-                (25, 25).try_into().unwrap(),
-                (26, 25).try_into().unwrap(),
-            ]
-            .into_iter(),
-        );
+        let dm = distance_matrix(once((25, 25).try_into().unwrap()), [
+            (24, 25).try_into().unwrap(),
+            (25, 25).try_into().unwrap(),
+            (26, 25).try_into().unwrap(),
+        ].into_iter());
 
         assert_eq!(dm.get((25, 25).try_into().unwrap()), 0);
         assert_eq!(dm.get((24, 25).try_into().unwrap()), OBSTACLE_COST);

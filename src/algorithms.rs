@@ -5,3 +5,4 @@ pub mod matrix_common;
 pub mod grid_min_cut;
 pub mod chunk_graph;
 pub mod distance_transform;
+pub mod shortest_path_by_matrix;

@@ -25,7 +25,7 @@ pub struct RoomState {
     pub mineral: Option<MineralInfo>,
     // TODO ids of buildings for owned rooms, where extensions and spawns and links are split by location, e.g., fastFillerExtensions
     // TODO for unowned rooms, ids are not as important (if at all)
-    pub buildings: Buildings,
+    pub buildings: StructuresMap,
     pub plan: Option<Plan>,
 }
 
@@ -55,7 +55,7 @@ pub struct MineralInfo {
     pub mineral_type: ResourceType,
 }
 
-pub type Buildings = FxHashMap<StructureType, Vec<RoomXY>>;
+pub type StructuresMap = FxHashMap<StructureType, Vec<RoomXY>>;
 
 #[wasm_bindgen]
 pub fn set_room_blueprint(room_name: String, blueprint: JsValue) {

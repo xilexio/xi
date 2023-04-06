@@ -1,10 +1,10 @@
-use std::fmt::{Display, Formatter};
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix::RoomMatrix;
 use crate::consts::OBSTACLE_COST;
 use crate::geometry::room_xy::RoomXYUtils;
 use enum_iterator::IntoEnumIterator;
 use screeps::{RoomXY, ROOM_SIZE};
+use std::fmt::{Display, Formatter};
 
 /// Computes a minimum vertex separator (i.e., min-cut, but for vertices) of a movement graph in
 /// a room with source in start and sink in the exits and the tiles (vertices) that surround it.
@@ -20,13 +20,18 @@ pub fn grid_min_cut(costs: RoomMatrix<u8>) -> Vec<RoomXY> {
     let mut capacity: [u8; GRID_EDGE_ID_CAPACITY as usize] = [0; GRID_EDGE_ID_CAPACITY as usize];
     let mut initial_nodes: Vec<GridGraphNode> = Vec::new();
 
-    for y in 2..(ROOM_SIZE - 2) {
-        for x in 2..(ROOM_SIZE - 2) {
-            let tile_cost = unsafe { costs.get_xy(x, y) };
+    let result_rect = Rect::new((2, 2).try_into().unwrap(), (ROOM_SIZE - 3, ROOM_SIZE - 3).try_into().unwrap()).unwrap();
+
+    for y in 1..(ROOM_SIZE - 1) {
+        for x in 1..(ROOM_SIZE - 1) {
+            let xy = (x, y).try_into().unwrap();
+            let raw_tile_cost = costs.get(xy);
             // No edges in or around obstacles or the start are supposed to have any capacity.
             // Exits are supposed to have only their input nodes at the tile next to an exit tile
             // accessible (this is handled later).
-            if tile_cost != OBSTACLE_COST && tile_cost != 0 {
+            if raw_tile_cost != OBSTACLE_COST && raw_tile_cost != 0 {
+                // No internal edge saturation may happen outside of the result_rect.
+                let tile_cost = if result_rect.contains(xy) { raw_tile_cost } else { OBSTACLE_COST };
                 // Initial capacity of input's non-internal edges is 0.
                 // It only has an internal edge with the capacity equal to the tile cost.
                 let input_node = grid_node(x, y, Input);
@@ -60,7 +65,10 @@ pub fn grid_min_cut(costs: RoomMatrix<u8>) -> Vec<RoomXY> {
 
     #[cfg(feature = "debug_grid_min_cut")]
     {
-        eprintln!("Initial nodes: {:?}.", initial_nodes.iter().map(|node| format!("{}", *node)).collect::<Vec<String>>().join(", "));
+        eprintln!(
+            "Initial nodes: {:?}.",
+            initial_nodes.iter().map(|node| format!("{}", *node)).collect::<Vec<String>>().join(", ")
+        );
         eprintln!();
     }
 
@@ -81,11 +89,9 @@ pub fn grid_min_cut(costs: RoomMatrix<u8>) -> Vec<RoomXY> {
                 bfs_distances[node.usize()] = distance;
                 for_each_node_around(node, |near_node, edge| {
                     let near = grid_node_to_xy(near_node);
-                    if bfs_distances[near_node.usize()] == OBSTACLE_COST
-                        && capacity[edge.usize()] > 0
-                    {
+                    if bfs_distances[near_node.usize()] == OBSTACLE_COST && capacity[edge.usize()] > 0 {
                         bfs_distances[near_node.usize()] = distance + 1;
-                        if near.exit_distance() <= 1 {
+                        if near.exit_distance() == 0 {
                             exit_reached = true;
                         } else {
                             next_layer.push(near_node);
@@ -124,18 +130,19 @@ pub fn grid_min_cut(costs: RoomMatrix<u8>) -> Vec<RoomXY> {
         // We repeatedly perform DFS with backtracking and removing vertices when it cannot move
         // towards exits as a result of saturated capacities.
 
-        let mut dfs_stack: Vec<(GridGraphNode, GridGraphEdge)> = initial_nodes
-            .iter()
-            .map(|node| (*node, UNKNOWN_EDGE))
-            .collect();
+        let mut dfs_stack: Vec<(GridGraphNode, GridGraphEdge)> =
+            initial_nodes.iter().map(|node| (*node, UNKNOWN_EDGE)).collect();
         let mut path = Vec::new();
         while !dfs_stack.is_empty() {
             let node = dfs_stack[dfs_stack.len() - 1].0;
             path.push(dfs_stack[dfs_stack.len() - 1]);
             let xy = grid_node_to_xy(node);
-            if xy.exit_distance() <= 1 {
+            if xy.exit_distance() == 0 {
                 #[cfg(feature = "debug_grid_min_cut")]
-                eprintln!("Found exit with path {:?}.", path.iter().map(|(node, _)| format!("{}", *node)).collect::<Vec<String>>().join(", "));
+                eprintln!(
+                    "Found exit with path {:?}.",
+                    path.iter().map(|(node, _)| format!("{}", *node)).collect::<Vec<String>>().join(", ")
+                );
 
                 // We reached the exit - adding the flow through the edges we have followed.
                 let mut flow = 255;
@@ -170,14 +177,15 @@ pub fn grid_min_cut(costs: RoomMatrix<u8>) -> Vec<RoomXY> {
                 {
                     eprintln!("Flow was: {}.", flow);
                     eprintln!("Still valid path length: {}.", still_valid_path_length);
-                    eprintln!("Path after backtracking: {:?}.", path.iter().map(|(node, _)| format!("{}", *node)).collect::<Vec<String>>().join(", "));
+                    eprintln!(
+                        "Path after backtracking: {:?}.",
+                        path.iter().map(|(node, _)| format!("{}", *node)).collect::<Vec<String>>().join(", ")
+                    );
                 }
             } else {
                 let mut dead_end = true;
                 for_each_node_around(node, |near_node, edge| {
-                    if capacity[edge.usize()] > 0
-                        && bfs_distances[near_node.usize()] == (path.len() as u8)
-                    {
+                    if capacity[edge.usize()] > 0 && bfs_distances[near_node.usize()] == (path.len() as u8) {
                         dead_end = false;
                         dfs_stack.push((near_node, edge));
 
@@ -187,9 +195,18 @@ pub fn grid_min_cut(costs: RoomMatrix<u8>) -> Vec<RoomXY> {
                 if dead_end {
                     #[cfg(feature = "debug_grid_min_cut")]
                     {
-                        eprintln!("Dead end at {}.", path.iter().map(|(node, _)| format!("{}", *node)).collect::<Vec<String>>().join(", "));
+                        eprintln!(
+                            "Dead end at {}.",
+                            path.iter().map(|(node, _)| format!("{}", *node)).collect::<Vec<String>>().join(", ")
+                        );
                         for_each_node_around(node, |near_node, edge| {
-                            eprintln!("  Near node {}: cap {}, bfs dist {}, path len {}", near_node, capacity[edge.usize()], bfs_distances[near_node.usize()], path.len() as u8);
+                            eprintln!(
+                                "  Near node {}: cap {}, bfs dist {}, path len {}",
+                                near_node,
+                                capacity[edge.usize()],
+                                bfs_distances[near_node.usize()],
+                                path.len() as u8
+                            );
                         });
                     }
 
@@ -304,7 +321,11 @@ pub fn grid_min_cut(costs: RoomMatrix<u8>) -> Vec<RoomXY> {
                 } else {
                     let input_node = grid_node(x, y, Input);
                     let output_node = grid_node(x, y, Output);
-                    eprint!("{}{} ", ["F", "T"][bfs_visited[input_node.usize()] as usize], ["F", "T"][bfs_visited[output_node.usize()] as usize]);
+                    eprint!(
+                        "{}{} ",
+                        ["F", "T"][bfs_visited[input_node.usize()] as usize],
+                        ["F", "T"][bfs_visited[output_node.usize()] as usize]
+                    );
                 }
             }
             eprintln!();
@@ -408,24 +429,20 @@ fn grid_node_to_xy(node: GridGraphNode) -> RoomXY {
     unsafe { RoomXY::unchecked_new(((node.0 >> 1) & ((1 << 6) - 1)) as u8, (node.0 >> 7) as u8) }
 }
 
-const GRID_NODE_ID_CAPACITY: u16 =
-    1 + (1 | (((ROOM_SIZE - 1) as u16) << 1) | (((ROOM_SIZE - 1) as u16) << 7));
+const GRID_NODE_ID_CAPACITY: u16 = 1 + (1 | (((ROOM_SIZE - 1) as u16) << 1) | (((ROOM_SIZE - 1) as u16) << 7));
 
 /// Invokes function f on each edge (normal and backflow) coming from vertex with given `id`.
 /// Must not be called on an exit tile or else an integer overflow is possible.
 #[inline]
 fn for_each_node_around<F, R>(node: GridGraphNode, mut f: F)
-    where
-        F: FnMut(GridGraphNode, GridGraphEdge) -> R,
+where
+    F: FnMut(GridGraphNode, GridGraphEdge) -> R,
 {
     let mut edge = node.0;
 
     for direction in GridGraphDirection::into_enum_iter() {
         let (x, y) = direction_to_offset(direction);
-        f(
-            GridGraphNode((((node.0 ^ 1) as i16) + x * (1 << 1) + y * (1 << 7)) as u16),
-            GridGraphEdge(edge),
-        );
+        f(GridGraphNode((((node.0 ^ 1) as i16) + x * (1 << 1) + y * (1 << 7)) as u16), GridGraphEdge(edge));
         edge += GRID_NODE_ID_CAPACITY;
     }
 }
@@ -449,6 +466,7 @@ enum GridGraphDirection {
     Left = 7,
     TopLeft = 8,
 }
+use crate::geometry::rect::Rect;
 use GridGraphDirection::*;
 
 impl From<u8> for GridGraphDirection {
@@ -496,14 +514,18 @@ fn direction_to_offset(direction: GridGraphDirection) -> (i16, i16) {
 mod tests {
     use crate::algorithms::grid_min_cut::GridGraphDirection::{BottomRight, Internal};
     use crate::algorithms::grid_min_cut::TileVertexKind::{Input, Output};
-    use crate::algorithms::grid_min_cut::{edge_direction, edge_node, edge_target_node, for_each_node_around, grid_edge, grid_min_cut, grid_node, grid_node_to_xy, reverse_edge, GridGraphDirection, is_internal_edge};
+    use crate::algorithms::grid_min_cut::{
+        edge_direction, edge_node, edge_target_node, for_each_node_around, grid_edge, grid_min_cut, grid_node,
+        grid_node_to_xy, is_internal_edge, reverse_edge, GridGraphDirection,
+    };
     use crate::algorithms::matrix_common::MatrixCommon;
     use crate::algorithms::room_matrix::RoomMatrix;
-    use crate::geometry::room_xy::RoomXYUtils;
-    use enum_iterator::IntoEnumIterator;
-    use screeps::{ROOM_SIZE, RoomXY};
     use crate::consts::OBSTACLE_COST;
     use crate::geometry::rect::Rect;
+    use crate::geometry::room_xy::RoomXYUtils;
+    use enum_iterator::IntoEnumIterator;
+    use screeps::{RoomXY, ROOM_SIZE};
+    use std::error::Error;
 
     #[test]
     fn test_helper_functions() {
@@ -513,25 +535,16 @@ mod tests {
         let input_to_output_edge = grid_edge(input_node, Internal);
         assert_eq!(edge_node(input_to_output_edge), input_node);
         assert_eq!(edge_direction(input_to_output_edge), Internal);
-        assert_eq!(
-            reverse_edge(reverse_edge(input_to_output_edge)),
-            input_to_output_edge
-        );
+        assert_eq!(reverse_edge(reverse_edge(input_to_output_edge)), input_to_output_edge);
 
         let output_node = grid_node(12, 12, Output);
 
         for direction in GridGraphDirection::into_enum_iter() {
             let output_to_something_edge = grid_edge(output_node, direction);
-            assert_eq!(
-                reverse_edge(reverse_edge(output_to_something_edge)),
-                output_to_something_edge
-            );
+            assert_eq!(reverse_edge(reverse_edge(output_to_something_edge)), output_to_something_edge);
         }
 
-        let target_node_xy = grid_node_to_xy(edge_node(reverse_edge(grid_edge(
-            output_node,
-            BottomRight,
-        ))));
+        let target_node_xy = grid_node_to_xy(edge_node(reverse_edge(grid_edge(output_node, BottomRight))));
         assert_eq!(target_node_xy, RoomXY::try_from((13, 13)).unwrap());
 
         for_each_node_around(input_node, |near_node, edge| {
@@ -602,23 +615,44 @@ mod tests {
     }
 
     #[test]
-    fn test_grid_min_cut_on_room_with_more_obstacles() {
+    fn test_grid_min_cut_on_room_with_more_obstacles() -> Result<(), Box<dyn Error>> {
         let mut costs = RoomMatrix::new(1);
-        unsafe {
-            for xy in Rect::unchecked_new(RoomXY::unchecked_new(15, 15), RoomXY::unchecked_new(40, 40)).iter() {
-                costs.set(xy, 0);
-            }
-            for xy in Rect::unchecked_new(RoomXY::unchecked_new(0, 0), RoomXY::unchecked_new(ROOM_SIZE - 1, 10)).iter() {
-                costs.set(xy, OBSTACLE_COST);
-            }
-            for xy in Rect::unchecked_new(RoomXY::unchecked_new(0, 11), RoomXY::unchecked_new(10, ROOM_SIZE - 1)).iter() {
-                costs.set(xy, OBSTACLE_COST);
-            }
+        for xy in Rect::new((15, 15).try_into()?, (40, 40).try_into()?)?.iter() {
+            costs.set(xy, 0);
+        }
+        for xy in Rect::new((0, 0).try_into()?, (ROOM_SIZE - 1, 10).try_into()?)?.iter() {
+            costs.set(xy, OBSTACLE_COST);
+        }
+        for xy in Rect::new((0, 11).try_into()?, (10, ROOM_SIZE - 1).try_into()?)?.iter() {
+            costs.set(xy, OBSTACLE_COST);
         }
         let min_cut = grid_min_cut(costs);
-        min_cut.iter().for_each(|xy| {
-            println!("{}, ", *xy);
-        });
         assert_eq!(min_cut.len(), 61);
+        Ok(())
+    }
+
+    #[test]
+    fn test_grid_min_cut_on_room_with_three_thin_walls() -> Result<(), Box<dyn Error>> {
+        let mut costs = RoomMatrix::new(1);
+        for xy in Rect::new((0, 0).try_into()?, (ROOM_SIZE - 1, 0).try_into()?)?.iter() {
+            costs.set(xy, OBSTACLE_COST);
+        }
+        for xy in Rect::new((0, 1).try_into()?, (0, ROOM_SIZE - 1).try_into()?)?.iter() {
+            costs.set(xy, OBSTACLE_COST);
+        }
+        for xy in Rect::new((ROOM_SIZE - 1, 1).try_into()?, (ROOM_SIZE - 1, ROOM_SIZE - 1).try_into()?)?.iter() {
+            costs.set(xy, OBSTACLE_COST);
+        }
+        costs.set((1, 45).try_into()?, OBSTACLE_COST);
+        costs.set((ROOM_SIZE - 2, 45).try_into()?, OBSTACLE_COST);
+        for xy in Rect::new((10, 5).try_into()?, (40, 5).try_into()?)?.iter() {
+            costs.set(xy, 0);
+        }
+        let min_cut = grid_min_cut(costs);
+        assert_eq!(min_cut.len(), 46);
+        for &xy in min_cut.iter() {
+            assert_eq!(xy.y.u8(), 45);
+        }
+        Ok(())
     }
 }

@@ -57,14 +57,14 @@ impl Rect {
         (self.width() as usize) * (self.height() as usize)
     }
 
-    pub fn is_inside(self, xy: RoomXY) -> bool {
+    pub fn contains(self, xy: RoomXY) -> bool {
         self.top_left.x <= xy.x
             && xy.x <= self.bottom_right.x
             && self.top_left.y <= xy.y
             && xy.y <= self.bottom_right.y
     }
 
-    pub fn is_i8xy_inside(self, x: i8, y: i8) -> bool {
+    pub fn contains_i8xy(self, x: i8, y: i8) -> bool {
         self.top_left.x.u8() as i8 <= x
             && x <= self.bottom_right.x.u8() as i8
             && self.top_left.y.u8() as i8 <= y

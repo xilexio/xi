@@ -1,5 +1,5 @@
-use crate::room_state::Buildings;
+use crate::room_state::StructuresMap;
 
 pub struct Plan {
-    pub buildings: Buildings,
+    pub buildings: StructuresMap,
 }

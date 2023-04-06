@@ -6,12 +6,14 @@ use std::f32::consts::PI;
 use petgraph::prelude::EdgeRef;
 use petgraph::stable_graph::StableGraph;
 use petgraph::Undirected;
+use crate::room_state::StructuresMap;
 
 pub struct Visualizer {}
 
 pub enum Visualization {
     Matrix(RoomMatrix<u8>),
     Graph(StableGraph<RoomXY, u8, Undirected, u16>),
+    Structures(StructuresMap),
 }
 use crate::visualization::Visualization::*;
 
@@ -50,7 +52,7 @@ impl RoomVisualExtExt for RoomVisualExt {
 
 impl Visualizer {
     pub fn visualize(&self, room_name: RoomName, visualization: &Visualization) {
-        let vis = RoomVisualExt::new(room_name);
+        let mut vis = RoomVisualExt::new(room_name);
         match visualization {
             Matrix(matrix) => {
                 let mut min_value = 255;
@@ -105,6 +107,13 @@ impl Visualizer {
                     }
                 }
             },
+            Structures(structures_map) => {
+                for (&structure_type, xys) in structures_map.iter() {
+                    for xy in xys.iter().copied() {
+                        vis.structure_roomxy(xy, structure_type, 0.75);
+                    }
+                }
+            }
         }
     }
 }

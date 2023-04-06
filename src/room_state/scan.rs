@@ -33,6 +33,7 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
             }
         }
     };
+    state.sources = Vec::new();
     for source in room.find(find::SOURCES, None) {
         let id: ObjectId<Source> = source.id();
         let pos: Position = source.pos().into();

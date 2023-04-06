@@ -49,4 +49,18 @@ where
             self.set(xy, f(xy, self.get(xy)));
         }
     }
+
+    fn min(&self) -> (RoomXY, T)
+    where
+        T: Ord,
+    {
+        let mut it = self.iter();
+        let mut result = it.next().unwrap();
+        it.for_each(|v| {
+            if v.1 < result.1 {
+                result = v;
+            }
+        });
+        return result;
+    }
 }

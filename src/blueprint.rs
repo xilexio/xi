@@ -1,4 +1,4 @@
-use crate::room_state::{Buildings, MineralInfo, SourceInfo};
+use crate::room_state::{StructuresMap, MineralInfo, SourceInfo};
 use screeps::RoomXY;
 use rustc_hash::FxHashMap;
 
@@ -10,7 +10,7 @@ pub struct Blueprint {
     pub controller: Option<RoomXY>,
     pub sources: Vec<SourceInfo>,
     pub mineral: Option<MineralInfo>,
-    pub buildings: Buildings,
+    pub buildings: StructuresMap,
 }
 
 impl Blueprint {

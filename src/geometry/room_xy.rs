@@ -63,7 +63,7 @@ impl RoomXYUtils for RoomXY {
             let (dx, dy) = OFFSET_BY_DIRECTION[d as usize];
             let x = self.x.u8() as i8 + dx;
             let y = self.y.u8() as i8 + dy;
-            if rect.is_i8xy_inside(x, y) {
+            if rect.contains_i8xy(x, y) {
                 Some((x as u8, y as u8).try_into().unwrap())
             } else {
                 None

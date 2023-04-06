@@ -10,10 +10,11 @@ use crate::visualization::{Visualization, Visualizer};
 use js_sys::Math::random;
 use log::debug;
 use profiler::measure_time;
-use screeps::{game, RoomXY, ROOM_SIZE};
-use wasm_bindgen::prelude::*;
+use screeps::{game, ROOM_SIZE};
+use wasm_bindgen::prelude::{wasm_bindgen, UnwrapThrowExt};
 use crate::algorithms::distance_transform::distance_transform;
 use tap::prelude::*;
+use crate::room_planner::plan_room;
 
 mod algorithms;
 mod blueprint;
@@ -56,16 +57,15 @@ pub fn game_loop() {
         let room_name = spawn.room().unwrap_throw().name();
         scan(room_name).unwrap_throw();
         let visualizer = Visualizer {};
-        let cg = measure_time("chunk_graph", || {
+        let plan = measure_time("plan_room", || {
             with_room_state(room_name, |state| {
-                chunk_graph(&state.terrain.to_obstacle_matrix(), 5)
+                plan_room(state)
             }).unwrap()
-        });
+        }).unwrap_throw();
         visualizer.visualize(
             room_name,
-            &Visualization::Matrix(cg.xy_chunks.map(|ix| ix.index() as u8)),
+            &Visualization::Structures(plan.buildings)
         );
-        visualizer.visualize(room_name, &Visualization::Graph(cg.graph));
     }
 
     // trace!("test");
