@@ -268,10 +268,11 @@ impl RoomPlanner {
                         lab_roads[0]
                     };
                     connect_with_roads(
-                        walls.iter().copied(),
+                        &self.state.terrain,
                         &mut structures_matrix,
                         once(closest_lab_road),
                         once(storage_xy),
+                        storage_xy,
                     )
                     .ok()?;
 
@@ -280,14 +281,21 @@ impl RoomPlanner {
                     // priority.
                     let spawns = core.find_xy(Spawn.into()).collect::<Vec<_>>();
                     connect_with_roads(
-                        walls.iter().copied(),
+                        &self.state.terrain,
                         &mut structures_matrix,
                         spawns.iter().copied(),
                         [controller.xy, mineral.xy]
                             .into_iter()
                             .chain(sources.iter().copied().map(|source_info| source_info.xy)),
+                        storage_xy,
                     )
                     .ok()?;
+
+                    self.place_extensions(
+                        walls.iter().copied(),
+                        storage_xy,
+                        &mut structures_matrix,
+                    ).ok()?;
 
                     Some(structures_matrix)
                 })
@@ -377,180 +385,6 @@ impl RoomPlanner {
                     && dt_l1.get(xy.add_diff((1, 0))) >= 2
                     && dt_l1.get(xy.add_diff((1, 1))) >= 2
             }
-    }
-
-    // TODO move this info to main function docs
-    // TODO just rotate the core accordingly
-    fn place_core(
-        &mut self,
-        dt: &RoomMatrix<u8>,
-        walls: &Vec<RoomXY>,
-        resource_centers: &Vec<(RoomXY, u8)>,
-        resource_center_dist_sum_cutoff: u8,
-    ) -> Result<RoomMatrixSlice<PackedTileStructures>, Box<dyn Error>> {
-        // let preliminary_rampart_rect = bounding_rect(preliminary_ramparts.iter().copied());
-        // let preliminary_rampart_max_distances = max_boundary_distance(preliminary_rampart_rect);
-        //
-        // let interior = interior_matrix(walls.iter().copied(), preliminary_ramparts.iter().copied());
-        //
-        // core_param_candidates.sort_by_key(|&(_, _, dist)| dist);
-        // if core_param_candidates.is_empty() {
-        //     Err(StructurePlacementFailure)?;
-        // }
-
-        // let mut data = RoomMatrix::new(255);
-        // core_param_candidates.iter().for_each(|(xy, dir, dist)| {
-        //     if dir.contains(&0) {
-        //         data.set(*xy, *dist);
-        //     }
-        // });
-        // visualize(self.state.name, Matrix(Box::new(data)));
-
-        // let candidate_ix = (game::time() as usize / 2) % min(core_param_candidates.len(), 100);
-        // let core_params = core_param_candidates[candidate_ix].clone();
-        // debug!("core params: {:?}", core_params);
-        // let core_center_offset = core_params.0.sub((2, 2).try_into().unwrap());
-        let mut core = core_stamp();
-
-        // let rotation_ix = (game::time() as usize / 2) % core_params.1.len();
-        // core.rotate(core_params.1[rotation_ix]).unwrap();
-        // core.translate(core_center_offset).unwrap();
-        Ok(core)
-    }
-
-    // fn place_fast_filler(
-    //     &mut self,
-    //     dt: &RoomMatrix<u8>,
-    //     core: &RoomMatrixSlice<PackedTileStructures>,
-    // ) -> Result<RoomMatrixSlice<PackedTileStructures>, Box<dyn Error>> {
-    //     let core_center = core.rect.center();
-    //
-    //     let mut fast_filler_param_candidates = ball(core_center, self.max_fast_filler_distance)
-    //         .iter()
-    //         .filter_map(|xy| {
-    //             if xy.dist(core_center) >= 5 && xy.exit_distance() >= 6 && dt.get(xy) >= 3 {
-    //                 // Fast filler needs partial roads on 3 sides.
-    //                 // . R R R R R .
-    //                 // R E E E E E R
-    //                 // R E . E . E R
-    //                 // R S E . E S R
-    //                 // . E . E . E .
-    //                 // . E E E E E .
-    //                 let place_for_long_roads = unsafe {
-    //                     [
-    //                         dt.get(xy.add_diff((0, -1))) >= 3,
-    //                         dt.get(xy.add_diff((1, 0))) >= 3,
-    //                         dt.get(xy.add_diff((0, 1))) >= 3,
-    //                         dt.get(xy.add_diff((-1, 0))) >= 3,
-    //                     ]
-    //                 };
-    //                 let place_for_long_roads_count =
-    //                     place_for_long_roads
-    //                         .iter()
-    //                         .fold(0u8, |acc, &b| if b { acc + 1 } else { acc });
-    //                 if place_for_long_roads_count == 4 {
-    //                     Some((xy, vec![0u8, 1u8, 2u8, 3u8]))
-    //                 } else {
-    //                     let place_for_roads = unsafe {
-    //                         [
-    //                             place_for_long_roads[0]
-    //                                 && dt.get(xy.add_diff((-2, -1))) >= 3
-    //                                 && dt.get(xy.add_diff((2, -1))) >= 3,
-    //                             place_for_long_roads[1]
-    //                                 && dt.get(xy.add_diff((1, -2))) >= 3
-    //                                 && dt.get(xy.add_diff((1, 2))) >= 3,
-    //                             place_for_long_roads[2]
-    //                                 && dt.get(xy.add_diff((-2, 1))) >= 3
-    //                                 && dt.get(xy.add_diff((2, 1))) >= 3,
-    //                             place_for_long_roads[3]
-    //                                 && dt.get(xy.add_diff((-1, -2))) >= 3
-    //                                 && dt.get(xy.add_diff((-1, 2))) >= 3,
-    //                         ]
-    //                     };
-    //                     let rotations = [0u8, 1u8, 2u8, 3u8]
-    //                         .into_iter()
-    //                         .filter(|&i| place_for_roads[i as usize])
-    //                         .collect::<Vec<_>>();
-    //                     if !rotations.is_empty() {
-    //                         Some((xy, rotations))
-    //                     } else {
-    //                         None
-    //                     }
-    //                 }
-    //             } else {
-    //                 None
-    //             }
-    //         })
-    //         .collect::<Vec<_>>();
-    //     fast_filler_param_candidates.sort_by_key(|&(xy, _)| xy.dist(core_center));
-    //     if fast_filler_param_candidates.is_empty() {
-    //         Err(StructurePlacementFailure)?;
-    //     }
-    //
-    //     // TODO fast filler may be glued to the core on its side without roads
-    //
-    //     let candidate_ix = (game::time() as usize / 2) % min(fast_filler_param_candidates.len(), 20);
-    //     let fast_filler_params = fast_filler_param_candidates[candidate_ix].clone();
-    //     debug!("fast filler params: {:?}", fast_filler_params);
-    //     let fast_filler_center_offset = fast_filler_params.0.sub((2, 2).try_into().unwrap());
-    //     let mut fast_filler = fast_filler_stamp();
-    //
-    //     let rotation_ix = (game::time() as usize / 2) % fast_filler_params.1.len();
-    //     fast_filler.rotate(fast_filler_params.1[rotation_ix]).unwrap();
-    //     fast_filler.translate(fast_filler_center_offset).unwrap();
-    //     Ok(fast_filler)
-    // }
-
-    fn place_labs(
-        &mut self,
-        dt_l1: &RoomMatrix<u8>,
-        core: &RoomMatrixSlice<PackedTileStructures>,
-    ) -> Result<RoomMatrixSlice<PackedTileStructures>, Box<dyn Error>> {
-        let core_center = core.rect.center();
-
-        let mut labs_param_candidates = ball(core_center, MAX_LABS_DIST)
-            .iter()
-            .filter_map(|xy| {
-                if xy.dist(core_center) >= 4 && xy.exit_distance() >= 6 && dt_l1.get(xy) >= 2 {
-                    // Labs need a plus, but have no center due to even width.
-                    // . L L .
-                    // L R L L
-                    // L L R L
-                    // . L L .
-                    let can_build = unsafe {
-                        dt_l1.get(xy.add_diff((0, 1))) >= 2
-                            && dt_l1.get(xy.add_diff((1, 0))) >= 2
-                            && dt_l1.get(xy.add_diff((1, 1))) >= 2
-                    };
-                    can_build.then_some(xy)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        labs_param_candidates.sort_by_key(|&xy| unsafe {
-            min(
-                min(xy.dist(core_center), xy.add_diff((0, 1)).dist(core_center)),
-                min(
-                    xy.add_diff((1, 0)).dist(core_center),
-                    xy.add_diff((1, 1)).dist(core_center),
-                ),
-            )
-        });
-        if labs_param_candidates.is_empty() {
-            Err(StructurePlacementFailure)?;
-        }
-
-        let candidate_ix = (game::time() as usize / 2) % min(labs_param_candidates.len(), 20);
-        let labs_params = labs_param_candidates[candidate_ix].clone();
-        debug!("labs params: {:?}", labs_params);
-        let labs_top_left_center_offset = labs_params.sub((1, 1).try_into().unwrap());
-        let mut labs = labs_stamp();
-
-        let rotations = ((game::time() as usize / 2) % 2) as u8;
-        labs.rotate(rotations).unwrap();
-        labs.translate(labs_top_left_center_offset).unwrap();
-        Ok(labs)
     }
 
     fn place_extensions(

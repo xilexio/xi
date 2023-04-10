@@ -4,6 +4,7 @@ use crate::geometry::rect::room_rect;
 use crate::geometry::room_xy::RoomXYUtils;
 use screeps::{RoomXY, ROOM_SIZE};
 use std::fmt::{Display, Formatter, LowerHex};
+use std::mem::size_of;
 
 /// A `ROOM_SIZE` x `ROOM_SIZE` matrix backed by an array with size known at compile time.
 #[derive(Clone)]
@@ -34,9 +35,7 @@ where
         for (xy, value) in self.iter() {
             data[xy.to_index()] = f(xy, value);
         }
-        RoomMatrix {
-            data,
-        }
+        RoomMatrix { data }
     }
 }
 
@@ -54,27 +53,22 @@ where
         self.data[xy.to_index()] = value;
     }
 
-    fn iter_xy<'a, 'b>(&'a self) -> impl Iterator<Item=RoomXY> + 'b {
-        (0..ROOM_AREA).map(|i| {
-            unsafe {
-                RoomXY::unchecked_new(
-                    (i % (ROOM_SIZE as usize)) as u8,
-                    (i / (ROOM_SIZE as usize)) as u8,
-                )
-            }
+    fn iter_xy<'a, 'b>(&'a self) -> impl Iterator<Item = RoomXY> + 'b {
+        (0..ROOM_AREA).map(|i| unsafe {
+            RoomXY::unchecked_new((i % (ROOM_SIZE as usize)) as u8, (i / (ROOM_SIZE as usize)) as u8)
         })
     }
 }
 
 impl<T> Display for RoomMatrix<T>
 where
-    T: Clone + Copy + PartialEq + LowerHex,
+    T: Clone + Copy + PartialEq + LowerHex + Sized + Display,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for y in 0..ROOM_SIZE {
             for x in 0..ROOM_SIZE {
                 unsafe {
-                    write!(f, "{:02x}", self.get(RoomXY::unchecked_new(x, y)))?;
+                    write!(f, "{:0>size$x}", self.get(RoomXY::unchecked_new(x, y)), size = 2 * size_of::<T>())?;
                     if x != ROOM_SIZE - 1 {
                         write!(f, " ")?;
                     }

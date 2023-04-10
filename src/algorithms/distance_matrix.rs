@@ -6,7 +6,6 @@ use crate::geometry::rect::Rect;
 use crate::geometry::room_xy::RoomXYUtils;
 use screeps::RoomXY;
 use std::cmp::min;
-use log::debug;
 
 /// Computes a matrix with distances from all tiles in the room to given target. OBSTACLE_COST where there are
 /// obstacles, UNREACHABLE_COST when the target is unreachable and the distance is clamped at UNREACHABLE_COST.
@@ -187,8 +186,6 @@ where
         layer = next_layer;
         distance += 1;
     }
-
-    debug!("distances\n{}", result);
 
     None
 }

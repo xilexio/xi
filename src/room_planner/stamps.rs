@@ -49,7 +49,7 @@ pub fn core_stamp() -> RoomMatrixSlice<PackedTileStructures> {
     result.set((0, 5).try_into().unwrap(), Road.into());
     result.set((1, 5).try_into().unwrap(), Extension.into());
     result.set((2, 5).try_into().unwrap(), Extension.into());
-    result.set((3, 5).try_into().unwrap(), Extension.into());
+    result.set((3, 5).try_into().unwrap(), Spawn.into());
     result.set((4, 5).try_into().unwrap(), Extension.into());
     result.set((5, 5).try_into().unwrap(), Extension.into());
     result.set((6, 5).try_into().unwrap(), Road.into());

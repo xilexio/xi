@@ -10,3 +10,4 @@ pub mod shortest_path_by_matrix;
 pub mod interior_matrix;
 pub mod max_boundary_distance;
 pub mod binary_search;
+pub mod weighted_distance_matrix;
