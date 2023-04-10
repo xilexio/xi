@@ -10,7 +10,7 @@ pub struct Blueprint {
     pub controller: Option<RoomXY>,
     pub sources: Vec<SourceInfo>,
     pub mineral: Option<MineralInfo>,
-    pub buildings: StructuresMap,
+    pub structures: StructuresMap,
 }
 
 impl Blueprint {
@@ -23,7 +23,7 @@ impl Blueprint {
             controller: None,
             sources: Vec::new(),
             mineral: None,
-            buildings: FxHashMap::default(),
+            structures: FxHashMap::default(),
         }
     }
 }

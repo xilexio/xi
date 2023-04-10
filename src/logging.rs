@@ -1,5 +1,7 @@
+#[cfg(not(test))]
 use js_sys::JsString;
 use screeps::game;
+#[cfg(not(test))]
 use web_sys::console;
 
 pub use log::LevelFilter::*;
@@ -53,10 +55,7 @@ pub fn init_logging(verbosity: log::LevelFilter) {
                     message
                 ))
             } else {
-                out.finish(format_args!(
-                    "{}",
-                    message
-                ))
+                out.finish(format_args!("{}", message))
             }
         })
         .chain(Box::new(JsLog) as Box<dyn log::Log>)

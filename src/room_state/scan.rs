@@ -53,6 +53,6 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
         });
     };
     state.terrain = game::map::get_room_terrain(room_name).into();
-    // TODO buildings
+    // TODO structures
     Ok(())
 }

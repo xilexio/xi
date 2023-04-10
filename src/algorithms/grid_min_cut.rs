@@ -5,6 +5,8 @@ use crate::geometry::room_xy::RoomXYUtils;
 use enum_iterator::IntoEnumIterator;
 use screeps::{RoomXY, ROOM_SIZE};
 use std::fmt::{Display, Formatter};
+use crate::algorithms::grid_min_cut::GridGraphDirection::*;
+use crate::algorithms::grid_min_cut::TileVertexKind::*;
 
 /// Computes a minimum vertex separator (i.e., min-cut, but for vertices) of a movement graph in
 /// a room with source in start and sink in the exits and the tiles (vertices) that surround it.
@@ -20,18 +22,21 @@ pub fn grid_min_cut(costs: &RoomMatrix<u8>) -> Vec<RoomXY> {
     let mut capacity: [u8; GRID_EDGE_ID_CAPACITY as usize] = [0; GRID_EDGE_ID_CAPACITY as usize];
     let mut initial_nodes: Vec<GridGraphNode> = Vec::new();
 
-    let result_rect = Rect::new((2, 2).try_into().unwrap(), (ROOM_SIZE - 3, ROOM_SIZE - 3).try_into().unwrap()).unwrap();
-
     for y in 1..(ROOM_SIZE - 1) {
         for x in 1..(ROOM_SIZE - 1) {
             let xy = (x, y).try_into().unwrap();
             let raw_tile_cost = costs.get(xy);
             // No edges in or around obstacles or the start are supposed to have any capacity.
             // Exits are supposed to have only their input nodes at the tile next to an exit tile
-            // accessible (this is handled later).
+            // accessible (this is handled later). Note that "next to an exit" refers to travel distance not just
+            // distance from the border.
             if raw_tile_cost != OBSTACLE_COST && raw_tile_cost != 0 {
                 // No internal edge saturation may happen outside of the result_rect.
-                let tile_cost = if result_rect.contains(xy) { raw_tile_cost } else { OBSTACLE_COST };
+                let tile_cost = if xy.exit_distance() < 2 && xy.around().any(|near| near.exit_distance() == 0 && costs.get(near) != OBSTACLE_COST) {
+                    OBSTACLE_COST
+                } else {
+                    raw_tile_cost
+                };
                 // Initial capacity of input's non-internal edges is 0.
                 // It only has an internal edge with the capacity equal to the tile cost.
                 let input_node = grid_node(x, y, Input);
@@ -280,8 +285,8 @@ pub fn grid_min_cut(costs: &RoomMatrix<u8>) -> Vec<RoomXY> {
     }
 
     let mut result = Vec::new();
-    for y in 2..(ROOM_SIZE - 2) {
-        for x in 2..(ROOM_SIZE - 2) {
+    for y in 1..(ROOM_SIZE - 1) {
+        for x in 1..(ROOM_SIZE - 1) {
             let input_node = grid_node(x, y, Input);
             let output_node = grid_node(x, y, Output);
             if bfs_visited[input_node.usize()] && !bfs_visited[output_node.usize()] {
@@ -451,7 +456,6 @@ enum TileVertexKind {
     Input = 0,
     Output = 1,
 }
-use TileVertexKind::*;
 
 #[derive(Debug, IntoEnumIterator, Clone, Copy, Eq, PartialEq)]
 #[repr(u8)]
@@ -466,8 +470,6 @@ enum GridGraphDirection {
     Left = 7,
     TopLeft = 8,
 }
-use crate::geometry::rect::Rect;
-use GridGraphDirection::*;
 
 impl From<u8> for GridGraphDirection {
     fn from(value: u8) -> Self {
@@ -645,7 +647,7 @@ mod tests {
         }
         costs.set((1, 45).try_into()?, OBSTACLE_COST);
         costs.set((ROOM_SIZE - 2, 45).try_into()?, OBSTACLE_COST);
-        for xy in Rect::new((10, 5).try_into()?, (40, 5).try_into()?)?.iter() {
+        for xy in Rect::new((10, 10).try_into()?, (40, 10).try_into()?)?.iter() {
             costs.set(xy, 0);
         }
         let min_cut = grid_min_cut(&costs);

@@ -1,5 +1,6 @@
 use crate::room_state::StructuresMap;
 
+#[derive(Clone, Debug)]
 pub struct Plan {
-    pub buildings: StructuresMap,
+    pub structures: StructuresMap,
 }

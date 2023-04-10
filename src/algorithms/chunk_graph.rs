@@ -1,4 +1,4 @@
-use crate::algorithms::distance_matrix::{distance_matrix, restricted_distance_matrix};
+use crate::algorithms::distance_matrix::{distance_matrix, rect_restricted_distance_matrix};
 use crate::algorithms::distance_transform::distance_transform;
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix::RoomMatrix;
@@ -38,7 +38,7 @@ pub fn chunk_graph(terrain: &RoomMatrix<u8>, chunk_radius: u8) -> ChunkGraph {
         .filter_map(|(xy, value)| (value == 0).then_some(xy))
         .collect();
 
-    let exit_distances = distance_matrix(exits.iter().copied(), terrain.find_xy(OBSTACLE_COST));
+    let exit_distances = distance_matrix(terrain.find_xy(OBSTACLE_COST), exits.iter().copied());
 
     let dt = terrain
         .map(|_, t| OBSTACLE_COST - t)
@@ -96,11 +96,11 @@ pub fn chunk_graph(terrain: &RoomMatrix<u8>, chunk_radius: u8) -> ChunkGraph {
 
         let chunk_ball = ball(chunk_center, chunk_radius);
 
-        let chunk_distance_matrix = restricted_distance_matrix(
-            once(chunk_center),
+        let chunk_distance_matrix = rect_restricted_distance_matrix(
             chunk_ball
                 .iter()
                 .filter(|xy| terrain.get(*xy) == OBSTACLE_COST),
+            once(chunk_center),
             chunk_ball,
             chunk_radius,
         );
@@ -191,7 +191,7 @@ pub fn chunk_graph(terrain: &RoomMatrix<u8>, chunk_radius: u8) -> ChunkGraph {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use crate::algorithms::chunk_graph::chunk_graph;
     use crate::algorithms::matrix_common::MatrixCommon;
     use crate::algorithms::room_matrix::RoomMatrix;

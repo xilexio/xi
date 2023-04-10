@@ -2,10 +2,12 @@ use crate::algorithms::matrix_common::MatrixCommon;
 use crate::geometry::room_xy::RoomXYUtils;
 use screeps::RoomXY;
 
+/// Uses matrix produced by `distance_matrix` to find a shortest route from start wherever gradient goes, up to
+/// distance `final_dist`.
 pub fn shortest_path_by_matrix<M, D>(distance_matrix: &M, start: RoomXY, final_dist: D) -> Vec<RoomXY>
-    where
-        M: MatrixCommon<D>,
-        D: Copy + Ord,
+where
+    M: MatrixCommon<D>,
+    D: Copy + Ord,
 {
     let mut path = vec![start];
     let mut current = start;
@@ -25,12 +27,20 @@ pub fn shortest_path_by_matrix<M, D>(distance_matrix: &M, start: RoomXY, final_d
     path
 }
 
-pub fn shortest_path_by_matrix_with_preference<M, N, D, P>(distance_matrix: &M, preference_matrix: &N, start: RoomXY, final_dist: D) -> Vec<RoomXY>
-    where
-        M: MatrixCommon<D>,
-        D: Copy + Ord,
-        N: MatrixCommon<P>,
-        P: Copy + Ord,
+/// Uses matrix produced by `distance_matrix` to find a shortest route from start wherever gradient goes, up to
+/// distance `final_dist`. When faced with two equally good route options as far as distance goes, selects the one with
+/// the smallest value from preference matrix.
+pub fn shortest_path_by_matrix_with_preference<M, N, D, P>(
+    distance_matrix: &M,
+    preference_matrix: &N,
+    start: RoomXY,
+    final_dist: D,
+) -> Vec<RoomXY>
+where
+    M: MatrixCommon<D>,
+    D: Copy + Ord,
+    N: MatrixCommon<P>,
+    P: Copy + Ord,
 {
     let mut path = vec![start];
     let mut current = start;

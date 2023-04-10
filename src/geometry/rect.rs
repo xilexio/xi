@@ -1,4 +1,5 @@
 use crate::geometry::room_coordinate::RoomCoordinateUtils;
+use crate::geometry::room_xy::RoomXYUtils;
 use screeps::{RoomXY, ROOM_SIZE};
 use std::cmp::{max, min};
 use std::error::Error;
@@ -41,6 +42,28 @@ impl Rect {
 
     pub fn bottom_left(&self) -> RoomXY {
         (self.top_left.x, self.bottom_right.y).into()
+    }
+
+    /// A tile with minimal distance to the center of the rectangle, top-left one if there are multiple choices.
+    pub fn center(&self) -> RoomXY {
+        self.top_left.midpoint(self.bottom_right)
+    }
+
+    /// All tiles with minimal distance to the center of the rectangle, clockwise starting from top-left.
+    pub fn centers(&self) -> Vec<RoomXY> {
+        let mut result = Vec::new();
+        let c = self.center();
+        result.push(c);
+        if self.width() % 2 == 0 {
+            result.push(unsafe { c.add_diff((1, 0)) });
+            if self.height() % 2 == 0 {
+                result.push(unsafe { c.add_diff((1, 1)) });
+                result.push(unsafe { c.add_diff((0, 1)) });
+            }
+        } else if self.height() % 2 == 0 {
+            result.push(unsafe { c.add_diff((0, 1)) });
+        }
+        result
     }
 
     pub fn is_valid(self) -> bool {

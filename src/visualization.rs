@@ -8,10 +8,8 @@ use petgraph::stable_graph::StableGraph;
 use petgraph::Undirected;
 use crate::room_state::StructuresMap;
 
-pub struct Visualizer {}
-
 pub enum Visualization {
-    Matrix(RoomMatrix<u8>),
+    Matrix(Box<RoomMatrix<u8>>),
     Graph(StableGraph<RoomXY, u8, Undirected, u16>),
     Structures(StructuresMap),
 }
@@ -50,68 +48,66 @@ impl RoomVisualExtExt for RoomVisualExt {
     }
 }
 
-impl Visualizer {
-    pub fn visualize(&self, room_name: RoomName, visualization: &Visualization) {
-        let mut vis = RoomVisualExt::new(room_name);
-        match visualization {
-            Matrix(matrix) => {
-                let mut min_value = 255;
-                let mut max_non_255_value = 0;
-                for (_, value) in matrix.iter() {
-                    if value < min_value {
-                        min_value = value;
-                    }
-                    if value != 255 && value > max_non_255_value {
-                        max_non_255_value = value;
-                    }
+pub fn visualize(room_name: RoomName, visualization: Visualization) {
+    let mut vis = RoomVisualExt::new(room_name);
+    match visualization {
+        Matrix(matrix) => {
+            let mut min_value = 255;
+            let mut max_non_255_value = 0;
+            for (_, value) in matrix.iter() {
+                if value < min_value {
+                    min_value = value;
                 }
-                let range = (max_non_255_value - min_value) as f32;
-                for (xy, value) in matrix.iter() {
-                    if value != 255 {
-                        let opacity = if range > 0.0 {
-                            0.2 + 0.6 * (value - min_value) as f32 / range
-                        } else {
-                            0.4
-                        };
-                        vis.rect(
-                            xy.x.u8() as f32 - 0.5,
-                            xy.y.u8() as f32 - 0.5,
-                            1.0,
-                            1.0,
-                            Some(RectStyle::default().fill("#00f").opacity(opacity)),
-                        );
-                        vis.text(
-                            xy.x.u8() as f32,
-                            xy.y.u8() as f32 + 0.15,
-                            value.to_string(),
-                            Some(
-                                TextStyle::default()
-                                    .font(0.5)
-                                    .color("#fff")
-                                    .opacity(1.0),
-                            ),
-                        );
-                    }
+                if value != 255 && value > max_non_255_value {
+                    max_non_255_value = value;
                 }
-            },
-            Graph(graph) => {
-                for node in graph.node_indices() {
-                    let xy = graph[node];
-                    vis.circle(xy.x.u8() as f32, xy.y.u8() as f32, Some(
-                        CircleStyle::default().fill("#fff").radius(0.25).opacity(0.5)
+            }
+            let range = (max_non_255_value - min_value) as f32;
+            for (xy, value) in matrix.iter() {
+                if value != 255 {
+                    let opacity = if range > 0.0 {
+                        0.2 + 0.6 * (value - min_value) as f32 / range
+                    } else {
+                        0.4
+                    };
+                    vis.rect(
+                        xy.x.u8() as f32 - 0.5,
+                        xy.y.u8() as f32 - 0.5,
+                        1.0,
+                        1.0,
+                        Some(RectStyle::default().fill("#00f").opacity(opacity)),
+                    );
+                    vis.text(
+                        xy.x.u8() as f32,
+                        xy.y.u8() as f32 + 0.15,
+                        value.to_string(),
+                        Some(
+                            TextStyle::default()
+                                .font(0.5)
+                                .color("#fff")
+                                .opacity(1.0),
+                        ),
+                    );
+                }
+            }
+        },
+        Graph(graph) => {
+            for node in graph.node_indices() {
+                let xy = graph[node];
+                vis.circle(xy.x.u8() as f32, xy.y.u8() as f32, Some(
+                    CircleStyle::default().fill("#fff").radius(0.25).opacity(0.5)
+                ));
+                for edge in graph.edges(node) {
+                    vis.arrow(xy, graph[edge.target()], Some(
+                        LineStyle::default().color("#fff").width(0.05).opacity(0.8)
                     ));
-                    for edge in graph.edges(node) {
-                        vis.arrow(xy, graph[edge.target()], Some(
-                            LineStyle::default().color("#fff").width(0.05).opacity(0.8)
-                        ));
-                    }
                 }
-            },
-            Structures(structures_map) => {
-                for (&structure_type, xys) in structures_map.iter() {
-                    for xy in xys.iter().copied() {
-                        vis.structure_roomxy(xy, structure_type, 0.75);
-                    }
+            }
+        },
+        Structures(structures_map) => {
+            for (&structure_type, xys) in structures_map.iter() {
+                for xy in xys.iter().copied() {
+                    vis.structure_roomxy(xy, structure_type, 0.7);
                 }
             }
         }

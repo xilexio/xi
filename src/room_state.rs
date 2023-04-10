@@ -14,6 +14,7 @@ pub mod room_states;
 pub mod scan;
 
 // TODO make it serializable and put in memory in serialized form
+#[derive(Clone, Debug)]
 pub struct RoomState {
     pub name: RoomName,
     pub owner: String,
@@ -23,12 +24,13 @@ pub struct RoomState {
     pub controller: Option<ControllerInfo>,
     pub sources: Vec<SourceInfo>,
     pub mineral: Option<MineralInfo>,
-    // TODO ids of buildings for owned rooms, where extensions and spawns and links are split by location, e.g., fastFillerExtensions
+    // TODO ids of structures for owned rooms, where extensions and spawns and links are split by location, e.g., fastFillerExtensions
     // TODO for unowned rooms, ids are not as important (if at all)
-    pub buildings: StructuresMap,
+    pub structures: StructuresMap,
     pub plan: Option<Plan>,
 }
 
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum RoomDesignation {
     OwnedRoom,
     PlayerRoom,
@@ -36,19 +38,19 @@ pub enum RoomDesignation {
     NeutralRoom,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct ControllerInfo {
     pub id: ObjectId<StructureController>,
     pub xy: RoomXY,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct SourceInfo {
     pub id: ObjectId<Source>,
     pub xy: RoomXY,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct MineralInfo {
     pub id: ObjectId<Mineral>,
     pub xy: RoomXY,
@@ -62,10 +64,10 @@ pub fn set_room_blueprint(room_name: String, blueprint: JsValue) {
     info!("Room name: {}", room_name);
 
     let blueprint_obj: &Object = blueprint.unchecked_ref();
-    let buildings = Reflect::get(&blueprint, &"buildings".into()).unwrap();
-    for structure_type in Reflect::own_keys(&buildings).unwrap().iter() {
+    let structures = Reflect::get(&blueprint, &"buildings".into()).unwrap();
+    for structure_type in Reflect::own_keys(&structures).unwrap().iter() {
         info!("{}:", structure_type.as_string().unwrap());
-        let xy_array = Reflect::get(&buildings, &structure_type).unwrap();
+        let xy_array = Reflect::get(&structures, &structure_type).unwrap();
         let length = Reflect::get(&xy_array, &"length".into())
             .unwrap()
             .as_f64()
@@ -90,7 +92,7 @@ impl RoomState {
             controller: None,
             sources: Vec::new(),
             mineral: None,
-            buildings: FxHashMap::default(),
+            structures: FxHashMap::default(),
             plan: None,
         }
     }

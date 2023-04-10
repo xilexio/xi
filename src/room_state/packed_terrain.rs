@@ -8,6 +8,7 @@ use std::fmt::{Display, Formatter};
 
 pub const PACKED_TERRAIN_DATA_SIZE: usize = ROOM_AREA / 4;
 
+#[derive(Copy, Clone, Debug)]
 pub struct PackedTerrain {
     // Two bits required to store Terrain::Plain (0), Terrain::Wall (1) or Terrain::Swamp (2)
     pub data: [u8; PACKED_TERRAIN_DATA_SIZE],
@@ -54,8 +55,8 @@ impl PackedTerrain {
         })
     }
 
-    pub fn to_obstacle_matrix(&self) -> RoomMatrix<u8> {
-        let mut result = RoomMatrix::new(0);
+    pub fn to_obstacle_matrix(&self, fill: u8) -> RoomMatrix<u8> {
+        let mut result = RoomMatrix::new(fill);
         for (xy, t) in self.iter() {
             if t == Wall {
                 result.set(xy, OBSTACLE_COST);

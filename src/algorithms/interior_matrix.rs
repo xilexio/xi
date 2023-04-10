@@ -1,20 +1,26 @@
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix::RoomMatrix;
-use crate::consts::OBSTACLE_COST;
 use crate::geometry::rect::room_rect;
 use screeps::RoomXY;
 use crate::geometry::room_xy::RoomXYUtils;
 
 /// Returns a matrix with information what is outside or an obstacle (false) and what inside or on the cut (true),
 /// given a vertex cut and matrix that has OBSTACLE_COST where obstacles are.
-pub fn interior_matrix<C>(obstacles_matrix: &RoomMatrix<u8>, cut: C) -> RoomMatrix<bool>
+pub fn interior_matrix<O, C>(obstacles: O, cut: C) -> RoomMatrix<bool>
 where
+    O: Iterator<Item = RoomXY>,
     C: Iterator<Item = RoomXY>,
 {
-    let mut result = obstacles_matrix.map(|_, value| value != OBSTACLE_COST);
+    let mut result = RoomMatrix::new(true);
+    for xy in obstacles {
+        result.set(xy, false);
+    }
+
+    let not_obstacle_matrix = result.clone();
+
     let mut layer = room_rect()
         .boundary()
-        .filter(|&xy| obstacles_matrix.get(xy) != OBSTACLE_COST)
+        .filter(|&xy| not_obstacle_matrix.get(xy))
         .collect::<Vec<_>>();
 
     for &xy in layer.iter() {
@@ -32,7 +38,7 @@ where
 
         for xy in layer.into_iter() {
             for near in xy.around() {
-                if obstacles_matrix.get(near) != OBSTACLE_COST && result.get(near) {
+                if not_obstacle_matrix.get(near) && result.get(near) {
                     next_layer.push(near);
                     result.set(near, false);
                 }

@@ -1,20 +1,14 @@
 #![feature(return_position_impl_trait_in_trait)]
 
-use crate::algorithms::chunk_graph::chunk_graph;
-use crate::algorithms::distance_matrix::distance_matrix;
-use crate::algorithms::matrix_common::MatrixCommon;
 use crate::config::*;
+use crate::room_planner::RoomPlanner;
 use crate::room_state::room_states::with_room_state;
 use crate::room_state::scan::scan;
-use crate::visualization::{Visualization, Visualizer};
-use js_sys::Math::random;
+use crate::visualization::{visualize, Visualization};
 use log::debug;
 use profiler::measure_time;
-use screeps::{game, ROOM_SIZE};
+use screeps::game;
 use wasm_bindgen::prelude::{wasm_bindgen, UnwrapThrowExt};
-use crate::algorithms::distance_transform::distance_transform;
-use tap::prelude::*;
-use crate::room_planner::plan_room;
 
 mod algorithms;
 mod blueprint;
@@ -24,10 +18,10 @@ mod geometry;
 mod kernel;
 mod logging;
 mod profiler;
+mod room_planner;
 mod room_state;
 mod test_process;
 mod visualization;
-mod room_planner;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]
@@ -56,16 +50,17 @@ pub fn game_loop() {
         let spawn = game::spawns().values().next().unwrap_throw();
         let room_name = spawn.room().unwrap_throw().name();
         scan(room_name).unwrap_throw();
-        let visualizer = Visualizer {};
-        let plan = measure_time("plan_room", || {
+        let maybe_plan = measure_time("plan_room", || {
             with_room_state(room_name, |state| {
-                plan_room(state)
-            }).unwrap()
-        }).unwrap_throw();
-        visualizer.visualize(
-            room_name,
-            &Visualization::Structures(plan.buildings)
-        );
+                let mut planner = RoomPlanner::new(state);
+                planner.plan()
+            })
+            .unwrap_throw()
+        });
+        match maybe_plan {
+            Ok(plan) => visualize(room_name, Visualization::Structures(plan.structures)),
+            Err(e) => debug!("{}", e),
+        }
     }
 
     // trace!("test");

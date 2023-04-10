@@ -29,24 +29,31 @@ where
     where
         T: 'a,
     {
-        self.iter()
-            .filter_map(move |(xy, v)| (v == value).then_some(xy))
+        self.iter().filter_map(move |(xy, v)| (v == value).then_some(xy))
     }
 
     fn find_not_xy<'a>(&'a self, value: T) -> impl Iterator<Item = RoomXY> + 'a
     where
         T: 'a,
     {
-        self.iter()
-            .filter_map(move |(xy, v)| (v != value).then_some(xy))
+        self.iter().filter_map(move |(xy, v)| (v != value).then_some(xy))
     }
 
-    fn update<F>(&mut self, f: F)
+    fn update<F>(&mut self, mut f: F)
     where
-        F: Fn(RoomXY, T) -> T,
+        F: FnMut(RoomXY, T) -> T,
     {
         for xy in self.iter_xy() {
             self.set(xy, f(xy, self.get(xy)));
+        }
+    }
+
+    fn merge_from<M>(&mut self, matrix: &M)
+        where
+            M: MatrixCommon<T>,
+    {
+        for (xy, value) in matrix.iter() {
+            self.set(xy, value);
         }
     }
 

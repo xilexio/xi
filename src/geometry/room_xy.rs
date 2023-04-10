@@ -1,5 +1,5 @@
 use crate::geometry::direction::{OFFSET_BY_DIRECTION};
-use crate::geometry::rect::Rect;
+use crate::geometry::rect::{ball, Rect};
 use crate::geometry::room_coordinate::RoomCoordinateUtils;
 use enum_iterator::IntoEnumIterator;
 use screeps::{Direction, OutOfBoundsError, RoomXY, ROOM_SIZE};
@@ -12,8 +12,11 @@ where
     fn to_index(self) -> usize;
     unsafe fn rect_index(self, rect: Rect) -> usize;
     fn around(self) -> impl Iterator<Item = RoomXY>;
+    fn outward_iter(self, min_r: Option<u8>, max_r: Option<u8>) -> impl Iterator<Item = RoomXY>;
     fn restricted_around(self, rect: Rect) -> impl Iterator<Item = RoomXY>;
     fn exit_distance(self) -> u8;
+    fn max_exit_distance(self) -> u8;
+    fn midpoint(self, other: Self) -> Self;
 
     fn sub(self, other: Self) -> (i8, i8);
     unsafe fn add_diff(self, diff: (i8, i8)) -> Self;
@@ -57,6 +60,14 @@ impl RoomXYUtils for RoomXY {
         Direction::into_enum_iter().filter_map(move |d| self.try_add_diff(OFFSET_BY_DIRECTION[d as usize]).ok())
     }
 
+    #[inline]
+    fn outward_iter(self, min_r: Option<u8>, max_r: Option<u8>) -> impl Iterator<Item = RoomXY> {
+        let self_copy = self;
+        (min_r.unwrap_or(0)..max_r.unwrap_or(self_copy.max_exit_distance())).flat_map(move |r| {
+            ball(self_copy, r).boundary().filter(move |&xy| xy.dist(self_copy) == r)
+        })
+    }
+
     fn restricted_around(self, rect: Rect) -> impl Iterator<Item = RoomXY> {
         // The function is safe because valid Rect consists of RoomCoordinate which are withing room bounds.
         Direction::into_enum_iter().filter_map(move |d| {
@@ -77,6 +88,18 @@ impl RoomXYUtils for RoomXY {
             min(self.x.u8(), self.y.u8()),
             min(ROOM_SIZE - 1 - self.x.u8(), ROOM_SIZE - 1 - self.y.u8()),
         )
+    }
+
+    fn max_exit_distance(self) -> u8 {
+        max(
+            max(self.x.u8(), self.y.u8()),
+            max(ROOM_SIZE - 1 - self.x.u8(), ROOM_SIZE - 1 - self.y.u8()),
+        )
+    }
+
+    fn midpoint(self, other: Self) -> Self {
+        // Average of two points within room bounds is also within room bounds.
+        unsafe { RoomXY::unchecked_new((self.x.u8() + other.x.u8()) / 2, (self.y.u8() + other.y.u8()) / 2) }
     }
 
     fn sub(self, other: Self) -> (i8, i8) {
