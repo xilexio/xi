@@ -62,6 +62,18 @@ where
             todo!("rotation of non-square")
         }
     }
+
+    pub fn map<F, S>(&self, f: F) -> RoomMatrixSlice<S>
+    where
+        F: Fn(RoomXY, T) -> S,
+        S: Clone + Copy + PartialEq + Default,
+    {
+        let mut result = RoomMatrixSlice::new(self.rect, S::default());
+        for (xy, value) in self.iter() {
+            result.set(xy, f(xy, self.get(xy)));
+        }
+        result
+    }
 }
 
 impl<T> MatrixCommon<T> for RoomMatrixSlice<T>

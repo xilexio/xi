@@ -62,7 +62,7 @@ where
 
 impl<T> Display for RoomMatrix<T>
 where
-    T: Clone + Copy + PartialEq + LowerHex + Sized + Display,
+    T: Clone + Copy + PartialEq + LowerHex + Sized,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for y in 0..ROOM_SIZE {

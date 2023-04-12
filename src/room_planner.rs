@@ -8,13 +8,14 @@ use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::max_boundary_distance::max_boundary_distance;
 use crate::algorithms::room_matrix::RoomMatrix;
 use crate::algorithms::room_matrix_slice::RoomMatrixSlice;
-use crate::algorithms::shortest_path_by_matrix::shortest_path_by_matrix_with_preference;
+use crate::algorithms::weighted_distance_matrix::{obstacle_cost, unreachable_cost};
 use crate::consts::{OBSTACLE_COST, UNREACHABLE_COST};
 use crate::geometry::rect::{ball, bounding_rect, room_rect};
 use crate::geometry::room_xy::RoomXYUtils;
-use crate::room_planner::packed_tile_structures::PackedTileStructures;
+use crate::room_planner::packed_tile_structures::{MainStructureType, PackedTileStructures};
 use crate::room_planner::plan::Plan;
-use crate::room_planner::roads::connect_with_roads;
+use crate::room_planner::planned_tile::PlannedTile;
+use crate::room_planner::roads::{connect_with_roads, RoadTarget};
 use crate::room_planner::stamps::{core_stamp, labs_stamp};
 use crate::room_planner::RoomPlannerError::{
     ControllerNotFound, ResourceNotFound, StructurePlacementFailure, UnreachableResource,
@@ -24,8 +25,7 @@ use crate::visualization::visualize;
 use crate::visualization::Visualization::{Graph, Matrix};
 use log::debug;
 use num_traits::clamp;
-use screeps::game::spawns;
-use screeps::StructureType::{Extension, PowerSpawn, Rampart, Road, Spawn, Storage};
+use screeps::StructureType::{Extension, Rampart, Road, Spawn, Storage};
 use screeps::Terrain::Wall;
 use screeps::{game, RoomXY};
 use std::cmp::{max, min};
@@ -36,6 +36,7 @@ use thiserror::Error;
 
 pub mod packed_tile_structures;
 pub mod plan;
+pub mod planned_tile;
 pub mod roads;
 pub mod stamps;
 
@@ -108,8 +109,6 @@ impl RoomPlanner {
         // Chunk graph.
         let walls_matrix = self.state.terrain.to_obstacle_matrix(0);
         let chunks = chunk_graph(&walls_matrix, CHUNK_RADIUS);
-        // The matrix for the plan.
-        let mut structures_matrix = RoomMatrix::new(PackedTileStructures::default());
 
         // visualize(
         //     self.state.name,
@@ -192,7 +191,7 @@ impl RoomPlanner {
         // // TODO Make these 140 fields be selected away from exits with some weight.
         // let tiles_near_exits = exits_dm.iter().filter_map(|(xy, dist)| (dist <= 4).then_some(xy));
         // // for xy in exits_dm.iter().filter_map(|(xy, dist)| (dist <= 4).then_some(xy)) {
-        // //     structures_matrix.set(xy, Extension.into());
+        // //     planned_tiles.set(xy, Extension.into());
         // // }
         // let approximate_base_dm =
         //     count_restricted_distance_matrix(walls.iter().copied().chain(tiles_near_exits), approximate_base_center, APPROXIMATE_BASE_TILES);
@@ -201,15 +200,15 @@ impl RoomPlanner {
         //     .filter(|&(xy, value)| value < UNREACHABLE_COST)
         // {
         //     approximate_base_min_cut_matrix.set(xy, 0);
-        //     structures_matrix.set(xy, Extension.into());
+        //     planned_tiles.set(xy, Extension.into());
         // }
         // let preliminary_ramparts = grid_min_cut(&approximate_base_min_cut_matrix);
         // for &xy in preliminary_ramparts.iter() {
-        //     structures_matrix.set(xy, Rampart.into());
+        //     planned_tiles.set(xy, Rampart.into());
         // }
 
         // Creating the plan and placing the core in a good location.
-        structures_matrix = resource_centers
+        let mut planned_tiles = resource_centers
             .iter()
             .take(number_of_good_resource_centers)
             .copied()
@@ -218,7 +217,7 @@ impl RoomPlanner {
 
                 (0..4).find_map(|rotations| {
                     debug!("Processing core with {} rotations.", rotations);
-                    let mut structures_matrix = RoomMatrix::new(PackedTileStructures::default());
+                    let mut planned_tiles = RoomMatrix::new(PlannedTile::default());
 
                     let core = {
                         let mut stamp_matrix = core_stamp();
@@ -226,28 +225,30 @@ impl RoomPlanner {
                         stamp_matrix.rotate(rotations).unwrap();
                         stamp_matrix
                     };
-                    structures_matrix.merge_from(&core);
+                    planned_tiles.merge_from(&core, |old, new| old.merge(new));
 
                     // First attempt in which good places to grow towards are not known.
 
                     // Placing the labs as close to the storage as possible.
-                    let storage_xy = core.find_xy(Storage.into()).next().unwrap();
+                    let storage_xy = core
+                        .iter()
+                        .find_map(|(xy, tile)| (tile.structures() == Storage.into()).then_some(xy))
+                        .unwrap();
                     let labs = storage_xy
                         .outward_iter(Some(3), Some(MAX_LABS_DIST))
                         .find_map(|lab_xy| {
                             if self.labs_fit(&dt_l1, lab_xy) {
                                 debug!("Trying labs at {}.", lab_xy);
                                 let mut labs = labs_stamp();
-                                let lab_centers = labs.rect.centers();
-                                labs.translate(lab_xy.sub(lab_centers[0])).unwrap();
-                                if min(lab_centers[1].dist(storage_xy), lab_centers[3].dist(storage_xy))
-                                    < min(lab_centers[0].dist(storage_xy), lab_centers[2].dist(storage_xy))
+                                labs.translate(lab_xy.sub(labs.rect.center())).unwrap();
+                                if min(labs.rect.top_right().dist(storage_xy), labs.rect.bottom_right.dist(storage_xy))
+                                    < min(labs.rect.top_left.dist(storage_xy), labs.rect.bottom_left().dist(storage_xy))
                                 {
                                     debug!("Rotating the labs.");
                                     labs.rotate(1).unwrap();
                                 }
                                 if labs.iter().all(|(xy, structure)| {
-                                    let existing_structure = structures_matrix.get(xy);
+                                    let existing_structure = planned_tiles.get(xy);
                                     existing_structure.is_empty() || existing_structure == structure
                                 }) {
                                     Some(labs)
@@ -258,100 +259,100 @@ impl RoomPlanner {
                                 None
                             }
                         })?;
-                    structures_matrix.merge_from(&labs);
+                    planned_tiles.merge_from(&labs, |old, new| old.merge(new));
 
                     // Connecting the labs to the storage.
                     // TODO include this in labs creation and make it a part of the score to decide labs' placement
                     let closest_lab_road = {
-                        let mut lab_roads = labs.find_xy(Road.into()).collect::<Vec<_>>();
+                        let mut lab_roads = labs
+                            .iter()
+                            .filter_map(|(xy, tile)| tile.structures().road().then_some(xy))
+                            .collect::<Vec<_>>();
                         lab_roads.sort_by_key(|&xy| xy.dist(storage_xy));
                         lab_roads[0]
                     };
                     connect_with_roads(
                         &self.state.terrain,
-                        &mut structures_matrix,
+                        &mut planned_tiles,
                         once(closest_lab_road),
-                        once(storage_xy),
+                        1,
+                        once(RoadTarget::new(storage_xy, 1, true)),
                         storage_xy,
                     )
                     .ok()?;
 
-                    // After placing the core, creating the shortest routes from spawns to mineral, sources and
-                    // controller. Mineral needs convenient access to storage too to haul it, but it has smaller
-                    // priority.
-                    let spawns = core.find_xy(Spawn.into()).collect::<Vec<_>>();
+                    // After placing the stamps, creating the shortest routes from spawns to mineral, sources and
+                    // controller.
+                    let spawns = core
+                        .iter()
+                        .filter_map(|(xy, tile)| (tile.structures() == Spawn.into()).then_some(xy))
+                        .collect::<Vec<_>>();
                     connect_with_roads(
                         &self.state.terrain,
-                        &mut structures_matrix,
+                        &mut planned_tiles,
                         spawns.iter().copied(),
-                        [controller.xy, mineral.xy]
-                            .into_iter()
-                            .chain(sources.iter().copied().map(|source_info| source_info.xy)),
+                        1,
+                        once(RoadTarget::new(controller.xy, 4, true)).chain(
+                            sources
+                                .iter()
+                                .copied()
+                                .map(|source_info| RoadTarget::new(source_info.xy, 2, true)),
+                        ),
+                        storage_xy,
+                    )
+                    .ok()?;
+                    // Creating the shortest route to the mineral from storage. It may be outside of ramparts.
+                    connect_with_roads(
+                        &self.state.terrain,
+                        &mut planned_tiles,
+                        once(storage_xy),
+                        1,
+                        once(RoadTarget::new(mineral.xy, 2, false)),
                         storage_xy,
                     )
                     .ok()?;
 
-                    self.place_extensions(
-                        walls.iter().copied(),
-                        storage_xy,
-                        &mut structures_matrix,
-                    ).ok()?;
+                    // TODO improve this part by not requiring the whole area, also add the link
+                    for xy in [mineral.xy, controller.xy].into_iter().chain(sources.iter().map(|source| source.xy)) {
+                        for near in xy.around() {
+                            if planned_tiles.get(near).is_empty() {
+                                planned_tiles.set(near, planned_tiles.get(near).with_reserved(true));
+                            }
+                        }
+                    }
 
-                    Some(structures_matrix)
+                    self.place_extensions(walls.iter().copied(), storage_xy, &mut planned_tiles)
+                        .ok()?;
+
+                    let distances_from_structures = distance_matrix(
+                        walls.iter().copied(),
+                        planned_tiles
+                            .iter()
+                            .filter_map(|(xy, tile)| tile.interior().then_some(xy)),
+                    );
+
+                    // TODO include all fields around the controller with a path to them
+
+                    let base_min_cut_matrix = distances_from_structures.map(|xy, dist| {
+                        if self.state.terrain.get(xy) == Wall {
+                            obstacle_cost()
+                        } else if dist <= 2 {
+                            0
+                        } else {
+                            10 + ((dist as f32).sqrt() as u8)
+                        }
+                    });
+                    let min_cut = grid_min_cut(&base_min_cut_matrix);
+                    for xy in min_cut.iter().copied() {
+                        planned_tiles.set(xy, Rampart.into());
+                    }
+
+                    Some(planned_tiles)
                 })
             })
             .ok_or(StructurePlacementFailure)?;
-        // structures_matrix.merge_from(&core);
 
-
-        // Adding the labs close to the core.
-        // let labs = self.place_labs(&dt_l1, &core)?;
-        // structures_matrix.merge_from(&labs);
-
-
-        // Connecting everything with roads.
-        // let spawns = core
-        //     .find_xy(Spawn.into())
-        //     .chain(fast_filler.find_xy(Spawn.into()))
-        //     .collect::<Vec<_>>();
-        // Connecting nearest spawn to sources and mineral.
-        // connect_with_roads(
-        //     walls.iter().copied(),
-        //     &mut structures_matrix,
-        //     spawns.iter().copied(),
-        //     once(mineral.xy).chain(sources.iter().copied().map(|source_info| source_info.xy)),
-        // )?;
-        // Connecting storage to labs, spawns and controller.
-        // TODO it is okay for these roads to be a bit longer so that less roads are built
-        // let core_storage = core.find_xy(Storage.into()).next().unwrap();
-        // connect_with_roads(
-        //     walls.iter().copied(),
-        //     &mut structures_matrix,
-        //     once(core_storage),
-        //     once(controller.xy)
-        //         .chain(spawns.iter().copied())
-        //         .chain(labs.find_xy(Road.into())),
-        // )?;
-        // Connecting spawns to labs.
-        // TODO it is okay for this road to be a bit longer so that less roads are built
-        // connect_with_roads(
-        //     walls.iter().copied(),
-        //     &mut structures_matrix,
-        //     labs.find_xy(Road.into()),
-        //     core.find_xy(Spawn.into()).chain(fast_filler.find_xy(Spawn.into())),
-        // )?;
-
-
-        // self.place_extensions(walls.iter().copied(), core_storage, &mut structures_matrix)?;
-
-        // TODO roads around ff and core, spawns -> storage, mineral/source -> nearest spawn
-        // TODO place ff closer to sources/mineral/controller and not rampart midpoint
-        // TODO fill general area around spawn with extensions (more than needed - leave place for towers), then dig into them to reach more
-        // TODO 60 - 17 = 43 extensions, 6 towers, labs, observer
-
-        Ok(Plan {
-            structures: structures_matrix.to_structures_map(),
-        })
+        Ok(Plan { planned_tiles })
     }
 
     #[inline]
@@ -391,9 +392,9 @@ impl RoomPlanner {
         &mut self,
         walls: impl Iterator<Item = RoomXY>,
         storage_xy: RoomXY,
-        structures_matrix: &mut RoomMatrix<PackedTileStructures>,
+        planned_tiles: &mut RoomMatrix<PlannedTile>,
     ) -> Result<(), Box<dyn Error>> {
-        let obstacles = structures_matrix
+        let obstacles = planned_tiles
             .iter()
             .filter_map(|(xy, structure)| (!structure.is_passable(true)).then_some(xy))
             .chain(walls);
@@ -403,8 +404,8 @@ impl RoomPlanner {
 
         // Finding scores of extensions. The lower, the better. The most important factor is the distance from storage.
         let tile_score = storage_dm.map(|xy, dist| {
-            if dist >= UNREACHABLE_COST || !structures_matrix.get(xy).is_empty() || xy.exit_distance() < 2 {
-                OBSTACLE_COST
+            if dist >= unreachable_cost() || !planned_tiles.get(xy).is_empty() || xy.exit_distance() < 2 {
+                obstacle_cost()
             } else {
                 dist
             }
@@ -419,24 +420,20 @@ impl RoomPlanner {
         // it is three times that tile's score minus the removed tile's score.
         let mut i = 0u16;
         let mut priority_queue = BTreeMap::new();
-        for xy in tile_score.find_not_xy(OBSTACLE_COST) {
-            if xy.around().any(|near| !structures_matrix.get(near).road().is_empty()) {
+        for xy in tile_score.find_not_xy(obstacle_cost()) {
+            if xy.around().any(|near| planned_tiles.get(near).structures().road()) {
                 // Keeping tile position and whether it is an empty tile.
                 priority_queue.insert((tile_score.get(xy), i), (xy, true));
                 i += 1;
             }
         }
 
-        fn avg_around_score(
-            structures_matrix: &RoomMatrix<PackedTileStructures>,
-            tile_score: &RoomMatrix<u8>,
-            xy: RoomXY,
-        ) -> u8 {
+        fn avg_around_score(planned_tiles: &RoomMatrix<PlannedTile>, tile_score: &RoomMatrix<u8>, xy: RoomXY) -> u8 {
             let mut total_score_around = 0u16;
             let mut empty_tiles_around = 0u8;
             for near in xy.around() {
                 let near_score = tile_score.get(near);
-                if near_score != OBSTACLE_COST && structures_matrix.get(near).is_empty() {
+                if near_score != OBSTACLE_COST && planned_tiles.get(near).is_empty() {
                     total_score_around += near_score as u16;
                     empty_tiles_around += 1;
                 }
@@ -454,15 +451,19 @@ impl RoomPlanner {
             }
         }
 
-        let mut remaining_extensions = 60 - structures_matrix.find_xy(Extension.into()).count();
+        let mut remaining_extensions = 68
+            - planned_tiles
+                .iter()
+                .filter(|(xy, tile)| tile.structures() == Extension.into())
+                .count();
         while remaining_extensions > 0 && !priority_queue.is_empty() {
             let ((xy_score, _), (xy, placement)) = priority_queue.pop_first().unwrap();
             debug!("[{}] {}: {}, {}", remaining_extensions, xy_score, xy, placement);
             if placement {
-                structures_matrix.set(xy, Extension.into());
+                planned_tiles.set(xy, Extension.into());
                 let current_score = tile_score.get(xy);
 
-                let removal_score = avg_around_score(structures_matrix, &tile_score, xy).saturating_sub(current_score);
+                let removal_score = avg_around_score(planned_tiles, &tile_score, xy).saturating_sub(current_score);
 
                 if removal_score < OBSTACLE_COST {
                     priority_queue.insert((removal_score, i), (xy, false));
@@ -473,7 +474,7 @@ impl RoomPlanner {
                 remaining_extensions -= 1;
             } else {
                 let current_score = tile_score.get(xy);
-                let removal_score = avg_around_score(structures_matrix, &tile_score, xy).saturating_sub(current_score);
+                let removal_score = avg_around_score(planned_tiles, &tile_score, xy).saturating_sub(current_score);
 
                 if removal_score != xy_score {
                     // If the score changed as a result of, e.g., removing some empty tiles around, we re-queue the
@@ -482,10 +483,10 @@ impl RoomPlanner {
                     i += 1;
                     debug!(" => {}: {}, {}", removal_score, xy, false);
                 } else {
-                    structures_matrix.set(xy, Road.into());
+                    planned_tiles.set(xy, Road.into());
 
                     for near in xy.around() {
-                        if tile_score.get(near) != OBSTACLE_COST && structures_matrix.get(near).is_empty() {
+                        if tile_score.get(near) != OBSTACLE_COST && planned_tiles.get(near).is_empty() {
                             let score = tile_score.get(near);
                             priority_queue.insert((score, i), (near, true));
                             debug!("  + {}: {}, {}", score, near, true);

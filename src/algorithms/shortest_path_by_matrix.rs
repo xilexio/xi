@@ -34,7 +34,6 @@ pub fn shortest_path_by_matrix_with_preference<M, N, D, P>(
     distance_matrix: &M,
     preference_matrix: &N,
     start: RoomXY,
-    final_dist: D,
 ) -> Vec<RoomXY>
 where
     M: MatrixCommon<D>,
@@ -46,7 +45,7 @@ where
     let mut current = start;
     let mut current_dist = distance_matrix.get(current);
     let mut current_preference = preference_matrix.get(current);
-    while current_dist > final_dist {
+    loop {
         let prev_dist = current_dist;
         for near in current.around() {
             let near_dist = distance_matrix.get(near);

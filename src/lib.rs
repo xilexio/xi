@@ -58,7 +58,7 @@ pub fn game_loop() {
             .unwrap_throw()
         });
         match maybe_plan {
-            Ok(plan) => visualize(room_name, Visualization::Structures(plan.structures)),
+            Ok(plan) => visualize(room_name, Visualization::Structures(plan.planned_tiles.to_structures_map())),
             Err(e) => debug!("{}", e),
         }
     }

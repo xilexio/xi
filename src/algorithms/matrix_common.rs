@@ -48,12 +48,23 @@ where
         }
     }
 
-    fn merge_from<M>(&mut self, matrix: &M)
-        where
-            M: MatrixCommon<T>,
+    fn set_from<M>(&mut self, matrix: &M)
+    where
+        M: MatrixCommon<T>,
     {
         for (xy, value) in matrix.iter() {
             self.set(xy, value);
+        }
+    }
+
+    fn merge_from<M, S, F>(&mut self, matrix: &M, mut merge: F)
+    where
+        M: MatrixCommon<S>,
+        S: Clone + Copy + PartialEq,
+        F: FnMut(T, S) -> T,
+    {
+        for (xy, value) in matrix.iter() {
+            self.set(xy, merge(self.get(xy), value));
         }
     }
 
