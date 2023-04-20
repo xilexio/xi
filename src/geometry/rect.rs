@@ -32,6 +32,15 @@ impl Rect {
         }
     }
 
+    pub fn new_unordered(xy1: RoomXY, xy2: RoomXY) -> Self {
+        unsafe {
+            Rect {
+                top_left: RoomXY::unchecked_new(min(xy1.x.u8(), xy2.x.u8()), min(xy1.y.u8(), xy2.y.u8())),
+                bottom_right: RoomXY::unchecked_new(max(xy1.x.u8(), xy2.x.u8()), max(xy1.y.u8(), xy2.y.u8())),
+            }
+        }
+    }
+
     pub unsafe fn unchecked_new(top_left: RoomXY, bottom_right: RoomXY) -> Self {
         Rect { top_left, bottom_right }
     }
@@ -40,30 +49,8 @@ impl Rect {
         (self.bottom_right.x, self.top_left.y).into()
     }
 
-    pub fn bottom_left(&self) -> RoomXY {
+    pub fn bottom_left(self) -> RoomXY {
         (self.top_left.x, self.bottom_right.y).into()
-    }
-
-    /// A tile with minimal distance to the center of the rectangle, top-left one if there are multiple choices.
-    pub fn center(&self) -> RoomXY {
-        self.top_left.midpoint(self.bottom_right)
-    }
-
-    /// All tiles with minimal distance to the center of the rectangle, clockwise starting from top-left.
-    pub fn centers(&self) -> Vec<RoomXY> {
-        let mut result = Vec::new();
-        let c = self.center();
-        result.push(c);
-        if self.width() % 2 == 0 {
-            result.push(unsafe { c.add_diff((1, 0)) });
-            if self.height() % 2 == 0 {
-                result.push(unsafe { c.add_diff((1, 1)) });
-                result.push(unsafe { c.add_diff((0, 1)) });
-            }
-        } else if self.height() % 2 == 0 {
-            result.push(unsafe { c.add_diff((0, 1)) });
-        }
-        result
     }
 
     pub fn is_valid(self) -> bool {
@@ -80,6 +67,48 @@ impl Rect {
 
     pub fn area(self) -> usize {
         (self.width() as usize) * (self.height() as usize)
+    }
+
+    /// A tile with minimal distance to the center of the rectangle, top-left one if there are multiple choices.
+    pub fn center(self) -> RoomXY {
+        self.top_left.midpoint(self.bottom_right)
+    }
+
+    /// All tiles with minimal distance to the center of the rectangle, clockwise starting from top-left.
+    pub fn centers(self) -> Vec<RoomXY> {
+        let mut result = Vec::new();
+        let c = self.center();
+        result.push(c);
+        if self.width() % 2 == 0 {
+            result.push(unsafe { c.add_diff((1, 0)) });
+            if self.height() % 2 == 0 {
+                result.push(unsafe { c.add_diff((1, 1)) });
+                result.push(unsafe { c.add_diff((0, 1)) });
+            }
+        } else if self.height() % 2 == 0 {
+            result.push(unsafe { c.add_diff((0, 1)) });
+        }
+        result
+    }
+
+    /// Returns four points on the corners: top left, top right, bottom right, bottom left.
+    /// These may be duplicates if the rectangle is small enough.
+    pub fn corners(self) -> [RoomXY; 4] {
+        [self.top_left, self.top_right(), self.bottom_right, self.bottom_left()]
+    }
+
+    /// Returns index of the corner closest to given point.
+    pub fn closest_corner(self, xy: RoomXY) -> usize {
+        let corners = self.corners();
+        let mut closest_ix = 0;
+        let mut min_dist = corners[0].dist(xy);
+        for (i, corner) in corners.iter().skip(1).copied().enumerate() {
+            if corner.dist(xy) < min_dist {
+                closest_ix = i;
+                min_dist = corner.dist(xy);
+            }
+        }
+        closest_ix
     }
 
     pub fn contains(self, xy: RoomXY) -> bool {
@@ -120,6 +149,14 @@ impl Rect {
         let w = self.width() as u16;
         let h = self.height() as u16;
         (0..(w * h)).map(move |i| unsafe { RoomXY::unchecked_new(tlx + ((i % w) as u8), tly + ((i / w) as u8)) })
+    }
+}
+
+impl Default for Rect {
+    fn default() -> Self {
+        unsafe {
+            Rect::unchecked_new(RoomXY::unchecked_new(0, 0), RoomXY::unchecked_new(0, 0))
+        }
     }
 }
 

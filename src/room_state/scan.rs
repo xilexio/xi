@@ -27,9 +27,9 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
         if let Some(owner) = controller.owner() {
             state.owner = owner.username();
             if controller.my() {
-                state.designation = RoomDesignation::OwnedRoom;
+                state.designation = RoomDesignation::Owned;
             } else {
-                state.designation = RoomDesignation::PlayerRoom;
+                state.designation = RoomDesignation::NotOwned;
             }
         }
     };

@@ -16,7 +16,7 @@ pub mod scan;
 // TODO make it serializable and put in memory in serialized form
 #[derive(Clone, Debug)]
 pub struct RoomState {
-    pub name: RoomName,
+    pub room_name: RoomName,
     pub owner: String,
     pub designation: RoomDesignation,
     pub rcl: u8,
@@ -32,10 +32,12 @@ pub struct RoomState {
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum RoomDesignation {
-    OwnedRoom,
-    PlayerRoom,
-    NotOwnedRoom,
-    NeutralRoom,
+    Owned,
+    NotOwned,
+    Enemy,
+    Invader,
+    Portal,
+    Highway
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -82,11 +84,11 @@ pub fn set_room_blueprint(room_name: String, blueprint: JsValue) {
 }
 
 impl RoomState {
-    pub fn new(name: RoomName) -> Self {
+    pub fn new(room_name: RoomName) -> Self {
         RoomState {
-            name,
+            room_name,
             owner: String::new(),
-            designation: RoomDesignation::NotOwnedRoom,
+            designation: RoomDesignation::NotOwned,
             rcl: 0,
             terrain: PackedTerrain::new(),
             controller: None,

@@ -1,8 +1,9 @@
-use crate::geometry::direction::{OFFSET_BY_DIRECTION};
+use crate::geometry::direction::OFFSET_BY_DIRECTION;
 use crate::geometry::rect::{ball, Rect};
 use crate::geometry::room_coordinate::RoomCoordinateUtils;
-use enum_iterator::IntoEnumIterator;
-use screeps::{Direction, OutOfBoundsError, RoomXY, ROOM_SIZE};
+use enum_iterator::all;
+use num_traits::Signed;
+use screeps::{Direction, OutOfBoundsError, RoomCoordinate, RoomXY, ROOM_SIZE};
 use std::cmp::{max, min};
 
 pub trait RoomXYUtils
@@ -21,6 +22,9 @@ where
     fn sub(self, other: Self) -> (i8, i8);
     unsafe fn add_diff(self, diff: (i8, i8)) -> Self;
     fn try_add_diff(self, diff: (i8, i8)) -> Result<Self, OutOfBoundsError>;
+    fn saturated_add_diff(self, diff: (i8, i8)) -> Self;
+
+    fn direction_to(self, target: Self) -> Option<Direction>;
 
     fn dist(self, other: Self) -> u8;
 }
@@ -43,34 +47,19 @@ impl RoomXYUtils for RoomXY {
     // 0.44ms with direction item + OFFSET_BY_DIRECTION implementation
     #[inline]
     fn around(self) -> impl Iterator<Item = RoomXY> {
-        // let mut result = Vec::new();
-        // let (x, y) = (self.x.u8() as i8, self.y.u8() as i8);
-        // for near_y in (y - 1)..(y + 2) {
-        //     for near_x in (x - 1)..(x + 2) {
-        //         if (near_y != y || near_x != x) && 0 <= near_x
-        //                 && (near_x as u8) < ROOM_SIZE
-        //                 && 0 <= near_y && (near_y as u8) < ROOM_SIZE {
-        //             // (near_x, near_y) was already checked to be within bounds, so it is safe.
-        //             result.push(unsafe { RoomXY::unchecked_new(near_x as u8, near_y as u8) });
-        //         }
-        //     }
-        // }
-        // result.into_iter()
-        // Direction::into_enum_iter().filter_map(|d| self.try_add_diff(offset_from_direction(d)).ok())
-        Direction::into_enum_iter().filter_map(move |d| self.try_add_diff(OFFSET_BY_DIRECTION[d as usize]).ok())
+        all::<Direction>().filter_map(move |d| self.try_add_diff(OFFSET_BY_DIRECTION[d as usize]).ok())
     }
 
     #[inline]
     fn outward_iter(self, min_r: Option<u8>, max_r: Option<u8>) -> impl Iterator<Item = RoomXY> {
         let self_copy = self;
-        (min_r.unwrap_or(0)..max_r.unwrap_or(self_copy.max_exit_distance())).flat_map(move |r| {
-            ball(self_copy, r).boundary().filter(move |&xy| xy.dist(self_copy) == r)
-        })
+        (min_r.unwrap_or(0)..max_r.unwrap_or(self_copy.max_exit_distance()))
+            .flat_map(move |r| ball(self_copy, r).boundary().filter(move |&xy| xy.dist(self_copy) == r))
     }
 
     fn restricted_around(self, rect: Rect) -> impl Iterator<Item = RoomXY> {
         // The function is safe because valid Rect consists of RoomCoordinate which are withing room bounds.
-        Direction::into_enum_iter().filter_map(move |d| {
+        all::<Direction>().filter_map(move |d| {
             let (dx, dy) = OFFSET_BY_DIRECTION[d as usize];
             let x = self.x.u8() as i8 + dx;
             let y = self.y.u8() as i8 + dy;
@@ -112,6 +101,43 @@ impl RoomXYUtils for RoomXY {
 
     fn try_add_diff(self, diff: (i8, i8)) -> Result<Self, OutOfBoundsError> {
         Ok((self.x.try_add_diff(diff.0)?, self.y.try_add_diff(diff.1)?).into())
+    }
+
+    fn saturated_add_diff(self, diff: (i8, i8)) -> Self {
+        unsafe {
+            RoomXY::from((
+                RoomCoordinate::unchecked_new(max(0, min(ROOM_SIZE as i8 - 1, self.x.u8() as i8 + diff.0)) as u8),
+                RoomCoordinate::unchecked_new(max(0, min(ROOM_SIZE as i8 - 1, self.y.u8() as i8 + diff.1)) as u8),
+            ))
+        }
+    }
+
+    fn direction_to(self, target: Self) -> Option<Direction> {
+        // Logic copied from screeps-game-api and https://github.com/screeps/engine/blob/020ba168a1fde9a8072f9f1c329d5c0be8b440d7/src/utils.js#L73-L107
+        let (dx, dy) = target.sub(self);
+        if dx.abs() > dy.abs() * 2 {
+            if dx > 0 {
+                Some(Direction::Right)
+            } else {
+                Some(Direction::Left)
+            }
+        } else if dy.abs() > dx.abs() * 2 {
+            if dy > 0 {
+                Some(Direction::Bottom)
+            } else {
+                Some(Direction::Top)
+            }
+        } else if dx > 0 && dy > 0 {
+            Some(Direction::BottomRight)
+        } else if dx > 0 && dy < 0 {
+            Some(Direction::TopRight)
+        } else if dx < 0 && dy > 0 {
+            Some(Direction::BottomLeft)
+        } else if dx < 0 && dy < 0 {
+            Some(Direction::TopLeft)
+        } else {
+            None
+        }
     }
 
     fn dist(self, other: Self) -> u8 {
@@ -199,14 +225,8 @@ mod tests {
         unsafe {
             assert_eq!(RoomXY::unchecked_new(0, 0).exit_distance(), 0);
             assert_eq!(RoomXY::unchecked_new(2, 4).exit_distance(), 2);
-            assert_eq!(
-                RoomXY::unchecked_new(ROOM_SIZE - 1, ROOM_SIZE - 1).exit_distance(),
-                0
-            );
-            assert_eq!(
-                RoomXY::unchecked_new(ROOM_SIZE - 2, ROOM_SIZE - 3).exit_distance(),
-                1
-            );
+            assert_eq!(RoomXY::unchecked_new(ROOM_SIZE - 1, ROOM_SIZE - 1).exit_distance(), 0);
+            assert_eq!(RoomXY::unchecked_new(ROOM_SIZE - 2, ROOM_SIZE - 3).exit_distance(), 1);
             assert_eq!(RoomXY::unchecked_new(10, 13).exit_distance(), 10);
         }
     }

@@ -60,6 +60,15 @@ where
     }
 }
 
+impl<T> Default for RoomMatrix<T>
+where
+    T: Clone + Copy + PartialEq + Default,
+{
+    fn default() -> Self {
+        RoomMatrix::new(T::default())
+    }
+}
+
 impl<T> Display for RoomMatrix<T>
 where
     T: Clone + Copy + PartialEq + LowerHex + Sized,
@@ -68,7 +77,12 @@ where
         for y in 0..ROOM_SIZE {
             for x in 0..ROOM_SIZE {
                 unsafe {
-                    write!(f, "{:0>size$x}", self.get(RoomXY::unchecked_new(x, y)), size = 2 * size_of::<T>())?;
+                    write!(
+                        f,
+                        "{:0>size$x}",
+                        self.get(RoomXY::unchecked_new(x, y)),
+                        size = 2 * size_of::<T>()
+                    )?;
                     if x != ROOM_SIZE - 1 {
                         write!(f, " ")?;
                     }

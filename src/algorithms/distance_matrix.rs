@@ -57,18 +57,16 @@ where
     T: Iterator<Item = RoomXY>,
 {
     let mut result = RoomMatrixSlice::new(slice, UNREACHABLE_COST);
-
     for xy in obstacles {
+        debug_assert!(slice.contains(xy));
         result.set(xy, OBSTACLE_COST);
     }
-
     let mut layer = Vec::new();
 
     for xy in target {
         result.set(xy, 0);
         layer.push(xy);
     }
-
     let mut distance = 1u8;
 
     while !layer.is_empty() && distance <= max_distance {

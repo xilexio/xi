@@ -42,6 +42,10 @@ impl PackedTerrain {
         self.iter().filter_map(|(xy, t)| (t == Wall).then_some(xy))
     }
 
+    pub fn not_walls(&self) -> impl Iterator<Item = RoomXY> + '_ {
+        self.iter().filter_map(|(xy, t)| (t != Wall).then_some(xy))
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (RoomXY, Terrain)> + '_ {
         (0..ROOM_AREA).map(|i| {
             let xy = unsafe {
@@ -69,7 +73,6 @@ impl PackedTerrain {
 impl From<RoomTerrain> for PackedTerrain {
     fn from(value: RoomTerrain) -> Self {
         let mut packed_terrain = PackedTerrain::new();
-        let raw = value.get_raw_buffer();
         for y in 0..ROOM_SIZE {
             for x in 0..ROOM_SIZE {
                 let index = x as usize + (ROOM_SIZE as usize) * (y as usize);

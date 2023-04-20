@@ -3,14 +3,18 @@ use crate::algorithms::room_matrix::RoomMatrix;
 use room_visual_ext::RoomVisualExt;
 use screeps::{CircleStyle, LineStyle, RectStyle, RoomName, RoomXY, TextStyle};
 use std::f32::consts::PI;
+use petgraph::graph::NodeIndex;
 use petgraph::prelude::EdgeRef;
 use petgraph::stable_graph::StableGraph;
 use petgraph::Undirected;
+use rustc_hash::FxHashMap;
 use crate::room_state::StructuresMap;
+use crate::unwrap;
 
 pub enum Visualization {
     Matrix(Box<RoomMatrix<u8>>),
     Graph(StableGraph<RoomXY, u8, Undirected, u16>),
+    NodeLabels(StableGraph<RoomXY, u8, Undirected, u16>, FxHashMap<NodeIndex<u16>, String>),
     Structures(StructuresMap),
 }
 use crate::visualization::Visualization::*;
@@ -104,12 +108,30 @@ pub fn visualize(room_name: RoomName, visualization: Visualization) {
                 }
             }
         },
+        NodeLabels(graph, node_values) => {
+            for node in graph.node_indices() {
+                let xy = graph[node];
+                vis.text(
+                    xy.x.u8() as f32,
+                    xy.y.u8() as f32 + 0.3,
+                    unwrap!(node_values.get(&node)).clone(),
+                    Some(
+                        TextStyle::default()
+                            .font(0.7)
+                            .color("#bfb")
+                            .opacity(1.0)
+                            .stroke("#000")
+                            .stroke_width(0.1)
+                    ),
+                );
+            }
+        },
         Structures(structures_map) => {
             for (&structure_type, xys) in structures_map.iter() {
                 for xy in xys.iter().copied() {
                     vis.structure_roomxy(xy, structure_type, 0.7);
                 }
             }
-        }
+        },
     }
 }

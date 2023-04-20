@@ -3,16 +3,17 @@ use crate::algorithms::distance_transform::distance_transform;
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix::RoomMatrix;
 use crate::consts::OBSTACLE_COST;
-use crate::geometry::rect::ball;
+use crate::geometry::rect::{ball, room_rect};
 use crate::geometry::room_xy::RoomXYUtils;
-use petgraph::graph::NodeIndex;
-use petgraph::prelude::StableGraph;
-use petgraph::Undirected;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::RoomXY;
 use std::cmp::Reverse;
 use std::iter::once;
+use petgraph::prelude::EdgeRef;
+use petgraph::stable_graph::{NodeIndex, StableGraph};
+use petgraph::Undirected;
 use tap::prelude::*;
+use crate::algorithms::vertex_cut::vertex_cut;
 
 pub type ChunkId = NodeIndex<u16>;
 
@@ -20,11 +21,53 @@ pub struct ChunkGraph {
     /// The assignment tiles -> chunks.
     pub xy_chunks: RoomMatrix<ChunkId>,
     /// Sizes of chunks.
-    chunk_sizes: FxHashMap<ChunkId, u16>,
+    pub chunk_sizes: FxHashMap<ChunkId, u16>,
     /// A graph of chunks with edges between neighboring chunks.
     /// Nodes are labelled by chunk centers. Weights of edges are the distance between chunk
     /// centers.
     pub graph: StableGraph<RoomXY, u8, Undirected, u16>,
+}
+
+impl ChunkGraph {
+    /// Returns vector with all chunks containing an exit tile.
+    pub fn exit_chunks(&self) -> FxHashSet<ChunkId> {
+        let mut result = FxHashSet::default();
+        for xy in room_rect().boundary() {
+            let chunk = self.xy_chunks.get(xy);
+            if chunk != invalid_chunk_node_index() {
+                result.insert(chunk);
+            }
+        }
+        result
+    }
+
+    /// Returns cut vertices, i.e., all chunks whose removal will split the graph in two.
+    pub fn hard_chokepoints(&self) -> FxHashSet<ChunkId> {
+        let mut chokepoints = vertex_cut(&self.graph);
+        for node in self.exit_chunks().into_iter() {
+            chokepoints.remove(&node);
+        }
+        chokepoints
+    }
+
+    /// Returns vector with all chunks possible to isolate by removing a single node.
+    pub fn enclosed(&self) -> FxHashSet<ChunkId> {
+        let chokepoints = self.hard_chokepoints();
+
+        let mut visited = self.exit_chunks();
+        let mut path = visited.iter().copied().collect::<Vec<_>>();
+
+        while let Some(node) = path.pop() {
+            for edge in self.graph.edges(node) {
+                if !visited.contains(&edge.target()) && !chokepoints.contains(&edge.target()) {
+                    path.push(edge.target());
+                    visited.insert(edge.target());
+                }
+            }
+        }
+
+        self.graph.node_indices().filter(|node| !visited.contains(node)).collect()
+    }
 }
 
 pub fn invalid_chunk_node_index() -> ChunkId {
@@ -32,6 +75,7 @@ pub fn invalid_chunk_node_index() -> ChunkId {
 }
 
 /// The obstacles matrix should have OBSTACLE_COST on obstacle tiles and 0 on the rest.
+// TODO remove terrain in favor of obstacles iterator.
 pub fn chunk_graph(terrain: &RoomMatrix<u8>, chunk_radius: u8) -> ChunkGraph {
     let exits: Vec<RoomXY> = terrain
         .boundary()
@@ -42,7 +86,7 @@ pub fn chunk_graph(terrain: &RoomMatrix<u8>, chunk_radius: u8) -> ChunkGraph {
 
     let dt = terrain
         .map(|_, t| OBSTACLE_COST - t)
-        .tap_mut(|t| distance_transform(t));
+        .tap_mut(|t| distance_transform(t, 1));
 
     let tiles = terrain
         .find_xy(0)
@@ -121,13 +165,13 @@ pub fn chunk_graph(terrain: &RoomMatrix<u8>, chunk_radius: u8) -> ChunkGraph {
         }
     }
 
-    let min_chunk_size = (chunk_radius as u16) * (chunk_radius as u16);
+    let minimum_chunk_size = min_chunk_size(chunk_radius);
 
     // We remove all chunks that are smaller than min_chunk_size and save all remaining chunks'
     // centers.
     let mut layer = Vec::new();
     chunk_sizes.retain(|&chunk_id, &mut size| {
-        if size >= min_chunk_size {
+        if size >= minimum_chunk_size {
             layer.push((*graph.node_weight(chunk_id).unwrap(), chunk_id));
             true
         } else {
@@ -172,7 +216,7 @@ pub fn chunk_graph(terrain: &RoomMatrix<u8>, chunk_radius: u8) -> ChunkGraph {
                         next_layer.push((near, chunk_id));
                         xy_chunks.set(near, chunk_id);
                         *chunk_sizes.get_mut(&chunk_id).unwrap() += 1;
-                    } else {
+                    } else if near_chunk_id != chunk_id {
                         graph.update_edge(chunk_id, near_chunk_id, 1);
                     }
                 }
@@ -188,6 +232,11 @@ pub fn chunk_graph(terrain: &RoomMatrix<u8>, chunk_radius: u8) -> ChunkGraph {
         chunk_sizes,
         graph,
     }
+}
+
+#[inline]
+pub fn min_chunk_size(chunk_radius: u8) -> u16 {
+    (chunk_radius as u16) * (chunk_radius as u16)
 }
 
 #[cfg(test)]

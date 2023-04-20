@@ -1,9 +1,9 @@
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix::RoomMatrix;
 use crate::consts::OBSTACLE_COST;
-use screeps::{RoomXY, ROOM_SIZE};
-use std::cmp::{max, min};
 use crate::geometry::rect::room_rect;
+use screeps::{Direction, RoomXY, ROOM_SIZE};
+use std::cmp::{max, min};
 
 pub fn distance_transform_from_obstacles<O>(obstacles: O) -> RoomMatrix<u8>
 where
@@ -16,13 +16,13 @@ where
     for xy in obstacles {
         result.set(xy, 0);
     }
-    distance_transform(&mut result);
+    distance_transform(&mut result, 1);
     result
 }
 
 pub fn l1_distance_transform_from_obstacles<O>(obstacles: O) -> RoomMatrix<u8>
-    where
-        O: Iterator<Item = RoomXY>,
+where
+    O: Iterator<Item = RoomXY>,
 {
     let mut result = RoomMatrix::new(OBSTACLE_COST);
     for xy in room_rect().boundary() {
@@ -31,103 +31,133 @@ pub fn l1_distance_transform_from_obstacles<O>(obstacles: O) -> RoomMatrix<u8>
     for xy in obstacles {
         result.set(xy, 0);
     }
-    horizontal_vertical_distance_transform(&mut result);
+    horizontal_vertical_distance_transform(&mut result, 1);
     result
 }
 
 /// Performs a distance transform. The matrix should have 0 on all obstacles and at least ROOM_SIZE
 /// on other tiles.
-pub fn distance_transform<T>(matrix: &mut T)
-where
-    T: MatrixCommon<u8>,
-{
-    horizontal_vertical_distance_transform(matrix);
-    cross_distance_transform(matrix);
+#[inline]
+pub fn distance_transform(matrix: &mut RoomMatrix<u8>, edge_distance: u8) {
+    horizontal_vertical_distance_transform(matrix, edge_distance);
+    cross_distance_transform(matrix, edge_distance);
 }
 
-pub fn horizontal_vertical_distance_transform<T>(matrix: &mut T)
-where
-    T: MatrixCommon<u8>,
-{
-    let mut dist = ROOM_SIZE;
-    for y in 0..ROOM_SIZE {
-        // Towards right.
-        for x in 0..ROOM_SIZE {
-            unsafe {
-                dist = min(matrix.get_xy(x, y), dist + 1);
-                matrix.set_xy(x, y, dist);
-            }
-        }
-        dist = ROOM_SIZE;
-        // Towards left.
-        for x in 0..ROOM_SIZE {
-            unsafe {
-                dist = min(matrix.get_xy(ROOM_SIZE - 1 - x, y), dist + 1);
-                matrix.set_xy(ROOM_SIZE - 1 - x, y, dist);
-            }
-        }
-    }
-    for x in 0..ROOM_SIZE {
-        dist = ROOM_SIZE;
-        // Towards bottom.
-        for y in 0..ROOM_SIZE {
-            unsafe {
-                dist = min(matrix.get_xy(x, y), dist + 1);
-                matrix.set_xy(x, y, dist);
-            }
-        }
-        dist = ROOM_SIZE;
-        // Towards top.
-        for y in 0..ROOM_SIZE {
-            unsafe {
-                dist = min(matrix.get_xy(x, ROOM_SIZE - 1 - y), dist + 1);
-                matrix.set_xy(x, ROOM_SIZE - 1 - y, dist);
-            }
-        }
-    }
+#[inline]
+pub fn horizontal_vertical_distance_transform(matrix: &mut RoomMatrix<u8>, edge_distance: u8) {
+    directional_distance_transform(matrix, Direction::Top, edge_distance);
+    directional_distance_transform(matrix, Direction::Bottom, edge_distance);
+    directional_distance_transform(matrix, Direction::Right, edge_distance);
+    directional_distance_transform(matrix, Direction::Left, edge_distance);
 }
 
-pub fn cross_distance_transform<T>(matrix: &mut T)
-where
-    T: MatrixCommon<u8>,
-{
-    let size = ROOM_SIZE as i8;
-    let mut dist = ROOM_SIZE;
-    for y in 0..(2 * size - 1) {
-        // Towards top right.
-        for x in max(0, y - size + 1)..min(y + 1, size) {
-            unsafe {
-                dist = min(matrix.get_xy(x as u8, (y - x) as u8), dist + 1);
-                matrix.set_xy(x as u8, (y - x) as u8, dist);
+#[inline]
+pub fn cross_distance_transform(matrix: &mut RoomMatrix<u8>, edge_distance: u8) {
+    directional_distance_transform(matrix, Direction::TopRight, edge_distance);
+    directional_distance_transform(matrix, Direction::BottomLeft, edge_distance);
+    directional_distance_transform(matrix, Direction::BottomRight, edge_distance);
+    directional_distance_transform(matrix, Direction::TopLeft, edge_distance);
+}
+
+/// Performs a distance transform in a single direction. The result is distance from 0 while moving in the reverse
+/// direction. Edges start from edge_distance.
+#[inline]
+pub fn directional_distance_transform(matrix: &mut RoomMatrix<u8>, direction: Direction, edge_distance: u8) {
+    match direction {
+        Direction::Top => {
+            for x in 0..ROOM_SIZE {
+                let mut dist = edge_distance;
+                for y in 0..ROOM_SIZE {
+                    unsafe {
+                        dist = min(matrix.get_xy(x, ROOM_SIZE - 1 - y), dist + 1);
+                        matrix.set_xy(x, ROOM_SIZE - 1 - y, dist);
+                    }
+                }
             }
         }
-        dist = ROOM_SIZE;
-        // Towards bottom left.
-        for x in max(0, y - size + 1)..min(y + 1, size) {
-            unsafe {
-                dist = min(matrix.get_xy((size - 1 - x) as u8, (size - 1 - y + x) as u8), dist + 1);
-                matrix.set_xy((size - 1 - x) as u8, (size - 1 - y + x) as u8, dist);
+        Direction::TopRight => {
+            let size = ROOM_SIZE as i8;
+            for y in 0..(2 * size - 1) {
+                let mut dist = edge_distance;
+                for x in max(0, y - size + 1)..min(y + 1, size) {
+                    unsafe {
+                        dist = min(matrix.get_xy(x as u8, (y - x) as u8), dist + 1);
+                        matrix.set_xy(x as u8, (y - x) as u8, dist);
+                    }
+                }
             }
         }
-    }
-    for y in 0..(2 * size - 1) {
-        dist = ROOM_SIZE;
-        // Towards bottom right.
-        for x in max(0, y - size + 1)..min(y + 1, size) {
-            unsafe {
-                dist = min(matrix.get_xy(x as u8, (size - 1 - y + x) as u8), dist + 1);
-                matrix.set_xy(x as u8, (size - 1 - y + x) as u8, dist);
+        Direction::Right => {
+            for y in 0..ROOM_SIZE {
+                let mut dist = edge_distance;
+                for x in 0..ROOM_SIZE {
+                    unsafe {
+                        dist = min(matrix.get_xy(x, y), dist + 1);
+                        matrix.set_xy(x, y, dist);
+                    }
+                }
             }
         }
-        dist = ROOM_SIZE;
-        // Towards top left.
-        for x in max(0, y - size + 1)..min(y + 1, size) {
-            unsafe {
-                dist = min(matrix.get_xy((size - 1 - x) as u8, (y - x) as u8), dist + 1);
-                matrix.set_xy((size - 1 - x) as u8, (y - x) as u8, dist);
+        Direction::BottomRight => {
+            let size = ROOM_SIZE as i8;
+            for y in 0..(2 * size - 1) {
+                let mut dist = edge_distance;
+                for x in max(0, y - size + 1)..min(y + 1, size) {
+                    unsafe {
+                        dist = min(matrix.get_xy(x as u8, (size - 1 - y + x) as u8), dist + 1);
+                        matrix.set_xy(x as u8, (size - 1 - y + x) as u8, dist);
+                    }
+                }
             }
         }
-    }
+        Direction::Bottom => {
+            for x in 0..ROOM_SIZE {
+                let mut dist = edge_distance;
+                for y in 0..ROOM_SIZE {
+                    unsafe {
+                        dist = min(matrix.get_xy(x, y), dist + 1);
+                        matrix.set_xy(x, y, dist);
+                    }
+                }
+            }
+        }
+        Direction::BottomLeft => {
+            let size = ROOM_SIZE as i8;
+            for y in 0..(2 * size - 1) {
+                let mut dist = edge_distance;
+                // Towards bottom left.
+                for x in max(0, y - size + 1)..min(y + 1, size) {
+                    unsafe {
+                        dist = min(matrix.get_xy((size - 1 - x) as u8, (size - 1 - y + x) as u8), dist + 1);
+                        matrix.set_xy((size - 1 - x) as u8, (size - 1 - y + x) as u8, dist);
+                    }
+                }
+            }
+        }
+        Direction::Left => {
+            for y in 0..ROOM_SIZE {
+                let mut dist = edge_distance;
+                for x in 0..ROOM_SIZE {
+                    unsafe {
+                        dist = min(matrix.get_xy(ROOM_SIZE - 1 - x, y), dist + 1);
+                        matrix.set_xy(ROOM_SIZE - 1 - x, y, dist);
+                    }
+                }
+            }
+        }
+        Direction::TopLeft => {
+            let size = ROOM_SIZE as i8;
+            for y in 0..(2 * size - 1) {
+                let mut dist = edge_distance;
+                for x in max(0, y - size + 1)..min(y + 1, size) {
+                    unsafe {
+                        dist = min(matrix.get_xy((size - 1 - x) as u8, (y - x) as u8), dist + 1);
+                        matrix.set_xy((size - 1 - x) as u8, (y - x) as u8, dist);
+                    }
+                }
+            }
+        }
+    };
 }
 
 #[cfg(test)]
@@ -203,7 +233,8 @@ mod tests {
             (15, 13).try_into().unwrap(),
             (16, 13).try_into().unwrap(),
             (14, 14).try_into().unwrap(),
-        ].into_iter();
+        ]
+        .into_iter();
 
         let dm_l1 = l1_distance_transform_from_obstacles(obstacles);
 

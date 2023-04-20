@@ -49,6 +49,8 @@ pub enum PackedTileStructuresError {
     InvalidMainStructureType,
     #[error("empty main structure type")]
     EmptyMainStructureType,
+    #[error("merge conflict when trying to place two incompatible structures in one tile")]
+    MergeConflict,
 }
 
 impl Display for PackedTileStructures {
@@ -76,9 +78,9 @@ impl Display for PackedTileStructures {
             MainStructureType::InvaderCore => '@',
         };
         let (left_str, right_str) = match (self.road(), self.rampart()) {
-            (false, true) => (' ', ' '),
+            (false, false) => (' ', ' '),
             (true, false) => ('|', '|'),
-            (false, false) => ('(', ')'),
+            (false, true) => ('(', ')'),
             (true, true) => ('[', ']'),
         };
         write!(f, "{}{}{}", left_str, main_str, right_str)
@@ -169,22 +171,32 @@ impl PackedTileStructures {
             && (friendly || !self.rampart())
     }
 
-    pub fn with(self, structure_type: StructureType) -> Self {
+    #[inline]
+    pub fn merge(self, structure_type: StructureType) -> Result<Self, PackedTileStructuresError> {
         if structure_type == StructureType::Rampart {
-            self.with_rampart(true)
+            Ok(self.with_rampart(true))
         } else if structure_type == StructureType::Road {
             if self.main() == MainStructureType::Empty || self.main() == MainStructureType::Container {
-                self.with_road(true)
+                Ok(self.with_road(true))
             } else {
-                self.with_main(MainStructureType::Empty).with_road(true)
+                Err(PackedTileStructuresError::MergeConflict)
             }
-        } else if structure_type == StructureType::Container {
-            self.with_main(MainStructureType::Container)
         } else {
-            self.with_main(structure_type.try_into().unwrap()).with_road(false)
+            let main = structure_type.try_into().unwrap();
+            if (self.main() == MainStructureType::Empty || self.main() == main) && (main == MainStructureType::Container || !self.road()) {
+                Ok(self.with_main(main))
+            } else {
+                Err(PackedTileStructuresError::MergeConflict)
+            }
         }
     }
 
+    #[inline]
+    pub fn without_main(self) -> Self {
+        self.with_main(MainStructureType::Empty)
+    }
+
+    #[inline]
     pub fn iter(self) -> impl Iterator<Item = StructureType> {
         let mut structure_types = Vec::new();
         if let Ok(structure_type) = self.main().try_into() { structure_types.push(structure_type) }
@@ -197,39 +209,41 @@ impl PackedTileStructures {
         structure_types.into_iter()
     }
 
-    pub fn merge(self, other: Self) -> Self {
+    pub fn merge_tile(self, other: Self) -> Result<Self, PackedTileStructuresError> {
         let mut result = self;
         for structure_type in other.iter() {
-            result = result.with(structure_type);
+            result = result.merge(structure_type)?;
         }
-        result
+        Ok(result)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::error::Error;
     use crate::room_planner::packed_tile_structures::{MainStructureType, PackedTileStructures};
     use screeps::StructureType::{Container, Rampart, Road, Spawn};
 
     #[test]
-    fn test_is_passable() {
+    fn test_is_passable() -> Result<(), Box<dyn Error>> {
         assert!(PackedTileStructures::default().is_passable(true));
         assert_eq!(PackedTileStructures::from(Road).main(), MainStructureType::Empty);
         assert!(PackedTileStructures::from(Road).is_passable(false));
         assert!(PackedTileStructures::from(Rampart).is_passable(true));
         assert!(!PackedTileStructures::from(Rampart).is_passable(false));
         assert!(PackedTileStructures::from(Container).is_passable(false));
-        assert!(!PackedTileStructures::from(Container).with(Rampart).is_passable(false));
+        assert!(!PackedTileStructures::from(Container).merge(Rampart)?.is_passable(false));
         assert!(!PackedTileStructures::from(Spawn).is_passable(true));
-        assert!(!PackedTileStructures::from(Spawn).with(Rampart).is_passable(true));
+        assert!(!PackedTileStructures::from(Spawn).merge(Rampart)?.is_passable(true));
         assert!(PackedTileStructures::from(Container)
-            .with(Road)
-            .with(Rampart)
+            .merge(Road)?
+            .merge(Rampart)?
             .is_passable(true));
         assert!(!PackedTileStructures::from(Container)
-            .with(Road)
-            .with(Rampart)
+            .merge(Road)?
+            .merge(Rampart)?
             .is_passable(false));
-        assert!(PackedTileStructures::from(Container).with(Road).is_passable(false));
+        assert!(PackedTileStructures::from(Container).merge(Road)?.is_passable(false));
+        Ok(())
     }
 }

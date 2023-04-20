@@ -11,3 +11,5 @@ pub mod interior_matrix;
 pub mod max_boundary_distance;
 pub mod binary_search;
 pub mod weighted_distance_matrix;
+pub mod vertex_cut;
+pub mod chokepoint_matrix;

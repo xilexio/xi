@@ -2,11 +2,11 @@ use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix::RoomMatrix;
 use crate::consts::OBSTACLE_COST;
 use crate::geometry::room_xy::RoomXYUtils;
-use enum_iterator::IntoEnumIterator;
 use screeps::{RoomXY, ROOM_SIZE};
 use std::fmt::{Display, Formatter};
 use crate::algorithms::grid_min_cut::GridGraphDirection::*;
 use crate::algorithms::grid_min_cut::TileVertexKind::*;
+use enum_iterator::{Sequence, all};
 
 /// Computes a minimum vertex separator (i.e., min-cut, but for vertices) of a movement graph in
 /// a room with source in start and sink in the exits and the tiles (vertices) that surround it.
@@ -445,7 +445,7 @@ where
 {
     let mut edge = node.0;
 
-    for direction in GridGraphDirection::into_enum_iter() {
+    for direction in all::<GridGraphDirection>() {
         let (x, y) = direction_to_offset(direction);
         f(GridGraphNode((((node.0 ^ 1) as i16) + x * (1 << 1) + y * (1 << 7)) as u16), GridGraphEdge(edge));
         edge += GRID_NODE_ID_CAPACITY;
@@ -457,7 +457,7 @@ enum TileVertexKind {
     Output = 1,
 }
 
-#[derive(Debug, IntoEnumIterator, Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Sequence)]
 #[repr(u8)]
 enum GridGraphDirection {
     Internal = 0,
@@ -525,7 +525,7 @@ mod tests {
     use crate::consts::OBSTACLE_COST;
     use crate::geometry::rect::Rect;
     use crate::geometry::room_xy::RoomXYUtils;
-    use enum_iterator::IntoEnumIterator;
+    use enum_iterator::all;
     use screeps::{RoomXY, ROOM_SIZE};
     use std::error::Error;
 
@@ -541,7 +541,7 @@ mod tests {
 
         let output_node = grid_node(12, 12, Output);
 
-        for direction in GridGraphDirection::into_enum_iter() {
+        for direction in all::<GridGraphDirection>() {
             let output_to_something_edge = grid_edge(output_node, direction);
             assert_eq!(reverse_edge(reverse_edge(output_to_something_edge)), output_to_something_edge);
         }
