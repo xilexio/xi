@@ -1,7 +1,7 @@
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix_slice::RoomMatrixSlice;
 use crate::geometry::rect::Rect;
-use crate::room_planner::planned_tile::PlannedTile;
+use crate::room_planner::planned_tile::{BasePart, PlannedTile};
 use screeps::StructureType::{Container, Extension, Factory, Lab, Link, PowerSpawn, Road, Spawn, Storage, Terminal};
 
 // TODO memoize - maybe use https://crates.io/crates/memoize
@@ -64,7 +64,7 @@ pub fn core_stamp() -> RoomMatrixSlice<PlannedTile> {
     result.set((4, 6).try_into().unwrap(), Road.into());
     result.set((5, 6).try_into().unwrap(), Road.into());
 
-    result.map(|xy, tile| tile.with_interior(true))
+    result.map(|xy, tile| tile.with_base_part(BasePart::Interior))
 }
 
 // A compact core
@@ -114,7 +114,7 @@ pub fn labs_stamp() -> RoomMatrixSlice<PlannedTile> {
         if tile.is_empty() {
             tile
         } else {
-            tile.with_interior(true)
+            tile.with_base_part(BasePart::Interior)
         }
     })
 }

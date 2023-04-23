@@ -7,8 +7,9 @@ use crate::geometry::room_xy::RoomXYUtils;
 use screeps::RoomXY;
 use std::cmp::min;
 
-/// Computes a matrix with distances from all tiles in the room to given target. OBSTACLE_COST where there are
-/// obstacles, UNREACHABLE_COST when the target is unreachable and the distance is clamped at UNREACHABLE_COST.
+/// Computes a matrix with distances from all tiles in the room to given target. `OBSTACLE_COST` where there are
+/// obstacles, `UNREACHABLE_COST` when the target is unreachable and the distance is clamped at `UNREACHABLE_COST`.
+/// The target is always at distance 0, regardless of being an obstacle.
 pub fn distance_matrix<T, O>(obstacles: O, target: T) -> RoomMatrix<u8>
 where
     T: Iterator<Item = RoomXY>,

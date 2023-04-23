@@ -2,7 +2,6 @@ use crate::geometry::direction::OFFSET_BY_DIRECTION;
 use crate::geometry::rect::{ball, Rect};
 use crate::geometry::room_coordinate::RoomCoordinateUtils;
 use enum_iterator::all;
-use num_traits::Signed;
 use screeps::{Direction, OutOfBoundsError, RoomCoordinate, RoomXY, ROOM_SIZE};
 use std::cmp::{max, min};
 

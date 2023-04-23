@@ -5,15 +5,19 @@ use screeps::RoomXY;
 use crate::geometry::room_xy::RoomXYUtils;
 
 /// Returns a matrix with information what is outside or an obstacle (false) and what inside or on the cut (true),
-/// given a vertex cut and matrix that has OBSTACLE_COST where obstacles are.
-pub fn interior_matrix<O, C>(obstacles: O, cut: C) -> RoomMatrix<bool>
+/// given a list of obstacles and a cut supposed to divide exit tiles from the interior.
+pub fn interior_matrix<O, C>(obstacles: O, cut: C, obstacles_included: bool, cut_included: bool) -> RoomMatrix<bool>
 where
     O: Iterator<Item = RoomXY>,
     C: Iterator<Item = RoomXY>,
 {
     let mut result = RoomMatrix::new(true);
+    let mut obstacles_vec = Vec::new();
     for xy in obstacles {
         result.set(xy, false);
+        if obstacles_included {
+            obstacles_vec.push(xy);
+        }
     }
 
     let not_obstacle_matrix = result.clone();
@@ -48,8 +52,16 @@ where
         layer = next_layer;
     }
 
-    for xy in cut_vec.into_iter() {
-        result.set(xy, true);
+    if cut_included {
+        for xy in cut_vec.into_iter() {
+            result.set(xy, true);
+        }
+    }
+
+    if obstacles_included {
+        for xy in obstacles_vec.into_iter() {
+            result.set(xy, true);
+        }
     }
 
     result

@@ -3,7 +3,7 @@ use screeps::StructureType;
 use std::fmt::{Display, Formatter};
 use thiserror::Error;
 
-#[derive(BitfieldSpecifier, Eq, PartialEq, Debug)]
+#[derive(Debug, BitfieldSpecifier, Eq, PartialEq)]
 #[bits = 5]
 pub enum MainStructureType {
     Empty,

@@ -181,7 +181,7 @@ mod tests {
             matrix.set_xy(11, 23, 255);
         }
 
-        distance_transform(&mut matrix);
+        distance_transform(&mut matrix, 1);
 
         unsafe {
             assert_eq!(matrix.get_xy(10, 19), 0);
@@ -203,7 +203,7 @@ mod tests {
             }
         }
 
-        distance_transform(&mut matrix);
+        distance_transform(&mut matrix, 1);
 
         unsafe {
             assert_eq!(matrix.get_xy(0, 0), 0);

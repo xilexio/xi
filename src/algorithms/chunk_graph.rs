@@ -50,23 +50,46 @@ impl ChunkGraph {
         chokepoints
     }
 
-    /// Returns vector with all chunks possible to isolate by removing a single node.
-    pub fn enclosed(&self) -> FxHashSet<ChunkId> {
+    /// Returns map with all enclosed chunks mapped to the outermost chokepoint chunks that block access to them
+    /// and information whether this is a chokepoint (possibly internal) itself.
+    pub fn enclosures(&self) -> FxHashMap<ChunkId, (ChunkId, bool)> {
         let chokepoints = self.hard_chokepoints();
 
-        let mut visited = self.exit_chunks();
-        let mut path = visited.iter().copied().collect::<Vec<_>>();
+        // Visited in the graph where we check non-enclosed nodes.
+        let mut not_enclosed = self.exit_chunks();
+        {
+            let mut path = not_enclosed.iter().copied().collect::<Vec<_>>();
 
-        while let Some(node) = path.pop() {
-            for edge in self.graph.edges(node) {
-                if !visited.contains(&edge.target()) && !chokepoints.contains(&edge.target()) {
-                    path.push(edge.target());
-                    visited.insert(edge.target());
+            while let Some(node) = path.pop() {
+                for edge in self.graph.edges(node) {
+                    if !not_enclosed.contains(&edge.target()) && !chokepoints.contains(&edge.target()) {
+                        path.push(edge.target());
+                        not_enclosed.insert(edge.target());
+                    }
                 }
             }
         }
 
-        self.graph.node_indices().filter(|node| !visited.contains(node)).collect()
+        let mut result = FxHashMap::default();
+        {
+            // We only take into consideration outer chokepoints, not inner ones.
+            let mut path = chokepoints.iter().copied().filter(|&chokepoint| {
+                self.graph.edges(chokepoint).any(|edge| not_enclosed.contains(&edge.target()))
+            }).map(|node| (node, node)).collect::<Vec<_>>();
+            for (node, _) in path.iter().copied() {
+                result.insert(node, (node, true));
+            }
+            while let Some((node, chokepoint)) = path.pop() {
+                for edge in self.graph.edges(node) {
+                    if !result.contains_key(&edge.target()) && !not_enclosed.contains(&edge.target()) {
+                        result.insert(edge.target(), (chokepoint, chokepoints.contains(&edge.target())));
+                        path.push((edge.target(), chokepoint));
+                    }
+                }
+            }
+        }
+
+        result
     }
 }
 

@@ -3,8 +3,8 @@ use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix::RoomMatrix;
 use crate::room_planner::packed_tile_structures::{MainStructureType, PackedTileStructures, PackedTileStructuresError};
 use crate::room_state::StructuresMap;
-use modular_bitfield::bitfield;
-use modular_bitfield::specifiers::B7;
+use modular_bitfield::{bitfield, BitfieldSpecifier};
+use modular_bitfield::specifiers::B5;
 use rustc_hash::FxHashMap;
 use screeps::{RoomXY, StructureType, ROOM_SIZE};
 use std::fmt::{Display, Formatter};
@@ -18,13 +18,28 @@ pub enum PlannedTileError {
     ReservationConflict,
 }
 
+#[derive(Debug, BitfieldSpecifier, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+#[bits = 3]
+pub enum BasePart {
+    /// No rampart protection on given tile.
+    Outside,
+    /// Put under ramparts when in ranged attack range from outside and not outside. Do not influence placement of main ramparts.
+    ProtectedIfInside,
+    /// Put under ramparts when in ranged attack range from outside. Do not influence the placement of main ramparts.
+    Protected,
+    /// Keep ramparts on the tile or farther. Not necessarily under ramparts.
+    Connected,
+    /// Put under ramparts when in ranged attack range. Try to keep ramparts at ranged attack range or greater.
+    Interior,
+}
+
 #[bitfield(bits = 16)]
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct PlannedTile {
     pub structures: PackedTileStructures,
     pub reserved: bool,
-    pub interior: bool,
-    pub build_priority: B7,
+    pub base_part: BasePart,
+    pub build_priority: B5,
 }
 
 impl Default for PlannedTile {
@@ -44,6 +59,18 @@ impl PlannedTile {
 
     pub fn merge(self, structure_type: StructureType) -> Result<Self, PackedTileStructuresError> {
         Ok(self.with_structures(self.structures().merge(structure_type)?))
+    }
+
+    pub fn upgrade_base_part(self, base_part: BasePart) -> Self {
+        if self.base_part() < base_part {
+            if (self.base_part() == BasePart::Protected || self.base_part() == BasePart::ProtectedIfInside) && base_part == BasePart::Connected {
+                self.with_base_part(BasePart::Interior)
+            } else {
+                self.with_base_part(base_part)
+            }
+        } else {
+            self
+        }
     }
 
     pub fn merge_tile(self, other: Self) -> Result<Self, Box<dyn Error>> {
@@ -133,9 +160,20 @@ impl RoomMatrix<PlannedTile> {
         Ok(())
     }
 
-    pub fn merge_structure(&mut self, xy: RoomXY, structure_type: StructureType) -> Result<(), Box<dyn Error>> {
-        self.set(xy, self.get(xy).merge(structure_type)?);
+    #[inline]
+    pub fn merge_structure(&mut self, xy: RoomXY, structure_type: StructureType, base_part: BasePart) -> Result<(), Box<dyn Error>> {
+        self.set(xy, self.get(xy).merge(structure_type)?.upgrade_base_part(base_part));
         Ok(())
+    }
+
+    #[inline]
+    pub fn upgrade_base_part(&mut self, xy: RoomXY, base_part: BasePart) {
+        self.set(xy, self.get(xy).upgrade_base_part(base_part));
+    }
+
+    #[inline]
+    pub fn reserve(&mut self, xy: RoomXY) {
+        self.set(xy, self.get(xy).with_reserved(true));
     }
 }
 

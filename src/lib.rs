@@ -9,7 +9,6 @@ use crate::algorithms::distance_transform::distance_transform_from_obstacles;
 use crate::algorithms::grid_min_cut::grid_min_cut;
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix::RoomMatrix;
-use crate::algorithms::shortest_path_by_matrix::shortest_path_by_matrix;
 use crate::algorithms::weighted_distance_matrix::{obstacle_cost, unreachable_cost};
 use crate::config::LOG_LEVEL;
 use crate::consts::OBSTACLE_COST;
@@ -44,6 +43,7 @@ mod test_process;
 mod towers;
 mod unwrap;
 mod visualization;
+mod cost_approximation;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]
@@ -381,7 +381,7 @@ pub fn game_loop() {
                         if let Some(plan) = planner.best_plan.clone() {
                             visualize(
                                 room_name,
-                                Visualization::Structures(plan.planned_tiles.to_structures_map()),
+                                Visualization::Structures(plan.tiles.to_structures_map()),
                             );
                         }
                     } else {
@@ -391,7 +391,7 @@ pub fn game_loop() {
                         match plan_result {
                             Ok(plan) => visualize(
                                 room_name,
-                                Visualization::Structures(plan.planned_tiles.to_structures_map()),
+                                Visualization::Structures(plan.tiles.to_structures_map()),
                             ),
                             Err(e) => debug!("{}", e),
                         };

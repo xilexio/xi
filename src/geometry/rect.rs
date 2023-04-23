@@ -5,13 +5,13 @@ use std::cmp::{max, min};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Rect {
     pub top_left: RoomXY,
     pub bottom_right: RoomXY,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct InvalidRectError;
 
 impl Display for InvalidRectError {
@@ -131,16 +131,25 @@ impl Rect {
 
     pub fn boundary(self) -> impl Iterator<Item = RoomXY> {
         unsafe {
-            let top = (1..self.width()).map(move |dx| (self.top_left.x.add_diff(dx as i8), self.top_left.y).into());
+            let top = (0..self.width()).map(move |dx| (self.top_left.x.add_diff(dx as i8), self.top_left.y).into());
             let right =
-                (1..self.height()).map(move |dy| (self.bottom_right.x, self.top_left.y.add_diff(dy as i8)).into());
-            let bottom = (1..self.width())
+                (1..self.height() - 1).map(move |dy| (self.bottom_right.x, self.top_left.y.add_diff(dy as i8)).into());
+            let bottom = (0..if self.height() > 1 { self.width() } else { 0 })
                 .map(move |dx| (self.bottom_right.x.add_diff(-(dx as i8)), self.bottom_right.y).into());
-            let left =
-                (1..self.height()).map(move |dy| (self.top_left.x, self.bottom_right.y.add_diff(-(dy as i8))).into());
+            let left = (1..if self.width() > 1 { self.height() - 1 } else { 1 })
+                .map(move |dy| (self.top_left.x, self.bottom_right.y.add_diff(-(dy as i8))).into());
 
             top.chain(right).chain(bottom).chain(left)
         }
+    }
+
+    pub fn intersection(self, other: Rect) -> Result<Rect, InvalidRectError> {
+        let left = max(self.top_left.x, other.top_left.x);
+        let top = max(self.top_left.y, other.top_left.y);
+        let right = min(self.bottom_right.x, other.bottom_right.x);
+        let bottom = min(self.bottom_right.y, other.bottom_right.y);
+
+        Rect::new((left, top).into(), (right, bottom).into())
     }
 
     pub fn iter(self) -> impl Iterator<Item = RoomXY> {
@@ -154,9 +163,7 @@ impl Rect {
 
 impl Default for Rect {
     fn default() -> Self {
-        unsafe {
-            Rect::unchecked_new(RoomXY::unchecked_new(0, 0), RoomXY::unchecked_new(0, 0))
-        }
+        unsafe { Rect::unchecked_new(RoomXY::unchecked_new(0, 0), RoomXY::unchecked_new(0, 0)) }
     }
 }
 
@@ -208,8 +215,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::geometry::rect::Rect;
+    use crate::geometry::rect::{InvalidRectError, Rect};
     use screeps::{RoomXY, ROOM_SIZE};
+
     #[test]
     fn test_iter() {
         let rect = unsafe { Rect::unchecked_new(RoomXY::unchecked_new(0, 0), RoomXY::unchecked_new(ROOM_SIZE - 1, 5)) };
@@ -219,5 +227,69 @@ mod tests {
         }
         assert_eq!(number_of_points, rect.area());
         assert_eq!(rect.iter().next(), Some((0, 0).try_into().unwrap()));
+    }
+
+    #[test]
+    fn test_intersection() {
+        let rect1 = Rect::new_unordered((0, 0).try_into().unwrap(), (5, 5).try_into().unwrap());
+        let rect2 = Rect::new_unordered((1, 4).try_into().unwrap(), (3, 6).try_into().unwrap());
+        let rect3 = Rect::new_unordered((4, 4).try_into().unwrap(), (6, 6).try_into().unwrap());
+
+        assert_eq!(
+            rect1.intersection(rect2),
+            Ok(Rect::new_unordered(
+                (1, 4).try_into().unwrap(),
+                (3, 5).try_into().unwrap()
+            ))
+        );
+        assert_eq!(rect2.intersection(rect3), Err(InvalidRectError));
+        assert_eq!(
+            rect3.intersection(rect1),
+            Ok(Rect::new_unordered(
+                (4, 4).try_into().unwrap(),
+                (5, 5).try_into().unwrap()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_boundary() {
+        let rect1 = Rect::new_unordered((0, 0).try_into().unwrap(), (0, 0).try_into().unwrap());
+        let rect2 = Rect::new_unordered((1, 1).try_into().unwrap(), (1, 2).try_into().unwrap());
+        let rect3 = Rect::new_unordered((1, 1).try_into().unwrap(), (2, 1).try_into().unwrap());
+        let rect4 = Rect::new_unordered((1, 1).try_into().unwrap(), (2, 2).try_into().unwrap());
+        let rect5 = Rect::new_unordered((1, 1).try_into().unwrap(), (3, 3).try_into().unwrap());
+
+        assert_eq!(rect1.boundary().collect::<Vec<_>>(), vec![(0, 0).try_into().unwrap()]);
+        assert_eq!(
+            rect2.boundary().collect::<Vec<_>>(),
+            vec![(1, 1).try_into().unwrap(), (1, 2).try_into().unwrap()]
+        );
+        assert_eq!(
+            rect3.boundary().collect::<Vec<_>>(),
+            vec![(1, 1).try_into().unwrap(), (2, 1).try_into().unwrap()]
+        );
+        assert_eq!(
+            rect4.boundary().collect::<Vec<_>>(),
+            vec![
+                (1, 1).try_into().unwrap(),
+                (2, 1).try_into().unwrap(),
+                (2, 2).try_into().unwrap(),
+                (1, 2).try_into().unwrap(),
+            ]
+        );
+        assert_eq!(
+            rect5.boundary().collect::<Vec<_>>(),
+            vec![
+                (1, 1).try_into().unwrap(),
+                (2, 1).try_into().unwrap(),
+                (3, 1).try_into().unwrap(),
+                (3, 2).try_into().unwrap(),
+                (3, 3).try_into().unwrap(),
+                (2, 3).try_into().unwrap(),
+                (1, 3).try_into().unwrap(),
+                (1, 2).try_into().unwrap(),
+            ]
+        );
     }
 }
