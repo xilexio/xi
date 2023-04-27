@@ -1,6 +1,7 @@
 use crate::geometry::room_coordinate::RoomCoordinateUtils;
 use crate::geometry::room_xy::RoomXYUtils;
-use screeps::{RoomXY, ROOM_SIZE};
+use num_traits::Signed;
+use screeps::{OutOfBoundsError, RoomXY, ROOM_SIZE};
 use std::cmp::{max, min};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -150,6 +151,20 @@ impl Rect {
         let bottom = min(self.bottom_right.y, other.bottom_right.y);
 
         Rect::new((left, top).into(), (right, bottom).into())
+    }
+
+    pub fn mirror_xy(self, xy: RoomXY) -> Result<RoomXY, OutOfBoundsError> {
+        let offset = xy.sub(self.top_left);
+        self.bottom_right.try_add_diff((-offset.0, -offset.1))
+    }
+
+    pub fn boundary_dist(self, xy: RoomXY) -> u8 {
+        let top_left_offset = self.top_left.sub(xy);
+        let bottom_right_offset = self.bottom_right.sub(xy);
+        max(
+            max(top_left_offset.0.abs() as u8, top_left_offset.1.abs() as u8),
+            max(bottom_right_offset.0.abs() as u8, bottom_right_offset.1.abs() as u8),
+        )
     }
 
     pub fn iter(self) -> impl Iterator<Item = RoomXY> {

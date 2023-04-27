@@ -1,3 +1,4 @@
+use log::debug;
 use modular_bitfield::{bitfield, BitfieldSpecifier};
 use screeps::StructureType;
 use std::fmt::{Display, Formatter};
@@ -179,14 +180,38 @@ impl PackedTileStructures {
             if self.main() == MainStructureType::Empty || self.main() == MainStructureType::Container {
                 Ok(self.with_road(true))
             } else {
+                debug!("{:?} {:?}", self.main(), structure_type);
                 Err(PackedTileStructuresError::MergeConflict)
             }
         } else {
             let main = structure_type.try_into().unwrap();
-            if (self.main() == MainStructureType::Empty || self.main() == main) && (main == MainStructureType::Container || !self.road()) {
+            if (self.main() == MainStructureType::Empty || main == self.main())
+                && (main == MainStructureType::Container || !self.road())
+            {
                 Ok(self.with_main(main))
             } else {
+                debug!("{:?} {:?}", self.main(), structure_type);
                 Err(PackedTileStructuresError::MergeConflict)
+            }
+        }
+    }
+
+    #[inline]
+    pub fn replace(self, structure_type: StructureType) -> Self {
+        if structure_type == StructureType::Rampart {
+            self.with_rampart(true)
+        } else if structure_type == StructureType::Road {
+            if self.main() == MainStructureType::Empty || self.main() == MainStructureType::Container {
+                self.with_road(true)
+            } else {
+                self.without_main().with_road(true)
+            }
+        } else {
+            let main = structure_type.try_into().unwrap();
+            if self.main() == MainStructureType::Empty || main == MainStructureType::Container {
+                self.with_main(main)
+            } else {
+                self.with_main(main).with_road(false)
             }
         }
     }
@@ -199,7 +224,9 @@ impl PackedTileStructures {
     #[inline]
     pub fn iter(self) -> impl Iterator<Item = StructureType> {
         let mut structure_types = Vec::new();
-        if let Ok(structure_type) = self.main().try_into() { structure_types.push(structure_type) }
+        if let Ok(structure_type) = self.main().try_into() {
+            structure_types.push(structure_type)
+        }
         if self.road() {
             structure_types.push(StructureType::Road);
         }
@@ -220,9 +247,9 @@ impl PackedTileStructures {
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
     use crate::room_planner::packed_tile_structures::{MainStructureType, PackedTileStructures};
     use screeps::StructureType::{Container, Rampart, Road, Spawn};
+    use std::error::Error;
 
     #[test]
     fn test_is_passable() -> Result<(), Box<dyn Error>> {

@@ -64,32 +64,14 @@ pub fn core_stamp() -> RoomMatrixSlice<PlannedTile> {
     result.set((4, 6).try_into().unwrap(), Road.into());
     result.set((5, 6).try_into().unwrap(), Road.into());
 
-    result.map(|xy, tile| tile.with_base_part(BasePart::Interior))
+    result.map(|xy, tile| {
+        if !tile.is_empty() {
+            tile.with_base_part(BasePart::Interior)
+        } else {
+            tile
+        }
+    })
 }
-
-// A compact core
-// pub fn core_stamp() -> RoomMatrixSlice<PackedTileStructures> {
-//     let rect = Rect::new((0, 0).try_into().unwrap(), (4, 4).try_into().unwrap()).unwrap();
-//     let mut result = RoomMatrixSlice::new(rect, PackedTileStructures::default());
-//     result.set((2, 0).try_into().unwrap(), Road.into());
-//     result.set((3, 0).try_into().unwrap(), Road.into());
-//
-//     result.set((1, 1).try_into().unwrap(), Terminal.into());
-//     result.set((2, 1).try_into().unwrap(), Spawn.into());
-//     result.set((3, 1).try_into().unwrap(), Storage.into());
-//     result.set((4, 1).try_into().unwrap(), Road.into());
-//
-//     result.set((1, 2).try_into().unwrap(), Nuker.into());
-//     result.set((2, 2).try_into().unwrap(), PackedTileStructures::default().with_reservation());
-//     result.set((3, 2).try_into().unwrap(), Container.into());
-//     result.set((4, 2).try_into().unwrap(), Road.into());
-//
-//     result.set((1, 3).try_into().unwrap(), Link.into());
-//     result.set((2, 3).try_into().unwrap(), Factory.into());
-//     result.set((3, 3).try_into().unwrap(), PowerSpawn.into());
-//
-//     result
-// }
 
 pub fn labs_stamp() -> RoomMatrixSlice<PlannedTile> {
     let rect = Rect::new((0, 0).try_into().unwrap(), (3, 3).try_into().unwrap()).unwrap();
@@ -111,10 +93,10 @@ pub fn labs_stamp() -> RoomMatrixSlice<PlannedTile> {
     result.set((2, 3).try_into().unwrap(), Lab.into());
 
     result.map(|xy, tile| {
-        if tile.is_empty() {
-            tile
-        } else {
+        if !tile.is_empty() {
             tile.with_base_part(BasePart::Interior)
+        } else {
+            tile
         }
     })
 }

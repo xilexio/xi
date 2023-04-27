@@ -16,6 +16,7 @@ pub enum Visualization {
     Graph(StableGraph<RoomXY, u8, Undirected, u16>),
     NodeLabels(StableGraph<RoomXY, u8, Undirected, u16>, FxHashMap<NodeIndex<u16>, String>),
     Structures(StructuresMap),
+    Text(String),
 }
 use crate::visualization::Visualization::*;
 
@@ -132,6 +133,9 @@ pub fn visualize(room_name: RoomName, visualization: Visualization) {
                     vis.structure_roomxy(xy, structure_type, 0.7);
                 }
             }
+        },
+        Text(text) => {
+            vis.text(24.5, 1.35, text, Some(TextStyle::default().font(1.0)));
         },
     }
 }

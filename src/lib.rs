@@ -5,7 +5,7 @@ use crate::algorithms::chunk_graph::{chunk_graph, ChunkId};
 use crate::algorithms::distance_matrix::{
     count_restricted_distance_matrix, distance_matrix, rect_restricted_distance_matrix,
 };
-use crate::algorithms::distance_transform::distance_transform_from_obstacles;
+use crate::algorithms::distance_transform::{distance_transform, distance_transform_from_obstacles};
 use crate::algorithms::grid_min_cut::grid_min_cut;
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix::RoomMatrix;
@@ -22,6 +22,7 @@ use log::debug;
 use num_traits::Signed;
 use profiler::measure_time;
 use rustc_hash::{FxHashMap, FxHashSet};
+use screeps::console::add_visual;
 use screeps::Direction::{Bottom, Left, Right, Top};
 use screeps::Terrain::Wall;
 use screeps::{game, Direction, RoomName, ROOM_SIZE};
@@ -33,6 +34,7 @@ mod algorithms;
 mod blueprint;
 mod config;
 mod consts;
+mod cost_approximation;
 mod geometry;
 mod kernel;
 mod logging;
@@ -43,7 +45,6 @@ mod test_process;
 mod towers;
 mod unwrap;
 mod visualization;
-mod cost_approximation;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]
@@ -305,7 +306,7 @@ pub fn game_loop() {
             // with_room_state(room_name, |state| {
             //     let cg = measure_time("chunk_graph", || chunk_graph(&state.terrain.to_obstacle_matrix(0), 7));
             //     let cm = measure_time("chokepoint_matrix", || {
-            //         chokepoint_matrix(&cg, Direction::BottomLeft, 15, 49)
+            //         chokepoint_matrix(&cg, Direction::BottomRight, 15, 49)
             //     });
             //
             //     let displayed_matrix = cm.map(|_, (width, size)| {
@@ -379,20 +380,34 @@ pub fn game_loop() {
                             S_PLANNER = None;
                         }
                         if let Some(plan) = planner.best_plan.clone() {
+                            visualize(room_name, Visualization::Structures(plan.tiles.to_structures_map()));
                             visualize(
                                 room_name,
-                                Visualization::Structures(plan.tiles.to_structures_map()),
+                                Visualization::Text(format!(
+                                    "{:.2} E/t,   {:.3} CPU/t,   {:.0} DEF,   {:.2} SCORE",
+                                    plan.score.energy_balance,
+                                    plan.score.cpu_cost,
+                                    plan.score.def_score,
+                                    plan.score.total_score
+                                )),
                             );
                         }
                     } else {
-                        let plan_result = measure_time("RoomPlanner::plan", || {
-                            planner.plan()
-                        });
+                        let plan_result = measure_time("RoomPlanner::plan", || planner.plan());
                         match plan_result {
-                            Ok(plan) => visualize(
-                                room_name,
-                                Visualization::Structures(plan.tiles.to_structures_map()),
-                            ),
+                            Ok(plan) => {
+                                visualize(room_name, Visualization::Structures(plan.tiles.to_structures_map()));
+                                visualize(
+                                    room_name,
+                                    Visualization::Text(format!(
+                                        "{:.2} E/t,   {:.3} CPU/t,   {:.0} DEF,   {:.2} SCORE",
+                                        plan.score.energy_balance,
+                                        plan.score.cpu_cost,
+                                        plan.score.def_score,
+                                        plan.score.total_score
+                                    )),
+                                );
+                            }
                             Err(e) => debug!("{}", e),
                         };
                     }

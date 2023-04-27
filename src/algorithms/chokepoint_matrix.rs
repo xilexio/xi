@@ -39,19 +39,21 @@ pub fn chokepoint_matrix(
         Direction::TopLeft => [Direction::Right, Direction::Bottom],
     };
 
-    let mut dt = chunk_graph.xy_chunks.map(|_, chunk| {
+    let mut dt = chunk_graph.xy_chunks.map(|xy, chunk| {
         if chunk == invalid_chunk_node_index() {
             0
+        } else if xy.exit_distance() == 0 {
+            1
         } else {
             ROOM_SIZE
         }
     });
     let mut dt_dir1 = dt.clone();
     let mut dt_dir2 = dt.clone();
-    distance_transform(&mut dt, 1);
+    distance_transform(&mut dt);
     // Directional distance transform gives distance in the reverse direction from last obstacle.
-    directional_distance_transform(&mut dt_dir1, -check_directions[0], ROOM_SIZE);
-    directional_distance_transform(&mut dt_dir2, -check_directions[1], ROOM_SIZE);
+    directional_distance_transform(&mut dt_dir1, -check_directions[0]);
+    directional_distance_transform(&mut dt_dir2, -check_directions[1]);
 
     let dfs_search_directions = [
         -direction,

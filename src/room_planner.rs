@@ -19,7 +19,8 @@ use crate::consts::{OBSTACLE_COST, UNREACHABLE_COST};
 use crate::cost_approximation::energy_balance_and_cpu_cost;
 use crate::geometry::rect::{ball, bounding_rect, room_rect, Rect};
 use crate::geometry::room_xy::RoomXYUtils;
-use crate::room_planner::packed_tile_structures::PackedTileStructures;
+use crate::profiler::measure_time;
+use crate::room_planner::packed_tile_structures::{MainStructureType, PackedTileStructures};
 use crate::room_planner::plan::{Plan, PlanScore, PlannedControllerInfo, PlannedMineralInfo, PlannedSourceInfo};
 use crate::room_planner::planned_tile::{BasePart, PlannedTile};
 use crate::room_planner::stamps::{core_stamp, labs_stamp};
@@ -34,18 +35,20 @@ use crate::unwrap;
 use crate::visualization::visualize;
 use crate::visualization::Visualization::{Graph, Matrix};
 use derive_more::Constructor;
-use log::{debug, trace};
+use js_sys::Math::random;
+use log::debug;
 use num_traits::{clamp, Signed};
 use rustc_hash::{FxHashMap, FxHashSet};
-use screeps::Part::{Carry, Move, Work};
-use screeps::StructureType::{Container, Extension, Link, Nuker, Observer, Rampart, Road, Spawn, Storage, Tower};
+use screeps::StructureType::{
+    Container, Extension, Extractor, Link, Nuker, Observer, Rampart, Road, Spawn, Storage, Tower,
+};
 use screeps::Terrain::{Plain, Swamp, Wall};
 use screeps::{
     game, RoomName, RoomXY, StructureType, CREEP_LIFE_TIME, LINK_LOSS_RATIO, MINERAL_REGEN_TIME, RAMPART_DECAY_AMOUNT,
     RAMPART_DECAY_TIME, RANGED_MASS_ATTACK_POWER_RANGE_1, RANGED_MASS_ATTACK_POWER_RANGE_3, REPAIR_COST, REPAIR_POWER,
-    ROAD_DECAY_AMOUNT, ROAD_DECAY_TIME,
+    ROAD_DECAY_AMOUNT, ROAD_DECAY_TIME, ROOM_SIZE, TOWER_FALLOFF_RANGE, TOWER_OPTIMAL_RANGE,
 };
-use std::cmp::{max, min, Ordering};
+use std::cmp::{max, min, Ordering, Reverse};
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::iter::{empty, once};
@@ -65,11 +68,12 @@ const MIN_RESOURCE_CENTERS: usize = 25;
 const CHUNK_RADIUS: u8 = 5;
 const MAX_LABS_DIST: u8 = 12;
 const FAST_MODE_LABS_DIST: u8 = 3;
-// TODO take into account rampart radius - we prefer if ramparts are squeezed in one area
+const GROWTH_RAMPART_COST: u8 = 4;
 
 const PLAIN_ROAD_COST: u16 = 100;
-const SWAMP_ROAD_COST: u16 = 101;
+const SWAMP_ROAD_COST: u16 = 102;
 const EXISTING_ROAD_COST: u16 = 75;
+const RAMPART_EXISTING_ROAD_COST: u16 = 20;
 
 const RANGED_ACTION_RANGE: u8 = 3;
 
@@ -129,8 +133,13 @@ pub struct RoomPlanner {
     core: RoomMatrixSlice<PlannedTile>,
     storage_xy: RoomXY,
     checkerboard: RoomMatrix<u8>,
-    // Cache per labs rotations
+    // Cache per labs rotations.
     labs: RoomMatrixSlice<PlannedTile>,
+    main_ramparts: Vec<RoomXY>,
+    interior_dm: RoomMatrix<u8>,
+    min_tower_damage: u16,
+
+    // Output.
     planned_tiles: RoomMatrix<PlannedTile>,
     planned_sources: Vec<PlannedSourceInfo>,
     planned_controller: PlannedControllerInfo,
@@ -168,9 +177,9 @@ impl RoomPlanner {
             exits_dm.iter().filter_map(|(xy, dist)| (dist <= 1).then_some(xy)),
         );
         // Distance transform in maximum metric.
-        let dt = distance_transform_from_obstacles(walls.iter().copied());
+        let dt = distance_transform_from_obstacles(walls.iter().copied(), 1);
         // Distance transform in l1 metric.
-        let dt_l1 = l1_distance_transform_from_obstacles(walls.iter().copied());
+        let dt_l1 = l1_distance_transform_from_obstacles(walls.iter().copied(), 1);
         // Chunk graph.
         let walls_matrix = state.terrain.to_obstacle_matrix(0);
         let chunks = chunk_graph(&walls_matrix, CHUNK_RADIUS);
@@ -207,6 +216,10 @@ impl RoomPlanner {
             checkerboard: RoomMatrix::default(),
 
             labs: RoomMatrixSlice::new(Rect::default(), PlannedTile::default()),
+            main_ramparts: Vec::new(),
+            interior_dm: RoomMatrix::new(ROOM_SIZE),
+            min_tower_damage: 0,
+
             planned_tiles: RoomMatrix::default(),
             planned_sources: Vec::new(),
             planned_controller: PlannedControllerInfo::default(),
@@ -413,7 +426,7 @@ impl RoomPlanner {
 
         self.checkerboard = RoomMatrix::new(0u8);
         let grid_bit = (self.storage_xy.x.u8() + self.storage_xy.y.u8()) % 2;
-        for (xy, t) in self.terrain.iter() {
+        for (xy, _) in self.terrain.iter() {
             self.checkerboard
                 .set(xy, [0, 1][((grid_bit + xy.x.u8() + xy.y.u8()) % 2) as usize]);
         }
@@ -445,7 +458,7 @@ impl RoomPlanner {
             .collect();
 
         if self.labs_top_left_corners_stack.is_empty() {
-            Err(RoomPlannerError::StructurePlacementFailure)
+            Err(StructurePlacementFailure)
         } else {
             Ok(())
         }
@@ -537,6 +550,7 @@ impl RoomPlanner {
 
     fn plan_from_stamps(&mut self) -> Result<Plan, Box<dyn Error>> {
         // First attempt in which good places to grow towards are not known.
+        self.interior_dm = RoomMatrix::new(ROOM_SIZE);
 
         // Connecting the labs to the storage.
         // TODO include this in labs creation and make it a part of the score to decide labs' placement
@@ -589,30 +603,49 @@ impl RoomPlanner {
             self.planned_controller = PlannedControllerInfo::new(link_xy, work_xy);
         }
 
-        // Adding mineral mining container.
+        // Adding mineral mining container and the extractor.
         {
             let (_, work_xy) =
                 self.place_resource_storage(self.mineral_xy, mineral_road_xy, 1, BasePart::Outside, false)?;
             self.planned_mineral = PlannedMineralInfo::new(work_xy);
+            self.planned_tiles
+                .merge_structure(self.mineral_xy, Extractor, BasePart::Outside)?;
         }
 
         // Making sure that the controller can be actively protected.
         self.add_controller_protection();
 
-        let current_extensions_count = self
-            .planned_tiles
-            .iter()
-            .filter(|(xy, tile)| tile.structures() == Extension.into())
-            .count();
-        self.grow_reachable_structures(Extension, (60 - current_extensions_count) as u8)?;
-        self.grow_reachable_structures(Tower, 6)?;
-        self.grow_reachable_structures(Nuker, 1)?;
-        self.grow_reachable_structures(Observer, 1)?;
+        {
+            let planned_tiles = self.planned_tiles.clone();
+            // Preliminary growth of extensions, towers, nuker, observer. These will be used to compute preliminary main
+            // rampart positions and then discarded.
+            self.grow_reachable_structures(Extension, 68, self.storage_xy)?;
+            // This sets the `main_ramparts` attribute.
+            self.place_main_ramparts()?;
+            self.planned_tiles = planned_tiles;
+        }
 
-        self.place_ramparts()?;
+        // Growing dynamic structures.
+        self.place_towers()?;
+        // self.grow_reachable_structures(Extension, 60)?;
+        // self.grow_reachable_structures(Tower, 6)?;
+        // self.grow_reachable_structures(Nuker, 1)?;
+        // self.grow_reachable_structures(Observer, 1)?;
+
+        self.place_main_ramparts()?;
+
+        // self.place_rampart_roads()?;
+
+        // Growing dynamic structures that were removed when placing the roads to ramparts.
+        // self.grow_reachable_structures(Extension, 60)?;
+        // self.grow_reachable_structures(Tower, 6)?;
+        // self.grow_reachable_structures(Nuker, 1)?;
+        // self.grow_reachable_structures(Observer, 1)?;
+
+        self.place_extra_ramparts()?;
 
         let (energy_balance, cpu_cost) = self.energy_balance_and_cpu_cost();
-        let def_score = self.min_tower_damage_outside_of_ramparts() as f32;
+        let def_score = self.min_tower_damage as f32;
         let total_score = (energy_balance + def_score / 900.0) / cpu_cost;
         let score = PlanScore::new(total_score, energy_balance, cpu_cost, def_score);
         let plan = Plan::new(
@@ -782,24 +815,33 @@ impl RoomPlanner {
         }
     }
 
-    fn grow_reachable_structures(&mut self, structure_type: StructureType, count: u8) -> Result<(), Box<dyn Error>> {
+    fn grow_reachable_structures(
+        &mut self,
+        structure_type: StructureType,
+        target_count: usize,
+        center: RoomXY,
+    ) -> Result<(), Box<dyn Error>> {
+        // TODO it is not replacing back what is needed and it is growing from inside
         let obstacles = self
             .planned_tiles
             .iter()
-            .filter_map(|(xy, structure)| (!structure.is_passable(true)).then_some(xy))
+            .filter_map(|(xy, tile)| (!tile.is_passable(true) && !tile.grown()).then_some(xy))
             .chain(self.walls.iter().copied());
-
-        let storage_dm = distance_matrix(obstacles, once(self.storage_xy));
+        let center_dm = distance_matrix(obstacles, once(center));
 
         // debug!("Placing {:?}.", structure_type);
 
-        // Finding scores of extensions. The lower, the better. The most important factor is the distance from storage.
-        let tile_score = storage_dm.map(|xy, dist| {
+        // Finding cost of extensions. The most important factor is the distance from the center (usually storage).
+        let tile_cost = center_dm.map(|xy, dist| {
+            let tile = self.planned_tiles.get(xy);
             if dist >= unreachable_cost()
-                || !self.planned_tiles.get(xy).is_empty()
+                || tile.structures().road()
+                || !tile.is_empty() && !tile.grown()
                 || self.exit_rampart_distances.get(xy) <= 3
             {
                 obstacle_cost()
+            } else if self.interior_dm.get(xy) <= 3 {
+                dist.saturating_add(GROWTH_RAMPART_COST)
             } else {
                 dist
             }
@@ -812,22 +854,12 @@ impl RoomPlanner {
         // score from a closer tile to exchange it for a few farther tiles. It is equal to twice the mean score of
         // empty tiles around minus the score of the removed tile. However, if there is only a single empty tile around,
         // it is three times that tile's score minus the removed tile's score.
-        let mut i = 0u16;
-        let mut priority_queue = BTreeMap::new();
-        for xy in tile_score.find_not_xy(obstacle_cost()) {
-            if xy.around().any(|near| self.planned_tiles.get(near).structures().road()) {
-                // Keeping tile position and whether it is an empty tile.
-                priority_queue.insert((tile_score.get(xy), i), (xy, true));
-                i += 1;
-            }
-        }
-
         let avg_around_score = |planned_tiles: &RoomMatrix<PlannedTile>, xy: RoomXY| {
             let mut total_score_around = 0u16;
             let mut empty_tiles_around = 0u8;
             for near in xy.around() {
-                let near_score = tile_score.get(near);
-                if near_score != OBSTACLE_COST && planned_tiles.get(near).is_empty() {
+                let near_score = tile_cost.get(near);
+                if near_score != obstacle_cost::<u8>() && planned_tiles.get(near).is_empty() {
                     total_score_around += near_score as u16;
                     empty_tiles_around += 1;
                 }
@@ -838,33 +870,58 @@ impl RoomPlanner {
                 clamp(
                     multiplier * total_score_around / (empty_tiles_around as u16),
                     0,
-                    OBSTACLE_COST as u16 - 1,
+                    obstacle_cost::<u8>() as u16 - 1,
                 ) as u8
             } else {
-                OBSTACLE_COST
+                obstacle_cost()
             }
         };
 
-        let mut remaining = count;
-        while remaining > 0 && !priority_queue.is_empty() {
+        let mut i = 0u16;
+        let mut priority_queue = BTreeMap::new();
+        for xy in tile_cost.find_not_xy(obstacle_cost()) {
+            if xy.around().any(|near| self.planned_tiles.get(near).structures().road()) {
+                let near_tile = self.planned_tiles.get(xy);
+                // Keeping tile position and whether it is an empty tile.
+                if near_tile.structures().main() == MainStructureType::Empty {
+                    priority_queue.insert((tile_cost.get(xy), i), (xy, true));
+                } else {
+                    let removal_score = avg_around_score(&self.planned_tiles, xy).saturating_sub(tile_cost.get(xy));
+                    priority_queue.insert((removal_score, i), (xy, false));
+                }
+
+                i += 1;
+            }
+        }
+
+        let current_count = self
+            .planned_tiles
+            .iter()
+            .filter(|(xy, tile)| tile.structures().main() == unwrap!(structure_type.try_into()))
+            .count();
+        let mut remaining_structures = (0..(target_count - current_count))
+            .map(|_| structure_type)
+            .collect::<Vec<_>>();
+
+        while !remaining_structures.is_empty() && !priority_queue.is_empty() {
             let ((xy_score, _), (xy, placement)) = priority_queue.pop_first().unwrap();
             // debug!("[{}] {}: {}, {}", remaining_extensions, xy_score, xy, placement);
             if placement {
+                let current_structure_type = unwrap!(remaining_structures.pop());
+
                 self.planned_tiles
-                    .set(xy, PlannedTile::from(structure_type).with_base_part(BasePart::Interior));
-                let current_score = tile_score.get(xy);
+                    .replace_structure(xy, current_structure_type, BasePart::Interior, true);
+                let current_score = tile_cost.get(xy);
 
                 let removal_score = avg_around_score(&self.planned_tiles, xy).saturating_sub(current_score);
 
-                if removal_score < OBSTACLE_COST {
+                if removal_score < obstacle_cost() {
                     priority_queue.insert((removal_score, i), (xy, false));
                     i += 1;
                     // debug!("  + {}: {}, {}", removal_score, xy, false);
                 }
-
-                remaining -= 1;
             } else {
-                let current_score = tile_score.get(xy);
+                let current_score = tile_cost.get(xy);
                 let removal_score = avg_around_score(&self.planned_tiles, xy).saturating_sub(current_score);
 
                 if removal_score != xy_score {
@@ -874,19 +931,22 @@ impl RoomPlanner {
                     i += 1;
                     // debug!(" => {}: {}, {}", removal_score, xy, false);
                 } else {
-                    self.planned_tiles
-                        .set(xy, PlannedTile::from(Road).with_base_part(BasePart::Interior));
+                    let current_structure_type = self.planned_tiles.get(xy).structures().main();
+
+                    self.planned_tiles.replace_structure(xy, Road, BasePart::Interior, true);
 
                     for near in xy.around() {
-                        if tile_score.get(near) != OBSTACLE_COST && self.planned_tiles.get(near).is_empty() {
-                            let score = tile_score.get(near);
+                        if tile_cost.get(near) != OBSTACLE_COST && self.planned_tiles.get(near).is_empty() {
+                            let score = tile_cost.get(near);
                             priority_queue.insert((score, i), (near, true));
                             // debug!("  + {}: {}, {}", score, near, true);
                             i += 1;
                         }
                     }
 
-                    remaining += 1;
+                    // TODO xi::unwrap: Unwrapping failed on Result::Err at src\room_planner.rs:943,47 in xi::room_planner: Err(InvalidMainStructureType).
+                    debug_assert!(current_structure_type != MainStructureType::Empty);
+                    remaining_structures.push(unwrap!(current_structure_type.try_into()));
                 }
             }
         }
@@ -899,8 +959,386 @@ impl RoomPlanner {
         Ok(())
     }
 
+    fn place_towers(&mut self) -> Result<(), Box<dyn Error>> {
+        let obstacles = self
+            .planned_tiles
+            .iter()
+            .filter_map(|(xy, tile)| (!tile.is_passable(true)).then_some(xy))
+            .chain(self.walls.iter().copied());
+        let storage_dm = distance_matrix(obstacles, once(self.storage_xy));
+
+        let main_ramparts_dt = distance_transform_from_obstacles(self.main_ramparts.iter().copied(), ROOM_SIZE);
+
+        let valid_tiles_matrix = self
+            .interior_dm
+            .map(|xy, dist| dist > 0 && self.planned_tiles.get(xy).is_empty());
+
+        let valid_tiles = valid_tiles_matrix.find_xy(true).collect::<Vec<_>>();
+
+        // debug!("{}", valid_tiles_matrix.map(|_, d| if d { 255u8 } else { 0u8 }));
+
+        if valid_tiles.len() < 6 {
+            Err(StructurePlacementFailure)?;
+        }
+
+        let rect = bounding_rect(self.main_ramparts.iter().copied());
+        let rect_diameter = max(rect.width(), rect.height());
+        let rect_center = rect.center();
+
+        let outside_of_main_ramparts = self
+            .main_ramparts
+            .iter()
+            .flat_map(|xy| {
+                xy.around()
+                    .filter(|&near| self.interior_dm.get(near) == 0 && self.terrain.get(near) != Wall)
+            })
+            .collect::<FxHashSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        let mut solutions = Vec::new();
+
+        // We try a few approaches and select the best.
+
+        // The first approach may sometimes fail and is finding the solution from pairs whose center is exactly the
+        // rectangle's center.
+        measure_time("symmetric pairs tower placement", || {
+            // Top-left center or the exact center depending on parity of width/height.
+            let mut pair_top_xys = valid_tiles
+                .iter()
+                .copied()
+                .filter_map(|xy| {
+                    if xy.y <= rect_center.y {
+                        let mirror_xy = unwrap!(rect.mirror_xy(xy));
+                        if valid_tiles_matrix.get(mirror_xy) {
+                            // It is better if the towers are not close to the border, as it decreases the average strength.
+                            let near_rect_count = [xy, mirror_xy]
+                                .into_iter()
+                                .filter(|&xy| rect.boundary_dist(xy) < TOWER_OPTIMAL_RANGE as u8)
+                                .count();
+                            // It is better if the towers are not near the ramparts since it requires an extra rampart on them.
+                            let near_rampart_count = [xy, mirror_xy]
+                                .into_iter()
+                                .filter(|&xy| main_ramparts_dt.get(xy) <= RANGED_ACTION_RANGE)
+                                .count();
+                            // It is better if the towers are near for ease of filling.
+                            let storage_dist = storage_dm.get(xy).saturating_add(storage_dm.get(mirror_xy));
+                            return Some((xy, mirror_xy, near_rect_count, near_rampart_count, storage_dist));
+                        }
+                    }
+
+                    None
+                })
+                .collect::<Vec<_>>();
+            if pair_top_xys.len() >= 3 {
+                pair_top_xys.sort_by_key(|&(_, _, near_rect_count, near_rampart_count, storage_dist)| {
+                    (near_rect_count, near_rampart_count, storage_dist)
+                });
+
+                let solution = [
+                    pair_top_xys[0].0,
+                    pair_top_xys[0].1,
+                    pair_top_xys[1].0,
+                    pair_top_xys[1].1,
+                    pair_top_xys[2].0,
+                    pair_top_xys[2].1,
+                ];
+                solutions.push(solution);
+
+                if pair_top_xys.len() >= 6 {
+                    let solution = [
+                        pair_top_xys[3].0,
+                        pair_top_xys[3].1,
+                        pair_top_xys[4].0,
+                        pair_top_xys[4].1,
+                        pair_top_xys[5].0,
+                        pair_top_xys[5].1,
+                    ];
+                    solutions.push(solution);
+
+                    let solution = [
+                        pair_top_xys[0].0,
+                        pair_top_xys[0].1,
+                        pair_top_xys[2].0,
+                        pair_top_xys[2].1,
+                        pair_top_xys[4].0,
+                        pair_top_xys[4].1,
+                    ];
+                    solutions.push(solution);
+
+                    let solution = [
+                        pair_top_xys[1].0,
+                        pair_top_xys[1].1,
+                        pair_top_xys[3].0,
+                        pair_top_xys[3].1,
+                        pair_top_xys[5].0,
+                        pair_top_xys[5].1,
+                    ];
+                    solutions.push(solution);
+                }
+
+                debug!(
+                    "Best symmetric pairs {:?}.",
+                    pair_top_xys
+                        .iter()
+                        .map(|&(_, _, near_rect_count, near_rampart_count, storage_dist)| (
+                            near_rect_count,
+                            near_rampart_count,
+                            storage_dist
+                        ))
+                );
+            }
+
+            for xys in solutions.iter() {
+                debug!(
+                    "Symmetric pairs min damage: {}.",
+                    Self::min_tower_damage(xys, &outside_of_main_ramparts)
+                );
+            }
+        });
+
+        let storage_xy = self.storage_xy;
+        let mut grow = |center: RoomXY| {
+            let planned_tiles = self.planned_tiles.clone();
+            if self.grow_reachable_structures(Tower, 6, center).is_ok() {
+                let xys = self.planned_tiles.find_structure_xys(Tower);
+                if let Ok(solution) = xys.try_into() {
+                    solutions.push(solution);
+                    debug!(
+                        "Growth min damage: {}.",
+                        Self::min_tower_damage(&solution, &outside_of_main_ramparts)
+                    );
+                }
+            }
+            self.planned_tiles = planned_tiles;
+        };
+
+        // Second approach is growing the towers near storage.
+        measure_time("grown near storage tower placement", || {
+            grow(storage_xy);
+        });
+
+        // Third approach is growing the towers near rectangle's center.
+        measure_time("grown near center tower placement", || {
+            grow(rect_center);
+        });
+
+        // Fourth approach is finding more or less evenly spread towers near ramparts.
+        measure_time("near ramparts tower placement", || {
+            let near_ramparts = main_ramparts_dt
+                .iter()
+                .filter_map(|(xy, dist)| {
+                    (self.interior_dm.get(xy) > 0
+                        && self.planned_tiles.get(xy).is_empty()
+                        && RANGED_ACTION_RANGE < dist
+                        && dist < TOWER_FALLOFF_RANGE as u8 + 2)
+                        .then_some(xy)
+                })
+                .collect::<Vec<_>>();
+
+            if near_ramparts.len() >= 6 {
+                // Trying four samples.
+                for _ in 0..4 {
+                    // Trying from large distances.
+                    for min_distance_between in [15, 10, 7, 5, 3, 1] {
+                        let mut solution_vec: Vec<RoomXY> = Vec::new();
+                        // A total of 24 tries to find at least 6 points sufficiently far away.
+                        for i in 0..30 {
+                            let xy = near_ramparts[(random() * near_ramparts.len() as f64) as usize];
+                            if solution_vec
+                                .iter()
+                                .copied()
+                                .all(|other_xy| other_xy.dist(xy) >= min_distance_between)
+                            {
+                                solution_vec.push(xy);
+                                if solution_vec.len() == 6 {
+                                    break;
+                                }
+                            }
+                        }
+
+                        if solution_vec.len() == 6 {
+                            let solution = unwrap!(solution_vec.try_into());
+                            debug!(
+                                "Near ramparts min damage: {}.",
+                                Self::min_tower_damage(&solution, &outside_of_main_ramparts)
+                            );
+                            solutions.push(solution);
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+
+        // Fifth approach is a greedy one.
+        measure_time("greedy tower placement", || {
+            let mut solution_vec = Vec::new();
+            let mut current_damages = outside_of_main_ramparts.iter().map(|_| 0u16).collect::<Vec<_>>();
+            for _ in 0..6 {
+                let mut best_xy = *unwrap!(valid_tiles.first());
+                let mut best_damage = 0u16;
+                for &xy in valid_tiles.iter() {
+                    if solution_vec.contains(&xy) {
+                        continue;
+                    }
+
+                    let mut min_damage = u16::MAX;
+                    for (i, &outside_xy) in outside_of_main_ramparts.iter().enumerate() {
+                        let damage = current_damages[i] + tower_attack_power(outside_xy.dist(xy));
+                        min_damage = min(damage, min_damage);
+                    }
+                    if min_damage > best_damage {
+                        best_damage = min_damage;
+                        best_xy = xy;
+                    }
+                }
+
+                solution_vec.push(best_xy);
+                for (i, &outside_xy) in outside_of_main_ramparts.iter().enumerate() {
+                    current_damages[i] += tower_attack_power(outside_xy.dist(best_xy));
+                }
+            }
+
+            if solution_vec.len() == 6 {
+                let solution = unwrap!(solution_vec.try_into());
+                debug!(
+                "Greedy min damage: {}.",
+                Self::min_tower_damage(&solution, &outside_of_main_ramparts)
+            );
+                solutions.push(solution);
+            }
+        });
+
+        // Sixth approach is genetic algorithm that tries to improve on top of what previous algorithms spewed out.
+        measure_time("genetic algorithm tower placement", || {
+            // let mut population = Vec::new();
+            let mut population = solutions.clone();
+            for _ in 0..100 {
+                let mut xys = [RoomXY::default(); 6];
+                for i in 0..6 {
+                    loop {
+                        let xy = valid_tiles[(random() * valid_tiles.len() as f64) as usize];
+                        if (0..i).all(|j| xys[j] != xy) {
+                            xys[i] = xy;
+                            break;
+                        }
+                    }
+                }
+                population.push(xys);
+            }
+
+            for generation in 0..8 {
+                measure_time("sorting", || {
+                    // TODO This is by far the most costly part of the algorithm.
+                    //      This should be improved by computing only for points which dominate other points.
+                    //      If not possible, skip half or more points.
+                    population
+                        .sort_by_key(|xys| Reverse(RoomPlanner::min_tower_damage(xys, &outside_of_main_ramparts)));
+                });
+                let mut new_population = Vec::new();
+
+                // Preserve the best.
+                for i in 0..min(population.len(), 25) {
+                    new_population.push(population[i]);
+                }
+
+                if generation % 2 == 1 {
+                    measure_time("crossing", || {
+                        // Cross the best, each with each.
+                        for i in 0..min(population.len(), 13) {
+                            for j in 0..min(population.len(), i) {
+                                let mut xys = population[i];
+
+                                for k in 0..xys.len() {
+                                    if random() > 0.5 {
+                                        xys[k] = population[j][k];
+                                    }
+                                }
+
+                                if (0..6).all(|k| (0..k).all(|l| xys[l] != xys[k])) {
+                                    new_population.push(xys);
+                                }
+                            }
+                        }
+                    });
+                } else {
+                    measure_time("mutating", || {
+                        // Mutate the best.
+                        for i in 0..min(population.len(), 25) {
+                            // 2.5 mutations on average, more mutations for better ones.
+                            for _ in 0..3 {
+                                let mut xys = population[i];
+
+                                for _ in 0..4 {
+                                    let j = (random() * 6.0) as usize;
+                                    let j_value = xys[j];
+
+                                    let new_j_value = (0..5)
+                                        .map(|_| ((random() * 4.0) as i8 + 1, (random() * 4.0) as i8 + 1))
+                                        .find_map(|offset| {
+                                            j_value.try_add_diff(offset).ok().and_then(|xy| {
+                                                (valid_tiles_matrix.get(xy) && !xys.contains(&xy)).then_some(xy)
+                                            })
+                                        });
+
+                                    if let Some(xy) = new_j_value {
+                                        xys[j] = xy;
+                                    }
+                                }
+
+                                new_population.push(xys);
+                            }
+                        }
+                    });
+                }
+
+                population = new_population.into_iter().collect::<FxHashSet<_>>().into_iter().collect::<Vec<_>>();
+
+                let best_damage = unwrap!(population
+                    .iter()
+                    .copied()
+                    .map(|xys| (RoomPlanner::min_tower_damage(&xys, &outside_of_main_ramparts)))
+                    .max());
+                debug!("Generation {} best damage {}", generation, best_damage);
+            }
+        });
+
+        if solutions.is_empty() {
+            Err(StructurePlacementFailure)?;
+        }
+
+        let best_solution = unwrap!(solutions
+            .into_iter()
+            .map(|xys| (xys, Self::min_tower_damage(&xys, &outside_of_main_ramparts)))
+            .max_by_key(|&(_, score)| score));
+        debug!(
+            "Chosen towers with minimum damage {}: {:?}.",
+            best_solution.1,
+            best_solution.0
+        );
+        self.min_tower_damage = best_solution.1;
+        for xy in best_solution.0.into_iter() {
+            self.planned_tiles.merge_structure(xy, Tower, BasePart::Interior)?;
+        }
+        debug!("Placed the towers.");
+
+        // TODO roads to towers plus reachability check
+        // TODO growing roads
+
+        Ok(())
+    }
+
+    fn min_tower_damage(xys: &[RoomXY; 6], outside_of_main_ramparts: &[RoomXY]) -> u16 {
+        unwrap!(outside_of_main_ramparts
+            .iter()
+            .copied()
+            .map(|xy| xys.iter().map(|&tower_xy| tower_attack_power(xy.dist(tower_xy))).sum())
+            .min())
+    }
+
     /// Uses min-cut to place ramparts around the base and outside according to `BasePart` definition.
-    fn place_ramparts(&mut self) -> Result<(), Box<dyn Error>> {
+    fn place_main_ramparts(&mut self) -> Result<(), Box<dyn Error>> {
         // debug!("{}", self.planned_tiles.map(|xy, tile| { tile.base_part() as u8 }));
 
         let interior_base_parts_dm = distance_matrix(
@@ -922,21 +1360,87 @@ impl RoomPlanner {
             }
         });
 
-        let min_cut = grid_min_cut(&min_cut_cost_matrix);
-        for xy in min_cut.iter().copied() {
+        self.main_ramparts = grid_min_cut(&min_cut_cost_matrix);
+
+        for xy in self.main_ramparts.iter().copied() {
             self.planned_tiles.merge_structure(xy, Rampart, BasePart::Outside)?;
         }
 
-        let interior = interior_matrix(self.walls.iter().copied(), min_cut.iter().copied(), true, true);
-        let interior_dm = distance_matrix(
+        let interior = interior_matrix(
+            self.walls.iter().copied(),
+            self.main_ramparts.iter().copied(),
+            true,
+            true,
+        );
+        self.interior_dm = distance_matrix(
             empty(),
             interior.iter().filter_map(|(xy, interior)| (!interior).then_some(xy)),
-        );
+        )
+        .map(|xy, dist| if self.terrain.get(xy) == Wall { 0 } else { dist });
 
-        for (xy, interior_dist) in interior_dm.iter() {
+        debug!("Placed the main ramparts.");
+
+        Ok(())
+    }
+
+    fn place_rampart_roads(&mut self) -> Result<(), Box<dyn Error>> {
+        let obstacles = self
+            .planned_tiles
+            .iter()
+            .filter_map(|(xy, tile)| (!tile.is_passable(true) && !tile.grown()).then_some(xy))
+            .chain(self.walls.iter().copied());
+        let storage_dm = distance_matrix(obstacles, once(self.storage_xy));
+
+        self.main_ramparts.sort_by_key(|&xy| storage_dm.get(xy));
+
+        let mut cost_matrix = RoomMatrix::new(PLAIN_ROAD_COST);
+        for (xy, t) in self.terrain.iter() {
+            if t == Wall {
+                cost_matrix.set(xy, obstacle_cost());
+            } else if t == Swamp {
+                cost_matrix.set(xy, SWAMP_ROAD_COST);
+            }
+        }
+        for (xy, tile) in self.planned_tiles.iter() {
+            if !tile.is_passable(true) && !tile.grown() {
+                cost_matrix.set(xy, obstacle_cost());
+            } else if tile.structures().road() {
+                cost_matrix.set(xy, RAMPART_EXISTING_ROAD_COST);
+            }
+        }
+
+        for rampart_xy in self.main_ramparts.iter().copied() {
+            // TODO optimization if a road is already nearby
+
+            let distances = weighted_distance_matrix(&cost_matrix, once(self.storage_xy));
+
+            if distances.get(rampart_xy) >= unreachable_cost() {
+                // debug!("connect_with_roads from {:?} to {:?} / {} D{}\n{}", start_vec, target, real_target, real_target_dist, distances);
+                Err(RoadConnectionFailure)?;
+            }
+
+            // TODO checkerboard is good, but we should prioritize roads more away from ramparts to make them smaller
+            let path = shortest_path_by_matrix_with_preference(&distances, &self.checkerboard, rampart_xy);
+            for &xy in &path[0..path.len() - 1] {
+                // TODO re-run ramparts at edges or just do it later
+                let tile = self.planned_tiles.get(xy);
+                self.planned_tiles
+                    .replace_structure(xy, Road, BasePart::ProtectedIfInside, false);
+                cost_matrix.set(xy, RAMPART_EXISTING_ROAD_COST);
+            }
+        }
+
+        debug!("Placed rampart roads.");
+
+        Ok(())
+    }
+
+    fn place_extra_ramparts(&mut self) -> Result<(), Box<dyn Error>> {
+        for (xy, interior_dist) in self.interior_dm.iter() {
             // Checking if ramparts are okay.
             let base_part = self.planned_tiles.get(xy).base_part();
             if (base_part == BasePart::Interior || base_part == BasePart::Connected) && interior_dist == 0 {
+                debug!("fail at {}, {:?}\n{}", xy, self.planned_tiles.get(xy), self.interior_dm);
                 Err(RampartPlacementFailure)?;
             }
 
@@ -950,31 +1454,9 @@ impl RoomPlanner {
             }
         }
 
+        debug!("Placed extra ramparts.");
+
         Ok(())
-    }
-
-    fn min_tower_damage_outside_of_ramparts(&self) -> u32 {
-        let rampart_xys = self.planned_tiles.find_structure_xys(Rampart);
-        let interior = interior_matrix(self.walls.iter().copied(), rampart_xys.iter().copied(), false, true);
-        let tower_xys = self.planned_tiles.find_structure_xys(Tower);
-
-        let mut min_tower_damage = u32::MAX;
-        for xy in rampart_xys {
-            for near in xy.around() {
-                if !interior.get(near) && self.terrain.get(near) != Wall {
-                    let damage = tower_xys
-                        .iter()
-                        .copied()
-                        .map(|xy| tower_attack_power(xy.dist(near)))
-                        .sum::<u32>();
-                    if damage < min_tower_damage {
-                        min_tower_damage = damage;
-                    }
-                }
-            }
-        }
-
-        min_tower_damage
     }
 
     fn energy_balance_and_cpu_cost(&self) -> (f32, f32) {

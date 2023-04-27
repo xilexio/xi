@@ -1,19 +1,19 @@
 use crate::algorithms::distance_matrix::{distance_matrix, rect_restricted_distance_matrix};
-use crate::algorithms::distance_transform::distance_transform;
+use crate::algorithms::distance_transform::distance_transform_from_obstacles;
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix::RoomMatrix;
+use crate::algorithms::vertex_cut::vertex_cut;
 use crate::consts::OBSTACLE_COST;
 use crate::geometry::rect::{ball, room_rect};
 use crate::geometry::room_xy::RoomXYUtils;
+use petgraph::prelude::EdgeRef;
+use petgraph::stable_graph::{NodeIndex, StableGraph};
+use petgraph::Undirected;
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::RoomXY;
 use std::cmp::Reverse;
 use std::iter::once;
-use petgraph::prelude::EdgeRef;
-use petgraph::stable_graph::{NodeIndex, StableGraph};
-use petgraph::Undirected;
 use tap::prelude::*;
-use crate::algorithms::vertex_cut::vertex_cut;
 
 pub type ChunkId = NodeIndex<u16>;
 
@@ -73,9 +73,16 @@ impl ChunkGraph {
         let mut result = FxHashMap::default();
         {
             // We only take into consideration outer chokepoints, not inner ones.
-            let mut path = chokepoints.iter().copied().filter(|&chokepoint| {
-                self.graph.edges(chokepoint).any(|edge| not_enclosed.contains(&edge.target()))
-            }).map(|node| (node, node)).collect::<Vec<_>>();
+            let mut path = chokepoints
+                .iter()
+                .copied()
+                .filter(|&chokepoint| {
+                    self.graph
+                        .edges(chokepoint)
+                        .any(|edge| not_enclosed.contains(&edge.target()))
+                })
+                .map(|node| (node, node))
+                .collect::<Vec<_>>();
             for (node, _) in path.iter().copied() {
                 result.insert(node, (node, true));
             }
@@ -107,9 +114,7 @@ pub fn chunk_graph(terrain: &RoomMatrix<u8>, chunk_radius: u8) -> ChunkGraph {
 
     let exit_distances = distance_matrix(terrain.find_xy(OBSTACLE_COST), exits.iter().copied());
 
-    let dt = terrain
-        .map(|_, t| OBSTACLE_COST - t)
-        .tap_mut(|t| distance_transform(t, 1));
+    let dt = distance_transform_from_obstacles(terrain.find_xy(OBSTACLE_COST), 1);
 
     let tiles = terrain
         .find_xy(0)
@@ -120,10 +125,8 @@ pub fn chunk_graph(terrain: &RoomMatrix<u8>, chunk_radius: u8) -> ChunkGraph {
 
     let mut xy_chunks = RoomMatrix::new(invalid_chunk_node_index());
     let mut chunk_sizes = FxHashMap::default();
-    let approximate_number_of_nodes =
-        2500 / (4 * (chunk_radius as usize) * (chunk_radius as usize));
-    let mut graph =
-        StableGraph::with_capacity(approximate_number_of_nodes, approximate_number_of_nodes * 2);
+    let approximate_number_of_nodes = 2500 / (4 * (chunk_radius as usize) * (chunk_radius as usize));
+    let mut graph = StableGraph::with_capacity(approximate_number_of_nodes, approximate_number_of_nodes * 2);
 
     // We iterate over all non-obstacle sorted decreasingly by distance to nearest exit.
     for xy in tiles.iter().copied() {
@@ -164,9 +167,7 @@ pub fn chunk_graph(terrain: &RoomMatrix<u8>, chunk_radius: u8) -> ChunkGraph {
         let chunk_ball = ball(chunk_center, chunk_radius);
 
         let chunk_distance_matrix = rect_restricted_distance_matrix(
-            chunk_ball
-                .iter()
-                .filter(|xy| terrain.get(*xy) == OBSTACLE_COST),
+            chunk_ball.iter().filter(|xy| terrain.get(*xy) == OBSTACLE_COST),
             once(chunk_center),
             chunk_ball,
             chunk_radius,

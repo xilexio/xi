@@ -1,16 +1,16 @@
-use std::error::Error;
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix::RoomMatrix;
+use crate::algorithms::room_matrix_slice::RoomMatrixSlice;
 use crate::room_planner::packed_tile_structures::{MainStructureType, PackedTileStructures, PackedTileStructuresError};
 use crate::room_state::StructuresMap;
+use log::debug;
+use modular_bitfield::specifiers::B3;
 use modular_bitfield::{bitfield, BitfieldSpecifier};
-use modular_bitfield::specifiers::B5;
 use rustc_hash::FxHashMap;
 use screeps::{RoomXY, StructureType, ROOM_SIZE};
+use std::error::Error;
 use std::fmt::{Display, Formatter};
-use log::debug;
 use thiserror::Error;
-use crate::algorithms::room_matrix_slice::RoomMatrixSlice;
 
 #[derive(Error, Debug)]
 pub enum PlannedTileError {
@@ -39,7 +39,9 @@ pub struct PlannedTile {
     pub structures: PackedTileStructures,
     pub reserved: bool,
     pub base_part: BasePart,
-    pub build_priority: B5,
+    pub grown: bool,
+    pub min_rcl: B3,
+    fill: bool,
 }
 
 impl Default for PlannedTile {
@@ -61,9 +63,15 @@ impl PlannedTile {
         Ok(self.with_structures(self.structures().merge(structure_type)?))
     }
 
+    pub fn replace(self, structure_type: StructureType) -> Self {
+        self.with_structures(self.structures().replace(structure_type))
+    }
+
     pub fn upgrade_base_part(self, base_part: BasePart) -> Self {
         if self.base_part() < base_part {
-            if (self.base_part() == BasePart::Protected || self.base_part() == BasePart::ProtectedIfInside) && base_part == BasePart::Connected {
+            if (self.base_part() == BasePart::Protected || self.base_part() == BasePart::ProtectedIfInside)
+                && base_part == BasePart::Connected
+            {
                 self.with_base_part(BasePart::Interior)
             } else {
                 self.with_base_part(base_part)
@@ -161,18 +169,38 @@ impl RoomMatrix<PlannedTile> {
     }
 
     #[inline]
-    pub fn merge_structure(&mut self, xy: RoomXY, structure_type: StructureType, base_part: BasePart) -> Result<(), Box<dyn Error>> {
+    pub fn merge_structure(
+        &mut self,
+        xy: RoomXY,
+        structure_type: StructureType,
+        base_part: BasePart,
+    ) -> Result<(), Box<dyn Error>> {
+        // debug!("merge_structure {} {:?} {:?}", xy, structure_type, base_part);
         self.set(xy, self.get(xy).merge(structure_type)?.upgrade_base_part(base_part));
         Ok(())
     }
 
     #[inline]
+    pub fn replace_structure(&mut self, xy: RoomXY, structure_type: StructureType, base_part: BasePart, grown: bool) {
+        // debug!("replace_structure {} {:?} {:?} {}", xy, structure_type, base_part, grown);
+        self.set(
+            xy,
+            self.get(xy)
+                .replace(structure_type)
+                .upgrade_base_part(base_part)
+                .with_grown(grown),
+        )
+    }
+
+    #[inline]
     pub fn upgrade_base_part(&mut self, xy: RoomXY, base_part: BasePart) {
+        // debug!("upgrade_base_part {} {:?}", xy, base_part);
         self.set(xy, self.get(xy).upgrade_base_part(base_part));
     }
 
     #[inline]
     pub fn reserve(&mut self, xy: RoomXY) {
+        // debug!("reserve {}", xy);
         self.set(xy, self.get(xy).with_reserved(true));
     }
 }
