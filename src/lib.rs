@@ -8,6 +8,7 @@ use crate::algorithms::distance_matrix::{
 use crate::algorithms::distance_transform::{distance_transform, distance_transform_from_obstacles};
 use crate::algorithms::grid_min_cut::grid_min_cut;
 use crate::algorithms::matrix_common::MatrixCommon;
+use crate::algorithms::minimal_shortest_paths_tree::{minimal_shortest_paths_tree, PathSpec};
 use crate::algorithms::room_matrix::RoomMatrix;
 use crate::algorithms::weighted_distance_matrix::{obstacle_cost, unreachable_cost};
 use crate::config::LOG_LEVEL;
@@ -21,13 +22,16 @@ use crate::visualization::{visualize, Visualization};
 use log::debug;
 use num_traits::Signed;
 use profiler::measure_time;
+use room_visual_ext::RoomVisualExt;
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::console::add_visual;
 use screeps::Direction::{Bottom, Left, Right, Top};
+use screeps::StructureType::{Extension, Link, Road, Spawn, Storage, Tower};
 use screeps::Terrain::Wall;
 use screeps::{game, Direction, RoomName, ROOM_SIZE};
 use std::cmp::min;
 use std::iter::once;
+use std::mem::MaybeUninit;
 use wasm_bindgen::prelude::{wasm_bindgen, UnwrapThrowExt};
 
 mod algorithms;
@@ -38,6 +42,7 @@ mod cost_approximation;
 mod geometry;
 mod kernel;
 mod logging;
+mod map_utils;
 mod profiler;
 mod room_planner;
 mod room_state;
@@ -46,9 +51,14 @@ mod towers;
 mod unwrap;
 mod visualization;
 
+pub static mut FIRST_TICK: MaybeUninit<u32> = MaybeUninit::uninit();
+
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]
 pub fn setup() {
+    unsafe {
+        FIRST_TICK.write(game::time());
+    }
     logging::init_logging(LOG_LEVEL);
     kernel::init_kernel();
 }
@@ -58,13 +68,14 @@ pub static mut S_PLANNER: Option<RoomPlanner> = None;
 // `js_name` to use a reserved name as a function name.
 #[wasm_bindgen(js_name = loop)]
 pub fn game_loop() {
+    let ticks_since_restart = unsafe { FIRST_TICK.assume_init() } - game::time();
+
     // let new_process = TestProcess {
     //     meta: ProcessMeta {
     //         pid: game::time(),
     //         priority: 0,
     //     },
     // };
-    //
     // let kern = kernel::kernel();
     // kern.schedule(Box::new(new_process));
     // kern.run();
@@ -361,6 +372,33 @@ pub fn game_loop() {
             // visualize(room_name, Visualization::Graph(cg.graph.clone()));
             // visualize(room_name, Visualization::NodeLabels(cg.graph, node_values));
 
+            // let mut cost_matrix = with_room_state(room_name, |state| state.terrain.to_cost_matrix(1)).unwrap();
+            // let core_rect = Rect::new_unordered((15, 23).try_into().unwrap(), (19, 27).try_into().unwrap());
+            // for xy in core_rect.iter() {
+            //     cost_matrix.set(xy, obstacle_cost());
+            //     RoomVisualExt::new(room_name).structure_roomxy(xy, Extension, 1.0);
+            // }
+            // let mut vis = RoomVisualExt::new(room_name);
+            // vis.structure(2.0, 1.0, Spawn, 1.0);
+            // vis.structure(10.0, 0.0, Link, 1.0);
+            // vis.structure(34.0, 3.0, Tower, 1.0);
+            // vis.structure(40.0, 11.0, Storage, 1.0);
+            // let preference_matrix = RoomMatrix::new(0).map(|xy, _| (xy.x.u8() + xy.y.u8()) % 2);
+            // let path_specs = vec![
+            //     PathSpec::new(vec![(17, 23).try_into().unwrap(), (19, 25).try_into().unwrap(), (15, 25).try_into().unwrap()], (2, 1).try_into().unwrap(), 1),
+            //     PathSpec::new(vec![(17, 23).try_into().unwrap(), (19, 25).try_into().unwrap(), (15, 25).try_into().unwrap()], (34, 3).try_into().unwrap(), 3),
+            //     PathSpec::new(vec![(19, 27).try_into().unwrap()], (40, 11).try_into().unwrap(), 1),
+            //     PathSpec::new(vec![(17, 23).try_into().unwrap(), (19, 25).try_into().unwrap(), (15, 25).try_into().unwrap()], (10, 0).try_into().unwrap(), 1),
+            // ];
+            // if let Some(paths) = minimal_shortest_paths_tree(&cost_matrix, &preference_matrix, &path_specs) {
+            //     for path in paths {
+            //         for xy in path.path {
+            //             vis.structure_roomxy(xy, Road, 1.0);
+            //         }
+            //         vis.circle(path.target.x.u8() as f32, path.target.y.u8() as f32, None);
+            //     }
+            // }
+
             if unsafe { S_PLANNER.is_none() } {
                 let maybe_planner = measure_time("RoomPlanner::new", || {
                     with_room_state(room_name, |state| RoomPlanner::new(state, true)).unwrap()
@@ -374,7 +412,7 @@ pub fn game_loop() {
             }
             unsafe {
                 if let Some(planner) = S_PLANNER.as_mut() {
-                    if planner.is_finished() || game::time() % 4 != 0 {
+                    if planner.is_finished() || game::time() % 4 != 0 || ticks_since_restart > 1 {
                         if planner.is_finished() && game::time() % 4 == 3 {
                             debug!("Restarting the planner.");
                             S_PLANNER = None;

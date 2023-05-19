@@ -6,9 +6,9 @@ use screeps::RoomXY;
 
 #[inline]
 pub fn distance_by_matrix<M, D>(distance_matrix: &M, target: RoomXY, target_circle_radius: u8) -> D
-where
-    M: MatrixCommon<D>,
-    D: Copy + Ord,
+    where
+        M: MatrixCommon<D>,
+        D: Copy + Ord,
 {
     unwrap!(ball(target, target_circle_radius)
         .boundary()
@@ -31,9 +31,9 @@ where
 /// Uses matrix produced by `distance_matrix` to find a shortest route from start wherever gradient goes, up to
 /// distance `final_dist`, inclusive, or until it cannot decrease anymore.
 pub fn shortest_path_by_distance_matrix<M, D>(distance_matrix: &M, start: RoomXY, final_dist: D) -> Vec<RoomXY>
-where
-    M: MatrixCommon<D>,
-    D: Copy + Ord,
+    where
+        M: MatrixCommon<D>,
+        D: Copy + Ord,
 {
     let mut path = vec![start];
     let mut current = start;
@@ -49,6 +49,32 @@ where
             }
         }
         break;
+    }
+    path
+}
+
+pub fn shortest_path_by_weighted_distance_matrix<M, D>(distance_matrix: &M, start: RoomXY) -> Vec<RoomXY>
+    where
+        M: MatrixCommon<D>,
+        D: Copy + Ord,
+{
+    let mut path = vec![start];
+    let mut current = start;
+    let mut current_dist = distance_matrix.get(current);
+    loop {
+        let prev_dist = current_dist;
+        for near in current.around() {
+            let near_dist = distance_matrix.get(near);
+            if near_dist < current_dist {
+                current = near;
+                current_dist = near_dist;
+            }
+        }
+        if prev_dist != current_dist {
+            path.push(current);
+        } else {
+            break;
+        }
     }
     path
 }

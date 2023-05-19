@@ -5,6 +5,7 @@ use num_traits::cast::FromPrimitive;
 use screeps::Terrain::{Plain, Swamp, Wall};
 use screeps::{RoomTerrain, RoomXY, Terrain, ROOM_SIZE};
 use std::fmt::{Display, Formatter};
+use crate::algorithms::weighted_distance_matrix::obstacle_cost;
 
 pub const PACKED_TERRAIN_DATA_SIZE: usize = ROOM_AREA / 4;
 
@@ -65,6 +66,19 @@ impl PackedTerrain {
             if t == Wall {
                 result.set(xy, OBSTACLE_COST);
             }
+        }
+        result
+    }
+
+    pub fn to_cost_matrix(&self, multiplier: u8) -> RoomMatrix<u8> {
+        let mut result = RoomMatrix::new(multiplier);
+        for (xy, t) in self.iter() {
+            let cost = match t {
+                Plain => multiplier,
+                Swamp => 5 * multiplier,
+                Wall => obstacle_cost(),
+            };
+            result.set(xy, cost);
         }
         result
     }

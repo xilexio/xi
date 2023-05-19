@@ -26,9 +26,9 @@ where
         room_rect().boundary().map(|xy| (xy, self.get(xy)))
     }
 
-    pub fn map<F, S>(&self, f: F) -> RoomMatrix<S>
+    pub fn map<F, S>(&self, mut f: F) -> RoomMatrix<S>
     where
-        F: Fn(RoomXY, T) -> S,
+        F: FnMut(RoomXY, T) -> S,
         S: Clone + Copy + PartialEq + Default,
     {
         let mut data = [S::default(); ROOM_AREA];

@@ -39,8 +39,8 @@ pub struct PlannedTile {
     pub structures: PackedTileStructures,
     pub reserved: bool,
     pub base_part: BasePart,
-    pub grown: bool,
     pub min_rcl: B3,
+    pub grown: bool,
     fill: bool,
 }
 
@@ -174,21 +174,22 @@ impl RoomMatrix<PlannedTile> {
         xy: RoomXY,
         structure_type: StructureType,
         base_part: BasePart,
+        grown: bool
     ) -> Result<(), Box<dyn Error>> {
         // debug!("merge_structure {} {:?} {:?}", xy, structure_type, base_part);
-        self.set(xy, self.get(xy).merge(structure_type)?.upgrade_base_part(base_part));
+        self.set(xy, self.get(xy).merge(structure_type)?.upgrade_base_part(base_part).with_grown(grown));
         Ok(())
     }
 
     #[inline]
     pub fn replace_structure(&mut self, xy: RoomXY, structure_type: StructureType, base_part: BasePart, grown: bool) {
-        // debug!("replace_structure {} {:?} {:?} {}", xy, structure_type, base_part, grown);
+        // debug!("replace_structure {} {:?} {:?} {}", xy, structure_type, base_part);
         self.set(
             xy,
             self.get(xy)
                 .replace(structure_type)
                 .upgrade_base_part(base_part)
-                .with_grown(grown),
+                .with_grown(grown)
         )
     }
 

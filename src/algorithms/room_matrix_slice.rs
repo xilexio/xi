@@ -63,9 +63,9 @@ where
         }
     }
 
-    pub fn map<F, S>(&self, f: F) -> RoomMatrixSlice<S>
+    pub fn map<F, S>(&self, mut f: F) -> RoomMatrixSlice<S>
     where
-        F: Fn(RoomXY, T) -> S,
+        F: FnMut(RoomXY, T) -> S,
         S: Clone + Copy + PartialEq + Default,
     {
         let mut result = RoomMatrixSlice::new(self.rect, S::default());
