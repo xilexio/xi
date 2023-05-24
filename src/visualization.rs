@@ -130,7 +130,7 @@ pub fn visualize(room_name: RoomName, visualization: Visualization) {
         Structures(structures_map) => {
             for (&structure_type, xys) in structures_map.iter() {
                 for xy in xys.iter().copied() {
-                    vis.structure_roomxy(xy, structure_type, 0.7);
+                    vis.structure_roomxy(xy, structure_type, 0.6);
                 }
             }
         },

@@ -1,7 +1,6 @@
 use crate::algorithms::distance_matrix::distance_matrix;
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix::RoomMatrix;
-use crate::algorithms::shortest_path_by_distance_matrix::shortest_path_by_matrix_with_preference;
 use crate::algorithms::weighted_distance_matrix::{obstacle_cost, unreachable_cost};
 use crate::geometry::rect::ball;
 use crate::geometry::room_xy::RoomXYUtils;
@@ -11,6 +10,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::RoomXY;
 use std::collections::BTreeMap;
 use std::iter::once;
+use log::debug;
+use crate::unwrap;
 
 #[derive(Clone, Debug, Constructor)]
 pub struct PathSpec {
@@ -113,9 +114,9 @@ pub fn minimal_shortest_paths_tree(
 
     let target_dms = (0..path_specs.len())
         .map(|path_ix| {
-            let (_, real_target) = closest_sources_and_real_targets[path_ix];
+            let (closest_source, real_target) = closest_sources_and_real_targets[path_ix];
             distance_matrix(
-                obstacles.iter().copied().filter(|&xy| xy != real_target),
+                obstacles.iter().copied().filter(|&xy| xy != closest_source && xy != real_target),
                 once(real_target),
             )
         })
@@ -157,42 +158,67 @@ pub fn minimal_shortest_paths_tree(
         // from the source.
         let mut distances = RoomMatrix::new(unreachable_cost());
         let mut queue: BTreeMap<u32, Vec<RoomXY>> = BTreeMap::new();
+        let mut prev = FxHashMap::default();
 
         distances.set(closest_source, 0u32);
         queue.push_or_insert(0, closest_source);
 
+        let mut real_target_dist = unreachable_cost();
+
+        debug!("Finding route {} -> {} ({})", closest_source, real_target, path_spec.target);
+
         while let Some((dist, xy)) = queue.pop_from_first() {
+            if dist >= real_target_dist {
+                break;
+            }
             if distances.get(xy) == dist {
                 for near in xy.around() {
-                    let dist_diff = target_dm.get(near) as i8 - target_dm.get(xy) as i8 + 1;
-                    let extra_dist_cost = 255 * dist_diff as u32 * path_spec.extra_length_cost as u32 * 0xffff;
-                    let near_cost = if path_xys.contains(&near) {
-                        extra_dist_cost
-                    } else {
-                        let shared_cost = 255 * cost_matrix.get(xy) as u32 * 0xffff + preference_matrix.get(xy) as u32;
-                        extra_dist_cost + shared_cost / (number_of_areas.get(near) + 1) as u32
-                    };
-                    let new_dist = dist.saturating_add(near_cost);
-                    let near_dist = distances.get(near);
-                    if new_dist < near_dist {
-                        distances.set(near, new_dist);
-                        queue.push_or_insert(new_dist, near);
+                    if target_dm.get(near) < unreachable_cost() {
+                        let dist_diff = target_dm.get(near) as i8 - target_dm.get(xy) as i8 + 1;
+                        assert!(dist_diff >= 0);
+                        assert!(dist_diff <= 2);
+                        let extra_dist_cost = (dist_diff as u32 * path_spec.extra_length_cost as u32) << 14;
+                        let near_cost = if path_xys.contains(&near) {
+                            extra_dist_cost
+                        } else {
+                            let shared_cost = (((cost_matrix.get(near) as u32) << 8) + preference_matrix.get(near) as u32) << 6;
+                            extra_dist_cost + shared_cost / (number_of_areas.get(near) + 1) as u32
+                        };
+                        let new_dist = dist.saturating_add(near_cost);
+                        let near_dist = distances.get(near);
+                        if new_dist < near_dist {
+                            distances.set(near, new_dist);
+                            prev.insert(near, xy);
+                            if near == real_target {
+                                debug!("{} -> {} at cost {} (dist_diff {} extra_dist_cost {} total {})", xy, near, near_cost, dist_diff, extra_dist_cost, new_dist);
+                                real_target_dist = new_dist;
+                            } else {
+                                debug!("{} -> {} at cost {} (dist_diff {} extra_dist_cost {} total {})", xy, near, near_cost, dist_diff, extra_dist_cost, new_dist);
+                                queue.push_or_insert(new_dist, near);
+                            }
+                        }
                     }
                 }
             }
         }
 
-        if distances.get(real_target) >= unreachable_cost() {
+        if real_target_dist >= unreachable_cost() {
             None?;
         }
 
         let source_dm = &source_dms[path_ix];
-        let mut path = shortest_path_by_matrix_with_preference(source_dm, &distances, real_target);
+        let mut path = vec![real_target];
+        let mut current = real_target;
+        path_xys.insert(real_target);
+        while current != closest_source {
+            debug!("{}", current);
+            current = *unwrap!(prev.get(&current));
+            path.push(current);
+            path_xys.insert(current);
+        }
         path.reverse();
 
-        for &xy in path.iter() {
-            path_xys.insert(xy);
-        }
+        debug!("Found route {} -> {} ({})\n{:?}\n{}", closest_source, real_target, path_spec.target, path, distances);
 
         paths.push(path);
     }

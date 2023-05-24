@@ -68,7 +68,7 @@ pub static mut S_PLANNER: Option<RoomPlanner> = None;
 // `js_name` to use a reserved name as a function name.
 #[wasm_bindgen(js_name = loop)]
 pub fn game_loop() {
-    let ticks_since_restart = unsafe { FIRST_TICK.assume_init() } - game::time();
+    let ticks_since_restart = game::time() - unsafe { FIRST_TICK.assume_init() };
 
     // let new_process = TestProcess {
     //     meta: ProcessMeta {
@@ -80,7 +80,7 @@ pub fn game_loop() {
     // kern.schedule(Box::new(new_process));
     // kern.run();
 
-    debug!("Tick: {} -- Bucket: {}", game::time(), game::cpu::bucket());
+    debug!("Tick: {} / {} -- Bucket: {}", ticks_since_restart, game::time(), game::cpu::bucket());
 
     if game::cpu::bucket() > 1000 {
         measure_time("test", || {
@@ -412,11 +412,11 @@ pub fn game_loop() {
             }
             unsafe {
                 if let Some(planner) = S_PLANNER.as_mut() {
-                    if planner.is_finished() || game::time() % 4 != 0 || ticks_since_restart > 1 {
-                        if planner.is_finished() && game::time() % 4 == 3 {
-                            debug!("Restarting the planner.");
-                            S_PLANNER = None;
-                        }
+                    if planner.best_plan.is_some() /* planner.is_finished() || game::time() % 4 != 0 */ {
+                        // if planner.is_finished() && game::time() % 4 == 3 {
+                        //     debug!("Restarting the planner.");
+                        //     S_PLANNER = None;
+                        // }
                         if let Some(plan) = planner.best_plan.clone() {
                             visualize(room_name, Visualization::Structures(plan.tiles.to_structures_map()));
                             visualize(
@@ -432,22 +432,26 @@ pub fn game_loop() {
                         }
                     } else {
                         let plan_result = measure_time("RoomPlanner::plan", || planner.plan());
-                        match plan_result {
-                            Ok(plan) => {
-                                visualize(room_name, Visualization::Structures(plan.tiles.to_structures_map()));
-                                visualize(
-                                    room_name,
-                                    Visualization::Text(format!(
-                                        "{:.2} E/t,   {:.3} CPU/t,   {:.0} DEF,   {:.2} SCORE",
-                                        plan.score.energy_balance,
-                                        plan.score.cpu_cost,
-                                        plan.score.def_score,
-                                        plan.score.total_score
-                                    )),
-                                );
-                            }
-                            Err(e) => debug!("{}", e),
-                        };
+                        if ticks_since_restart < 2 {
+                            planner.best_plan = None;
+                        } else {
+                            match plan_result {
+                                Ok(plan) => {
+                                    visualize(room_name, Visualization::Structures(plan.tiles.to_structures_map()));
+                                    visualize(
+                                        room_name,
+                                        Visualization::Text(format!(
+                                            "{:.2} E/t,   {:.3} CPU/t,   {:.0} DEF,   {:.2} SCORE",
+                                            plan.score.energy_balance,
+                                            plan.score.cpu_cost,
+                                            plan.score.def_score,
+                                            plan.score.total_score
+                                        )),
+                                    );
+                                }
+                                Err(e) => debug!("{}", e),
+                            };
+                        }
                     }
                 } else {
                     debug!("Planner not found.");
