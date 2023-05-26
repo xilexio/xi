@@ -608,7 +608,7 @@ impl RoomPlanner {
                 RoadParameters::new(spawns.clone(), source_xy, 1, 1, 1, true, BasePart::ProtectedIfInside)
             }))
             .collect::<Vec<_>>();
-        let work_xys = self.connect_with_roads(&road_parameters, false)?;
+        let work_xys = self.connect_with_roads(&road_parameters)?;
 
         // let controller_and_sources_targets = once(RoadTarget::new(self.controller_xy, 3, 1, BasePart::Interior)).chain(
         //     self.source_xys
@@ -677,7 +677,7 @@ impl RoomPlanner {
         self.place_towers()?;
         // TODO at this point remove needless grown structures - some towers may have replaced them and some not
         // TODO regrow missing extensions
-        // self.grow_reachable_structures(Extension, 68, self.storage_xy)?;
+        self.grow_reachable_structures(Extension, 62, self.storage_xy)?;
         // TODO replace some extensions with nuker and observer
         // self.grow_reachable_structures(Tower, 6, self.storage_xy)?;
         // self.grow_reachable_structures(Nuker, 1, self.storage_xy)?;
@@ -685,7 +685,7 @@ impl RoomPlanner {
 
         self.place_main_ramparts()?;
 
-        // self.place_rampart_roads()?;
+        self.place_rampart_roads()?;
 
         // Growing dynamic structures that were removed when placing the roads to ramparts.
         // self.grow_reachable_structures(Extension, 60)?;
@@ -787,7 +787,7 @@ impl RoomPlanner {
     //     Ok(road_ends)
     // }
 
-    fn connect_with_roads(&mut self, roads_parameters: &Vec<RoadParameters>, debug: bool) -> Result<Vec<RoomXY>, Box<dyn Error>> {
+    fn connect_with_roads(&mut self, roads_parameters: &Vec<RoadParameters>) -> Result<Vec<RoomXY>, Box<dyn Error>> {
         let mut cost_matrix = self.terrain.to_cost_matrix(1);
         for (xy, tile) in self.planned_tiles.iter() {
             if !tile.is_passable(true) {
@@ -800,10 +800,6 @@ impl RoomPlanner {
             } else if tile.structures().road() {
                 cost_matrix.set(xy, 0);
             }
-        }
-
-        if debug {
-            visualize(self.room_name, Matrix(cost_matrix.clone().into()));
         }
 
         // Preference of diagonal roads synced with the storage and keeping away from exits.
@@ -820,7 +816,7 @@ impl RoomPlanner {
                     sources: params.start_xys.clone(),
                     target: params.target_xy,
                     target_range: params.stop_range,
-                    impassable_at_range: params.reserved,
+                    impassable_target: params.reserved,
                     extra_length_cost: params.extra_length_cost,
                 })
                 .collect(),
@@ -1099,6 +1095,7 @@ impl RoomPlanner {
                 .copied()
                 .filter_map(|xy| {
                     if xy.y <= rect_center.y {
+                        // TODO Unwrapping failed on Result::Err at src\room_planner.rs:1098,41 in xi::room_planner: Err(OutOfBoundsError(52)).
                         let mirror_xy = unwrap!(rect.mirror_xy(xy));
                         if valid_tiles_matrix.get(mirror_xy) {
                             // It is better if the towers are not close to the border, as it decreases the average strength.
@@ -1430,8 +1427,7 @@ impl RoomPlanner {
                         .map(|&tower_xy| {
                             RoadParameters::new(vec![self.storage_xy], tower_xy, 1, 0, 1, false, BasePart::Interior)
                         })
-                        .collect::<Vec<_>>(),
-                    true
+                        .collect::<Vec<_>>()
                 )?;
 
                 return Ok(());

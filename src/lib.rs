@@ -412,11 +412,11 @@ pub fn game_loop() {
             }
             unsafe {
                 if let Some(planner) = S_PLANNER.as_mut() {
-                    if planner.best_plan.is_some() /* planner.is_finished() || game::time() % 4 != 0 */ {
-                        // if planner.is_finished() && game::time() % 4 == 3 {
-                        //     debug!("Restarting the planner.");
-                        //     S_PLANNER = None;
-                        // }
+                    if /* planner.best_plan.is_some() */ planner.is_finished() /* || game::time() % 4 != 0 */ {
+                        if planner.is_finished() && game::time() % 4 == 3 {
+                            debug!("Restarting the planner.");
+                            S_PLANNER = None;
+                        }
                         if let Some(plan) = planner.best_plan.clone() {
                             visualize(room_name, Visualization::Structures(plan.tiles.to_structures_map()));
                             visualize(
@@ -432,9 +432,9 @@ pub fn game_loop() {
                         }
                     } else {
                         let plan_result = measure_time("RoomPlanner::plan", || planner.plan());
-                        if ticks_since_restart < 2 {
-                            planner.best_plan = None;
-                        } else {
+                        // if ticks_since_restart < 2 {
+                        //     planner.best_plan = None;
+                        // } else {
                             match plan_result {
                                 Ok(plan) => {
                                     visualize(room_name, Visualization::Structures(plan.tiles.to_structures_map()));
@@ -452,7 +452,7 @@ pub fn game_loop() {
                                 Err(e) => debug!("{}", e),
                             };
                         }
-                    }
+                    // }
                 } else {
                     debug!("Planner not found.");
                 }
