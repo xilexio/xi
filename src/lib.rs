@@ -412,7 +412,7 @@ pub fn game_loop() {
             }
             unsafe {
                 if let Some(planner) = S_PLANNER.as_mut() {
-                    if /* planner.best_plan.is_some() */ planner.is_finished() /* || game::time() % 4 != 0 */ {
+                    if /* planner.best_plan.is_some() */ planner.is_finished() || game::time() % 4 != 0 {
                         if planner.is_finished() && game::time() % 4 == 3 {
                             debug!("Restarting the planner.");
                             S_PLANNER = None;
@@ -451,8 +451,8 @@ pub fn game_loop() {
                                 }
                                 Err(e) => debug!("{}", e),
                             };
-                        }
-                    // }
+                        // }
+                    }
                 } else {
                     debug!("Planner not found.");
                 }

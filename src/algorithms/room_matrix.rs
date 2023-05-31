@@ -74,7 +74,17 @@ where
     T: Clone + Copy + PartialEq + LowerHex + Sized,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "   ")?;
+        for x in 0..ROOM_SIZE {
+            write!(f, "{:>size$}", x, size = 2 * size_of::<T>())?;
+            if x != ROOM_SIZE - 1 {
+                write!(f, " ")?;
+            }
+        }
+        writeln!(f)?;
         for y in 0..ROOM_SIZE {
+            write!(f, "{:>size$} ", y, size = 2)?;
+
             for x in 0..ROOM_SIZE {
                 unsafe {
                     write!(
@@ -83,9 +93,9 @@ where
                         self.get(RoomXY::unchecked_new(x, y)),
                         size = 2 * size_of::<T>()
                     )?;
-                    if x != ROOM_SIZE - 1 {
-                        write!(f, " ")?;
-                    }
+                }
+                if x != ROOM_SIZE - 1 {
+                    write!(f, " ")?;
                 }
             }
             writeln!(f)?;

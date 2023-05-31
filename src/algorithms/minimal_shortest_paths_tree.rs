@@ -9,6 +9,7 @@ use derive_more::Constructor;
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::RoomXY;
 use std::collections::BTreeMap;
+use tap::Tap;
 
 #[derive(Clone, Debug, Constructor)]
 pub struct PathSpec {
@@ -21,7 +22,7 @@ pub struct PathSpec {
     /// The tile `target_range` from `target` that the path will go towards should be treated as an obstacle.
     pub impassable_target: bool,
     /// The extra cost of making the path longer than optimal in the number of tiles it'd have to save.
-    pub extra_length_cost: u8,
+    pub extra_length_cost: f32,
 }
 
 impl PathSpec {
@@ -46,30 +47,46 @@ pub fn minimal_shortest_paths_tree(
     cost_matrix: &RoomMatrix<u8>,
     preference_matrix: &RoomMatrix<u8>,
     path_specs: &Vec<PathSpec>,
+    sqrt_target_scaling: bool,
+    dist_tolerance: u8,
 ) -> Option<Vec<Vec<RoomXY>>> {
     // Obstacles and reserved fields - real targets.
     let mut obstacles = cost_matrix.find_xy(obstacle_cost()).collect::<Vec<_>>();
 
-    let mut path_areas = path_specs
+    let (path_ixs, mut path_areas): (Vec<_>, Vec<_>) = path_specs
         .iter()
         .enumerate()
         .map(|(path_ix, path_spec)| {
             shortest_path_area(
                 &path_spec.source_dm(&obstacles),
                 &path_spec.target_dm(&obstacles, &cost_matrix),
+                dist_tolerance,
             )
+            .map(|(path_area, dist)| (path_ix, path_area, dist))
         })
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Option<Vec<_>>>()?
+        .tap_mut(|ps| {
+            // TODO Detecting continuous (maybe with tolerance) fragments and selecting roads more or less in
+            //      the middle will most likely result in less roads.
+            ps.sort_by_key(|(i, _, dist)| *dist);
+        })
+        .into_iter()
+        .map(|(path_ix, path_area, _)| (path_ix, path_area))
+        .unzip();
 
     let mut path_xys = FxHashSet::default();
 
-    let mut paths = Vec::new();
+    let mut paths = path_ixs.iter().map(|_| Vec::new()).collect::<Vec<_>>();
 
-    for (path_ix, path_spec) in path_specs.iter().enumerate() {
-        let target_dm = path_spec.target_dm(&obstacles, &cost_matrix);
+    // debug!("Finding routes with cost matrix\n{}", cost_matrix);
+
+    for i in 0..path_areas.len() {
+        let path_ix = path_ixs[i];
+        let path_spec: &PathSpec = &path_specs[path_ix];
+        let target_dm = path_spec.target_dm(&obstacles, cost_matrix);
 
         let mut number_of_areas = RoomMatrix::new(0u8);
-        for path_area in path_areas.iter().skip(path_ix + 1) {
+        for path_area in path_areas.iter().skip(i + 1) {
             for &xy in path_area.iter() {
                 number_of_areas.set(xy, number_of_areas.get(xy) + 1);
             }
@@ -90,8 +107,8 @@ pub fn minimal_shortest_paths_tree(
         let mut best_target_dist = unreachable_cost();
 
         // debug!(
-        //     "Finding route {:?} -> {} / {}",
-        //     path_spec.sources, path_spec.target, path_spec.target_range
+        //     "Finding route {:?} -> {} / {}\n{}",
+        //     path_spec.sources, path_spec.target, path_spec.target_range, number_of_areas
         // );
 
         while let Some((dist, xy)) = queue.pop_from_first() {
@@ -105,13 +122,20 @@ pub fn minimal_shortest_paths_tree(
                         let dist_diff = target_dm.get(near) as i8 - target_dm.get(xy) as i8 + 1;
                         assert!(dist_diff >= 0);
                         assert!(dist_diff <= 2);
-                        let extra_dist_cost = (dist_diff as u32 * path_spec.extra_length_cost as u32) << 14;
-                        let near_cost = if path_xys.contains(&near) {
+                        let extra_dist_cost =
+                            ((dist_diff as f32 * path_spec.extra_length_cost) * (2 << 14) as f32) as u32;
+                        let near_cost = if cost_matrix.get(near) == 0 || path_xys.contains(&near) {
                             extra_dist_cost
                         } else {
                             let shared_cost =
-                                (((cost_matrix.get(near) as u32) << 8) + preference_matrix.get(near) as u32) << 6;
-                            extra_dist_cost + shared_cost / (number_of_areas.get(near) + 1) as u32
+                                (((cost_matrix.get(near) as u32) << 8) + preference_matrix.get(near) as u32) << 3;
+                            let shared_targets = (number_of_areas.get(near) + 1) as f32;
+                            let sharing_factor = if sqrt_target_scaling {
+                                shared_targets.sqrt()
+                            } else {
+                                shared_targets
+                            };
+                            extra_dist_cost + (shared_cost as f32 / sharing_factor) as u32
                         };
                         let new_dist = dist.saturating_add(near_cost);
                         let near_dist = distances.get(near);
@@ -157,17 +181,20 @@ pub fn minimal_shortest_paths_tree(
         //     path[0], target, path_spec.sources, path_spec.target, path_spec.target_range, path, distances
         // );
 
-        paths.push(path);
+        paths[path_ix] = path;
 
         // If the target is marked as impassable, paths with path area going through it need updating.
         if path_spec.impassable_target {
             obstacles.push(target);
-            for i in path_ix + 1..path_specs.len() {
-                if path_areas[i].contains(&target) {
-                    path_areas[i] = shortest_path_area(
-                        &path_spec.source_dm(&obstacles),
-                        &path_spec.target_dm(&obstacles, cost_matrix),
-                    )?;
+            for j in i + 1..path_areas.len() {
+                if path_areas[j].contains(&target) {
+                    let ps: &PathSpec = &path_specs[path_ixs[j]];
+                    path_areas[j] = shortest_path_area(
+                        &ps.source_dm(&obstacles),
+                        &ps.target_dm(&obstacles, cost_matrix),
+                        dist_tolerance,
+                    )?
+                    .0;
                 }
             }
         }
@@ -176,7 +203,11 @@ pub fn minimal_shortest_paths_tree(
     Some(paths)
 }
 
-fn shortest_path_area(source_dm: &RoomMatrix<u8>, target_dm: &RoomMatrix<u8>) -> Option<FxHashSet<RoomXY>> {
+fn shortest_path_area(
+    source_dm: &RoomMatrix<u8>,
+    target_dm: &RoomMatrix<u8>,
+    dist_tolerance: u8,
+) -> Option<(FxHashSet<RoomXY>, u8)> {
     let mut min_total_dist = unreachable_cost();
     let combined_dm = source_dm.map(|xy, source_dist| {
         let total_dist = source_dist.saturating_add(target_dm.get(xy));
@@ -186,7 +217,13 @@ fn shortest_path_area(source_dm: &RoomMatrix<u8>, target_dm: &RoomMatrix<u8>) ->
         total_dist
     });
     if min_total_dist < unreachable_cost() {
-        Some(combined_dm.find_xy(min_total_dist).collect())
+        Some((
+            combined_dm
+                .iter()
+                .filter_map(|(xy, dist)| (dist <= min_total_dist + dist_tolerance).then_some(xy))
+                .collect(),
+            min_total_dist,
+        ))
     } else {
         None
     }
@@ -209,8 +246,10 @@ mod tests {
                 (23, 25).try_into().unwrap(),
                 0,
                 false,
-                1,
+                1.0,
             )],
+            false,
+            0,
         );
 
         let paths_unwrapped = paths.unwrap();
@@ -241,16 +280,18 @@ mod tests {
                     (22, 23).try_into().unwrap(),
                     0,
                     false,
-                    1,
+                    1.0,
                 ),
                 PathSpec::new(
                     vec![(22, 20).try_into().unwrap()],
                     (20, 23).try_into().unwrap(),
                     0,
                     false,
-                    1,
+                    1.0,
                 ),
             ],
+            false,
+            0,
         );
 
         let paths_unwrapped = paths.unwrap();
@@ -282,15 +323,15 @@ mod tests {
         let paths = minimal_shortest_paths_tree(
             &cost_matrix,
             &preference_matrix,
-            &vec![
-                PathSpec::new(
-                    vec![(20, 20).try_into().unwrap()],
-                    (25, 25).try_into().unwrap(),
-                    2,
-                    false,
-                    1,
-                ),
-            ],
+            &vec![PathSpec::new(
+                vec![(20, 20).try_into().unwrap()],
+                (25, 25).try_into().unwrap(),
+                2,
+                false,
+                1.0,
+            )],
+            false,
+            0,
         );
 
         let paths_unwrapped = paths.unwrap();

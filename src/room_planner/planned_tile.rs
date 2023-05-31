@@ -41,7 +41,7 @@ pub struct PlannedTile {
     pub base_part: BasePart,
     pub min_rcl: B3,
     pub grown: bool,
-    fill: bool,
+    pub wall: bool,
 }
 
 impl Default for PlannedTile {
@@ -76,6 +76,10 @@ impl PlannedTile {
             } else {
                 self.with_base_part(base_part)
             }
+        } else if self.base_part() == BasePart::Connected
+            && (base_part == BasePart::Protected || base_part == BasePart::ProtectedIfInside)
+        {
+            self.with_base_part(BasePart::Interior)
         } else {
             self
         }
@@ -121,6 +125,8 @@ impl Display for PlannedTile {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.structures().is_empty() && self.reserved() {
             write!(f, " _ ")
+        } else if self.wall() {
+            write!(f, " # ")
         } else {
             write!(f, "{}", self.structures())
         }
@@ -174,10 +180,16 @@ impl RoomMatrix<PlannedTile> {
         xy: RoomXY,
         structure_type: StructureType,
         base_part: BasePart,
-        grown: bool
+        grown: bool,
     ) -> Result<(), Box<dyn Error>> {
         // debug!("merge_structure {} {:?} {:?}", xy, structure_type, base_part);
-        self.set(xy, self.get(xy).merge(structure_type)?.upgrade_base_part(base_part).with_grown(grown));
+        self.set(
+            xy,
+            self.get(xy)
+                .merge(structure_type)?
+                .upgrade_base_part(base_part)
+                .with_grown(grown),
+        );
         Ok(())
     }
 
@@ -189,8 +201,8 @@ impl RoomMatrix<PlannedTile> {
             self.get(xy)
                 .replace(structure_type)
                 .upgrade_base_part(base_part)
-                .with_grown(grown)
-        )
+                .with_grown(grown),
+        );
     }
 
     #[inline]
@@ -203,6 +215,12 @@ impl RoomMatrix<PlannedTile> {
     pub fn reserve(&mut self, xy: RoomXY) {
         // debug!("reserve {}", xy);
         self.set(xy, self.get(xy).with_reserved(true));
+    }
+
+    #[inline]
+    pub fn clear(&mut self, xy: RoomXY) {
+        // debug!("clear {}", xy);
+        self.set(xy, PlannedTile::default());
     }
 }
 
