@@ -399,6 +399,8 @@ pub fn game_loop() {
             //     }
             // }
 
+            kernel::experiment();
+
             if unsafe { S_PLANNER.is_none() } {
                 let maybe_planner = measure_time("RoomPlanner::new", || {
                     with_room_state(room_name, |state| RoomPlanner::new(state, true)).unwrap()
