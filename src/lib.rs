@@ -33,6 +33,7 @@ use std::cmp::min;
 use std::iter::once;
 use std::mem::MaybeUninit;
 use wasm_bindgen::prelude::{wasm_bindgen, UnwrapThrowExt};
+use crate::maintenance::maintain_rooms;
 
 mod algorithms;
 mod blueprint;
@@ -46,10 +47,16 @@ mod map_utils;
 mod profiler;
 mod room_planner;
 mod room_state;
-mod test_process;
 mod towers;
 mod unwrap;
 mod visualization;
+mod creep;
+mod creeps;
+mod spawning;
+mod resources;
+mod role;
+mod maintenance;
+mod assert;
 
 pub static mut FIRST_TICK: MaybeUninit<u32> = MaybeUninit::uninit();
 
@@ -61,6 +68,8 @@ pub fn setup() {
     }
     logging::init_logging(LOG_LEVEL);
     kernel::init_kernel();
+    let kern = kernel::kernel();
+    kern.schedule(maintain_rooms);
 }
 
 pub static mut S_PLANNER: Option<RoomPlanner> = None;
@@ -69,6 +78,9 @@ pub static mut S_PLANNER: Option<RoomPlanner> = None;
 #[wasm_bindgen(js_name = loop)]
 pub fn game_loop() {
     let ticks_since_restart = game::time() - unsafe { FIRST_TICK.assume_init() };
+
+    let kern = kernel::kernel();
+    kern.run();
 
     // let new_process = TestProcess {
     //     meta: ProcessMeta {

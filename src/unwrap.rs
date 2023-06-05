@@ -1,5 +1,6 @@
-use std::fmt::Debug;
 use log::debug;
+use std::fmt::Debug;
+
 #[macro_export]
 macro_rules! unwrap(
     ($e:expr) => (
