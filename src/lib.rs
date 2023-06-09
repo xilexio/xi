@@ -1,4 +1,5 @@
 #![feature(return_position_impl_trait_in_trait)]
+#![feature(async_closure)]
 
 use crate::algorithms::chokepoint_matrix::chokepoint_matrix;
 use crate::algorithms::chunk_graph::{chunk_graph, ChunkId};
@@ -32,6 +33,7 @@ use screeps::{game, Direction, RoomName, ROOM_SIZE};
 use std::cmp::min;
 use std::iter::once;
 use std::mem::MaybeUninit;
+use std::task::Waker;
 use wasm_bindgen::prelude::{wasm_bindgen, UnwrapThrowExt};
 use crate::maintenance::maintain_rooms;
 
@@ -41,7 +43,6 @@ mod config;
 mod consts;
 mod cost_approximation;
 mod geometry;
-mod kernel;
 mod logging;
 mod map_utils;
 mod profiler;
@@ -57,6 +58,10 @@ mod resources;
 mod role;
 mod maintenance;
 mod assert;
+mod kernel;
+mod fresh_number;
+mod game_time;
+mod random;
 
 pub static mut FIRST_TICK: MaybeUninit<u32> = MaybeUninit::uninit();
 
@@ -69,7 +74,7 @@ pub fn setup() {
     logging::init_logging(LOG_LEVEL);
     kernel::init_kernel();
     let kern = kernel::kernel();
-    kern.schedule(maintain_rooms);
+    drop(kern.schedule("maintain_rooms", 200, maintain_rooms));
 }
 
 pub static mut S_PLANNER: Option<RoomPlanner> = None;
@@ -410,8 +415,6 @@ pub fn game_loop() {
             //         vis.circle(path.target.x.u8() as f32, path.target.y.u8() as f32, None);
             //     }
             // }
-
-            kernel::experiment();
 
             if unsafe { S_PLANNER.is_none() } {
                 let maybe_planner = measure_time("RoomPlanner::new", || {

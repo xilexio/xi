@@ -1,6 +1,7 @@
+use crate::game_time::game_time;
+use crate::kernel::kernel;
 use derive_more::Constructor;
-use log::debug;
-use screeps::game;
+use log::trace;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -10,30 +11,31 @@ pub struct Sleep {
     wake_up_tick: u32,
 }
 
-impl Unpin for Sleep {}
-
 impl Future for Sleep {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if game::time() >= self.wake_up_tick {
-            debug!(
-                "sleep ready because game_time {} >= {} wake_up_tick",
-                game::time(),
+        if game_time() >= self.wake_up_tick {
+            trace!(
+                "Sleep ready because game_time {} >= {} wake_up_tick.",
+                game_time(),
                 self.wake_up_tick
             );
             Poll::Ready(())
         } else {
-            debug!(
-                "sleep pending because game_time {} < {} wake_up_tick",
-                game::time(),
+            trace!(
+                "Sleep pending because game_time {} < {} wake_up_tick.",
+                game_time(),
                 self.wake_up_tick
             );
+            kernel().move_current_to_sleeping(self.wake_up_tick);
             Poll::Pending
         }
     }
 }
 
+/// Suspends the current thread for given number of ticks.
+#[must_use]
 pub fn sleep(ticks: u32) -> Sleep {
-    Sleep::new(game::time() + ticks)
+    Sleep::new(game_time() + ticks)
 }

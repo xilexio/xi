@@ -28,7 +28,6 @@ use crate::room_state::RoomState;
 use crate::towers::tower_attack_power;
 use crate::unwrap;
 use derive_more::Constructor;
-use js_sys::Math::random;
 use log::debug;
 use num_traits::{clamp, Signed};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -42,6 +41,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::iter::{empty, once};
 use thiserror::Error;
+use crate::random::random;
 
 pub mod packed_tile_structures;
 pub mod plan;

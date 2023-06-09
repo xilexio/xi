@@ -1,16 +1,9 @@
 use log::debug;
 use screeps::{game, RoomName};
-use crate::kernel::process::BorrowedProcessMeta;
 use crate::kernel::sleep::sleep;
 
-pub async fn maintain_rooms(bpm: BorrowedProcessMeta) {
-    bpm.initialize().await;
-
+pub async fn maintain_rooms() {
     loop {
-        bpm.with(|mut meta| {
-            meta.priority += 1;
-        });
-
         for room_name in game::rooms().keys() {
             maintain_room(room_name);
         }
