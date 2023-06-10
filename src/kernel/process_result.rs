@@ -1,4 +1,4 @@
-use crate::kernel::kernel;
+use crate::kernel::move_current_process_to_awaiting;
 use crate::kernel::process::Pid;
 use derive_more::Constructor;
 use std::cell::RefCell;
@@ -22,7 +22,7 @@ impl<T> Future for ProcessResult<T> {
         if let Some(result) = self.result.borrow_mut().take() {
             Poll::Ready(result)
         } else {
-            kernel().move_current_to_awaiting(self.pid);
+            move_current_process_to_awaiting(self.pid);
             Poll::Pending
         }
     }

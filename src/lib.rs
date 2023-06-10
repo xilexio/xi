@@ -73,8 +73,7 @@ pub fn setup() {
     }
     logging::init_logging(LOG_LEVEL);
     kernel::init_kernel();
-    let kern = kernel::kernel();
-    drop(kern.schedule("maintain_rooms", 200, maintain_rooms));
+    drop(kernel::schedule("maintain_rooms", 200, maintain_rooms));
 }
 
 pub static mut S_PLANNER: Option<RoomPlanner> = None;
@@ -84,8 +83,7 @@ pub static mut S_PLANNER: Option<RoomPlanner> = None;
 pub fn game_loop() {
     let ticks_since_restart = game::time() - unsafe { FIRST_TICK.assume_init() };
 
-    let kern = kernel::kernel();
-    kern.run();
+    kernel::run_processes();
 
     // let new_process = TestProcess {
     //     meta: ProcessMeta {

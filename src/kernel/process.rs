@@ -70,10 +70,6 @@ impl<T> Runnable for Process<T> {
         self.meta.borrow()
     }
 
-    fn borrow_mut_meta(&mut self) -> RefMut<ProcessMeta> {
-        self.meta.borrow_mut()
-    }
-
     fn clone_meta(&self) -> WrappedProcessMeta {
         self.meta.clone()
     }

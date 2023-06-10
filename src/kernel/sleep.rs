@@ -1,5 +1,5 @@
 use crate::game_time::game_time;
-use crate::kernel::kernel;
+use crate::kernel::move_current_process_to_sleeping;
 use derive_more::Constructor;
 use log::trace;
 use std::future::Future;
@@ -28,7 +28,7 @@ impl Future for Sleep {
                 game_time(),
                 self.wake_up_tick
             );
-            kernel().move_current_to_sleeping(self.wake_up_tick);
+            move_current_process_to_sleeping(self.wake_up_tick);
             Poll::Pending
         }
     }
