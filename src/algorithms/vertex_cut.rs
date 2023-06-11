@@ -1,9 +1,9 @@
 use std::collections::hash_map::Entry::Vacant;
-use crate::unwrap;
 use petgraph::prelude::EdgeRef;
 use petgraph::stable_graph::{IndexType, NodeIndex, StableGraph};
 use petgraph::Undirected;
 use rustc_hash::{FxHashMap, FxHashSet};
+use crate::u;
 
 /// Returns indexes of nodes that are articulation vertices, i.e., removing them would split the graph in two connected
 /// components.
@@ -12,7 +12,7 @@ where
     I: IndexType,
 {
     let mut cut = FxHashSet::default();
-    let root = unwrap!(graph.node_indices().next());
+    let root = u!(graph.node_indices().next());
     // Current DFS path. All pre-visited nodes are still on the path.
     let mut dfs_stack = vec![root];
     // All pre-visited or visited nodes have depth set.
@@ -32,7 +32,7 @@ where
             for edge in graph.edges(node) {
                 if let Some(&target_depth) = depths.get(&edge.target()) {
                     // The node was already pre-visited. Updating discovery depth if needed.
-                    if Some(edge.target()) != parent && target_depth < *unwrap!(lowest_discovery_depth.get(&node)) {
+                    if Some(edge.target()) != parent && target_depth < *u!(lowest_discovery_depth.get(&node)) {
                         lowest_discovery_depth.insert(node, target_depth);
                     }
                 } else {
@@ -47,14 +47,14 @@ where
             // This code should be ran just once per node and the information about parent will not be needed later, so
             // we mark it by removing its parent information.
             if let Some(parent) = parents.remove(&node) {
-                let depth = *unwrap!(depths.get(&node));
-                let low = *unwrap!(lowest_discovery_depth.get(&node));
-                let parent_low = *unwrap!(lowest_discovery_depth.get(&parent));
+                let depth = *u!(depths.get(&node));
+                let low = *u!(lowest_discovery_depth.get(&node));
+                let parent_low = *u!(lowest_discovery_depth.get(&parent));
                 if low < parent_low {
                     lowest_discovery_depth.insert(parent, low);
                 }
                 if parent != root {
-                    let parent_depth = *unwrap!(depths.get(&parent));
+                    let parent_depth = *u!(depths.get(&parent));
                     if parent_depth <= low {
                         cut.insert(parent);
                     }

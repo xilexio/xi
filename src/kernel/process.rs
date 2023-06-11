@@ -1,12 +1,12 @@
+use crate::kernel::runnable::Runnable;
 use derive_more::Constructor;
-use std::cell::{Ref, RefCell, RefMut};
+use std::cell::{Ref, RefCell};
 use std::fmt::{Display, Formatter};
 use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::task::{Context, Poll, Wake, Waker};
-use crate::kernel::runnable::Runnable;
 
 pub type Pid = u32;
 pub type Priority = u8;
@@ -29,7 +29,13 @@ pub(super) struct Process<T> {
 }
 
 impl<T> Process<T> {
-    pub(super) fn new<P, F>(name: String, pid: Pid, parent_pid: Option<Pid>, priority: Priority, mut process_fn: P) -> Self
+    pub(super) fn new<P, F>(
+        name: String,
+        pid: Pid,
+        parent_pid: Option<Pid>,
+        priority: Priority,
+        mut process_fn: P,
+    ) -> Self
     where
         P: FnMut() -> F,
         F: Future<Output = T> + 'static,
@@ -84,9 +90,7 @@ impl<T> Runnable for Process<T> {
                 self.result.replace(Some(result));
                 Poll::Ready(())
             }
-            Poll::Pending => {
-                Poll::Pending
-            }
+            Poll::Pending => Poll::Pending,
         }
     }
 }

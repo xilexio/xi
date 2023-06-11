@@ -1,5 +1,7 @@
 #![feature(return_position_impl_trait_in_trait)]
 #![feature(async_closure)]
+#![feature(once_cell)]
+#![feature(core_intrinsics)]
 
 use crate::algorithms::chokepoint_matrix::chokepoint_matrix;
 use crate::algorithms::chunk_graph::{chunk_graph, ChunkId};
@@ -18,7 +20,7 @@ use crate::geometry::rect::{ball, room_rect, Rect};
 use crate::geometry::room_xy::RoomXYUtils;
 use crate::room_planner::RoomPlanner;
 use crate::room_state::room_states::with_room_state;
-use crate::room_state::scan::scan;
+use crate::room_state::scan_room::scan_room;
 use crate::visualization::{visualize, Visualization};
 use log::debug;
 use num_traits::Signed;
@@ -32,10 +34,14 @@ use screeps::Terrain::Wall;
 use screeps::{game, Direction, RoomName, ROOM_SIZE};
 use std::cmp::min;
 use std::iter::once;
-use std::mem::MaybeUninit;
-use std::task::Waker;
+use parking_lot::{Mutex, RawMutex};
 use wasm_bindgen::prelude::{wasm_bindgen, UnwrapThrowExt};
+use crate::game_time::{first_tick, game_tick};
 use crate::maintenance::maintain_rooms;
+use crate::priorities::{ROOM_MAINTENANCE_PRIORITY, ROOM_PLANNING_PRIORITY, ROOM_SCANNING_PRIORITY, VISUALIZATIONS_PRIORITY};
+use crate::room_planner::plan_rooms::plan_rooms;
+use crate::room_state::scan_rooms::scan_rooms;
+use crate::visualization::show_visualizations::show_visualizations;
 
 mod algorithms;
 mod blueprint;
@@ -44,12 +50,10 @@ mod consts;
 mod cost_approximation;
 mod geometry;
 mod logging;
-mod map_utils;
 mod profiler;
 mod room_planner;
 mod room_state;
 mod towers;
-mod unwrap;
 mod visualization;
 mod creep;
 mod creeps;
@@ -57,51 +61,41 @@ mod spawning;
 mod resources;
 mod role;
 mod maintenance;
-mod assert;
 mod kernel;
 mod fresh_number;
 mod game_time;
 mod random;
-
-pub static mut FIRST_TICK: MaybeUninit<u32> = MaybeUninit::uninit();
+mod priorities;
+mod utils;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]
 pub fn setup() {
-    unsafe {
-        FIRST_TICK.write(game::time());
-    }
     logging::init_logging(LOG_LEVEL);
-    kernel::init_kernel();
-    drop(kernel::schedule("maintain_rooms", 200, maintain_rooms));
+
+    drop(kernel::schedule("scan_rooms", ROOM_SCANNING_PRIORITY, scan_rooms));
+    drop(kernel::schedule("plan_rooms", ROOM_PLANNING_PRIORITY, plan_rooms));
+    drop(kernel::schedule("maintain_rooms", ROOM_MAINTENANCE_PRIORITY, maintain_rooms));
+    drop(kernel::schedule("show_visualizations", VISUALIZATIONS_PRIORITY, show_visualizations));
 }
 
-pub static mut S_PLANNER: Option<RoomPlanner> = None;
+// pub static mut S_PLANNER: Option<RoomPlanner> = None;
 
 // `js_name` to use a reserved name as a function name.
 #[wasm_bindgen(js_name = loop)]
 pub fn game_loop() {
-    let ticks_since_restart = game::time() - unsafe { FIRST_TICK.assume_init() };
+    let ticks_since_restart = game_tick() - first_tick();
 
+    debug!("[ξ] Tick: {} / {} -- Bucket: {}", ticks_since_restart, game::time(), game::cpu::bucket());
+
+    kernel::wake_up_sleeping_processes();
     kernel::run_processes();
 
-    // let new_process = TestProcess {
-    //     meta: ProcessMeta {
-    //         pid: game::time(),
-    //         priority: 0,
-    //     },
-    // };
-    // let kern = kernel::kernel();
-    // kern.schedule(Box::new(new_process));
-    // kern.run();
-
-    debug!("Tick: {} / {} -- Bucket: {}", ticks_since_restart, game::time(), game::cpu::bucket());
-
-    if game::cpu::bucket() > 1000 {
-        measure_time("test", || {
-            let spawn = game::spawns().values().next().unwrap_throw();
-            let room_name = spawn.room().unwrap_throw().name();
-            scan(room_name).unwrap_throw();
+    // if game::cpu::bucket() > 1000 {
+    //     measure_time("test", || {
+    //         let spawn = game::spawns().values().next().unwrap_throw();
+    //         let room_name = spawn.room().unwrap_throw().name();
+    //         scan(room_name).unwrap_throw();
 
             //     let mut matrix = RoomMatrix::new(1u8);
             //     with_room_state(room_name, |state| {
@@ -414,64 +408,64 @@ pub fn game_loop() {
             //     }
             // }
 
-            if unsafe { S_PLANNER.is_none() } {
-                let maybe_planner = measure_time("RoomPlanner::new", || {
-                    with_room_state(room_name, |state| RoomPlanner::new(state, true)).unwrap()
-                });
-                match maybe_planner {
-                    Ok(new_planner) => unsafe {
-                        S_PLANNER = Some(new_planner);
-                    },
-                    Err(e) => debug!("{}", e),
-                }
-            }
-            unsafe {
-                if let Some(planner) = S_PLANNER.as_mut() {
-                    if /* planner.best_plan.is_some() */ planner.is_finished() || game::time() % 4 != 0 {
-                        if planner.is_finished() && game::time() % 4 == 3 {
-                            debug!("Restarting the planner.");
-                            S_PLANNER = None;
-                        }
-                        if let Some(plan) = planner.best_plan.clone() {
-                            visualize(room_name, Visualization::Structures(plan.tiles.to_structures_map()));
-                            visualize(
-                                room_name,
-                                Visualization::Text(format!(
-                                    "{:.2} E/t,   {:.3} CPU/t,   {:.0} DEF,   {:.2} SCORE",
-                                    plan.score.energy_balance,
-                                    plan.score.cpu_cost,
-                                    plan.score.def_score,
-                                    plan.score.total_score
-                                )),
-                            );
-                        }
-                    } else {
-                        let plan_result = measure_time("RoomPlanner::plan", || planner.plan());
-                        // if ticks_since_restart < 2 {
-                        //     planner.best_plan = None;
-                        // } else {
-                            match plan_result {
-                                Ok(plan) => {
-                                    visualize(room_name, Visualization::Structures(plan.tiles.to_structures_map()));
-                                    visualize(
-                                        room_name,
-                                        Visualization::Text(format!(
-                                            "{:.2} E/t,   {:.3} CPU/t,   {:.0} DEF,   {:.2} SCORE",
-                                            plan.score.energy_balance,
-                                            plan.score.cpu_cost,
-                                            plan.score.def_score,
-                                            plan.score.total_score
-                                        )),
-                                    );
-                                }
-                                Err(e) => debug!("{}", e),
-                            };
-                        // }
-                    }
-                } else {
-                    debug!("Planner not found.");
-                }
-            }
-        });
-    }
+        //     if unsafe { S_PLANNER.is_none() } {
+        //         let maybe_planner = measure_time("RoomPlanner::new", || {
+        //             with_room_state(room_name, |state| RoomPlanner::new(state, true)).unwrap()
+        //         });
+        //         match maybe_planner {
+        //             Ok(new_planner) => unsafe {
+        //                 S_PLANNER = Some(new_planner);
+        //             },
+        //             Err(e) => debug!("{}", e),
+        //         }
+        //     }
+        //     unsafe {
+        //         if let Some(planner) = S_PLANNER.as_mut() {
+        //             if /* planner.best_plan.is_some() */ planner.is_finished() || game::time() % 4 != 0 {
+        //                 if planner.is_finished() && game::time() % 4 == 3 {
+        //                     debug!("Restarting the planner.");
+        //                     S_PLANNER = None;
+        //                 }
+        //                 if let Some(plan) = planner.best_plan.clone() {
+        //                     visualize(room_name, Visualization::Structures(plan.tiles.to_structures_map()));
+        //                     visualize(
+        //                         room_name,
+        //                         Visualization::Text(format!(
+        //                             "{:.2} E/t,   {:.3} CPU/t,   {:.0} DEF,   {:.2} SCORE",
+        //                             plan.score.energy_balance,
+        //                             plan.score.cpu_cost,
+        //                             plan.score.def_score,
+        //                             plan.score.total_score
+        //                         )),
+        //                     );
+        //                 }
+        //             } else {
+        //                 let plan_result = measure_time("RoomPlanner::plan", || planner.plan());
+        //                 // if ticks_since_restart < 2 {
+        //                 //     planner.best_plan = None;
+        //                 // } else {
+        //                     match plan_result {
+        //                         Ok(plan) => {
+        //                             visualize(room_name, Visualization::Structures(plan.tiles.to_structures_map()));
+        //                             visualize(
+        //                                 room_name,
+        //                                 Visualization::Text(format!(
+        //                                     "{:.2} E/t,   {:.3} CPU/t,   {:.0} DEF,   {:.2} SCORE",
+        //                                     plan.score.energy_balance,
+        //                                     plan.score.cpu_cost,
+        //                                     plan.score.def_score,
+        //                                     plan.score.total_score
+        //                                 )),
+        //                             );
+        //                         }
+        //                         Err(e) => debug!("{}", e),
+        //                     };
+        //                 // }
+        //             }
+        //         } else {
+        //             debug!("Planner not found.");
+        //         }
+        //     }
+        // });
+    // }
 }

@@ -1,7 +1,7 @@
-use crate::room_state::RoomState;
+use crate::room_state::{RoomDesignation, RoomState};
+use rustc_hash::FxHashMap;
 use screeps::RoomName;
 use std::cell::RefCell;
-use rustc_hash::FxHashMap;
 
 thread_local! {
     pub static ROOM_STATES: RefCell<FxHashMap<RoomName, RoomState>> = RefCell::new(FxHashMap::default());
@@ -9,14 +9,14 @@ thread_local! {
 
 pub fn with_room_state<F, R>(room_name: RoomName, f: F) -> Option<R>
 where
-    F: FnOnce(&RoomState) -> R,
+    F: Fn(&RoomState) -> R,
 {
     ROOM_STATES.with(|states| states.borrow().get(&room_name).map(f))
 }
 
-pub fn replace_room_state<F, R>(room_name: RoomName, f: F) -> R
+pub fn replace_room_state<F, R>(room_name: RoomName, mut f: F) -> R
 where
-    F: FnOnce(&mut RoomState) -> R,
+    F: FnMut(&mut RoomState) -> R,
 {
     ROOM_STATES.with(|states| {
         let mut s = states.borrow_mut();
@@ -30,4 +30,26 @@ where
             }
         }
     })
+}
+
+pub fn for_each_room<F>(mut f: F)
+where
+    F: FnMut(RoomName, &mut RoomState),
+{
+    ROOM_STATES.with(|states| {
+        for (&room_name, room_state) in states.borrow_mut().iter_mut() {
+            f(room_name, room_state);
+        }
+    });
+}
+
+pub fn for_each_owned_room<F>(mut f: F)
+where
+    F: FnMut(RoomName, &mut RoomState),
+{
+    for_each_room(|room_name, room_state| {
+        if room_state.designation == RoomDesignation::Owned {
+            f(room_name, room_state);
+        }
+    });
 }

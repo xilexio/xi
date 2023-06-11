@@ -1,11 +1,11 @@
 use crate::creep::{Creep, CreepRole};
-use crate::map_utils::OrderedMultiMapUtils;
 use rustc_hash::FxHashMap;
 use screeps::{game, Direction, ObjectId, RoomName, SpawnOptions, StructureSpawn, Part};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use screeps::Part::{Carry, Move, Work};
 use crate::resources::{room_resources, RoomResources};
+use crate::utils::map_utils::OrderedMultiMapUtils;
 
 #[derive(Default)]
 struct SpawnManager {

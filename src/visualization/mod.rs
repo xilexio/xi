@@ -1,3 +1,5 @@
+pub mod show_visualizations;
+
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix::RoomMatrix;
 use room_visual_ext::RoomVisualExt;
@@ -9,7 +11,7 @@ use petgraph::stable_graph::StableGraph;
 use petgraph::Undirected;
 use rustc_hash::FxHashMap;
 use crate::room_state::StructuresMap;
-use crate::unwrap;
+use crate::u;
 
 pub enum Visualization {
     Matrix(Box<RoomMatrix<u8>>),
@@ -115,7 +117,7 @@ pub fn visualize(room_name: RoomName, visualization: Visualization) {
                 vis.text(
                     xy.x.u8() as f32,
                     xy.y.u8() as f32 + 0.3,
-                    unwrap!(node_values.get(&node)).clone(),
+                    u!(node_values.get(&node)).clone(),
                     Some(
                         TextStyle::default()
                             .font(0.7)

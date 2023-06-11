@@ -1,16 +1,18 @@
 use crate::fresh_number::fresh_number;
-use crate::game_time::game_time;
-use crate::kernel::process::{Pid, Priority, Process, ProcessMeta, WrappedProcessMeta};
+use crate::game_time::game_tick;
+use crate::kernel::process::{Pid, Priority, Process, WrappedProcessMeta};
 use crate::kernel::process_result::ProcessResult;
 use crate::kernel::runnable::Runnable;
-use crate::map_utils::{MultiMapUtils, OrderedMultiMapUtils};
-use crate::unwrap;
 use log::{error, trace};
+use parking_lot::lock_api::MappedMutexGuard;
+use parking_lot::{Mutex, MutexGuard, RawMutex};
 use rustc_hash::FxHashMap;
-use std::cell::RefMut;
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::task::Poll;
+use screeps::game;
+use crate::utils::cold::cold;
+use crate::utils::map_utils::{MultiMapUtils, OrderedMultiMapUtils};
 
 pub mod process;
 pub mod process_result;
@@ -33,6 +35,12 @@ struct Kernel {
     current_process_wake_up_tick: Option<u32>,
     current_process_awaited_process_pid: Option<Pid>,
 }
+
+/// Kernel must not be accessed from multiple threads at once.
+unsafe impl Send for Kernel {}
+
+/// Kernel must not be accessed from multiple threads at once.
+unsafe impl Sync for Kernel {}
 
 impl Kernel {
     fn new() -> Self {
@@ -59,7 +67,7 @@ where
     F: Future<Output = T> + 'static,
     T: 'static,
 {
-    let kern = kernel();
+    let mut kern = kernel();
 
     let pid = fresh_number(&kern.meta_by_pid);
     let parent_pid = kern.current_process_meta.as_ref().map(|meta| meta.borrow().pid);
@@ -68,7 +76,8 @@ where
     let result = process.result.clone();
 
     kern.meta_by_pid.insert(pid, process.meta.clone());
-    enqueue_process(Box::new(process));
+
+    enqueue_process(&mut kern, Box::new(process));
 
     ProcessResult::new(pid, result)
 }
@@ -76,7 +85,7 @@ where
 /// Runs all processes in the queue. Should be preceded by waking up all sleeping processes that should wake up this
 /// tick and waking up all processes waiting for travel to finish.
 pub fn run_processes() {
-    while let Some((priority, mut process)) = kernel().active_processes_by_priorities.pop_from_first() {
+    while let Some((priority, mut process)) = { (|| kernel().active_processes_by_priorities.pop_from_last())() } {
         trace!("Running {}.", process);
 
         let pid = process.borrow_meta().pid;
@@ -86,19 +95,18 @@ pub fn run_processes() {
         match process.poll() {
             Poll::Ready(()) => {
                 trace!("{} finished.", process);
-                let kern = kernel();
-
-                if let Some(awaiting_processes) = kern.awaiting_processes.remove(&pid) {
+                let maybe_awaiting_processes = kernel().awaiting_processes.remove(&pid);
+                if let Some(awaiting_processes) = maybe_awaiting_processes {
                     for awaiting_process in awaiting_processes {
                         trace!("Waking up {}.", awaiting_process);
                         let priority = awaiting_process.borrow_meta().priority;
-                        enqueue_process(awaiting_process);
+                        enqueue_process(&mut kernel(), awaiting_process);
                     }
                 }
-                kern.meta_by_pid.remove(&pid);
+                kernel().meta_by_pid.remove(&pid);
             }
             Poll::Pending => {
-                let kern = kernel();
+                let mut kern = kernel();
 
                 if let Some(awaited_process_pid) = kern.current_process_awaited_process_pid.take() {
                     trace!("{} waiting for P{}.", process, awaited_process_pid);
@@ -118,19 +126,20 @@ pub fn run_processes() {
 
 /// Wakes up all sleeping threads if the game tick they were waiting for has come.
 pub fn wake_up_sleeping_processes() {
-    let kern = kernel();
+    let mut kern = kernel();
 
     while let Some(first_entry) = kern.sleeping_processes.first_entry() {
-        if game_time() <= *first_entry.key() {
+        if game_tick() <= *first_entry.key() {
             for process in first_entry.remove() {
-                enqueue_process(process);
+                enqueue_process(&mut kern, process);
             }
+            continue;
         }
     }
 }
 
 pub(super) fn move_current_process_to_awaiting(awaited_process_pid: Pid) {
-    let kern = kernel();
+    let mut kern = kernel();
 
     if kern.current_process_meta.is_some() {
         kern.current_process_awaited_process_pid = Some(awaited_process_pid);
@@ -140,7 +149,7 @@ pub(super) fn move_current_process_to_awaiting(awaited_process_pid: Pid) {
 }
 
 pub(super) fn move_current_process_to_sleeping(wake_up_tick: u32) {
-    let kern = kernel();
+    let mut kern = kernel();
 
     if kern.current_process_meta.is_some() {
         kern.current_process_wake_up_tick = Some(wake_up_tick);
@@ -149,54 +158,74 @@ pub(super) fn move_current_process_to_sleeping(wake_up_tick: u32) {
     }
 }
 
-fn enqueue_process(process: Box<dyn Runnable>) {
+fn enqueue_process(kern: &mut MappedMutexGuard<RawMutex, Kernel>, process: Box<dyn Runnable>) {
     let priority = process.borrow_meta().priority;
-    kernel()
-        .active_processes_by_priorities
-        .push_or_insert(priority, process);
+    kern.active_processes_by_priorities.push_or_insert(priority, process);
 }
 
+/// Function to be called to check if the process should finish execution for the tick to fit in its CPU time
+/// constraints. Should be called regularly from long-running processes.
+pub fn should_finish() -> bool {
+    // TODO Make this less naive and based on statistics and process parameters.
+    game::cpu::get_used() >= 0.8 * game::cpu::tick_limit()
+}
+
+// TODO remove this altogether and if reprioritization is needed, introduce another function.
 /// Borrows metadata of the currently active process. The borrowed reference must be dropped before the next await.
 /// Preferably it should be not stored in a variable.
-pub fn current_process_mut_meta() -> RefMut<'static, ProcessMeta> {
-    if let Some(current_process_meta) = kernel().current_process_meta.as_ref() {
-        current_process_meta.borrow_mut()
+pub fn current_process_wrapped_meta() -> MappedMutexGuard<'static, RawMutex, WrappedProcessMeta> {
+    let kern = kernel();
+
+    if kern.current_process_meta.is_some() {
+        MappedMutexGuard::map(kern, |k| k.current_process_meta.as_mut().unwrap())
     } else {
         error!("Tried to borrow process meta while there is no current process.");
         unreachable!()
     }
 }
 
-static mut KERNEL: Option<Kernel> = None;
+#[macro_export]
+macro_rules! meta(
+    () => (
+        $crate::kernel::current_process_wrapped_meta().borrow_mut()
+    );
+);
 
-/// Initializes or reinitializes the kernel.
-pub fn init_kernel() {
-    unsafe { KERNEL = Some(Kernel::new()) }
-}
+static KERNEL: Mutex<Option<Kernel>> = Mutex::new(None);
 
-/// Returns a reference to the kernel. Panics if it wasn't initialized.
-fn kernel() -> &'static mut Kernel {
-    unsafe { unwrap!(KERNEL.as_mut()) }
+/// Returns a guarded reference to the kernel. It cannot be used in two places at once.
+fn kernel() -> MappedMutexGuard<'static, RawMutex, Kernel> {
+    let mut maybe_kernel = KERNEL.try_lock().unwrap();
+    if maybe_kernel.is_none() {
+        cold();
+        maybe_kernel.replace(Kernel::new());
+    }
+    MutexGuard::map(maybe_kernel, |k| k.as_mut().unwrap())
 }
 
 #[cfg(test)]
 mod tests {
     use crate::game_time::GAME_TIME;
     use crate::kernel::sleep::sleep;
-    use crate::kernel::{current_process_mut_meta, init_kernel, run_processes, schedule, wake_up_sleeping_processes};
+    use crate::kernel::{run_processes, schedule, wake_up_sleeping_processes, Kernel, KERNEL};
     use crate::logging::init_logging;
     use log::LevelFilter::Trace;
     use std::sync::Mutex;
 
+    /// Reinitializes the kernel.
+    pub fn reset_kernel() {
+        KERNEL.try_lock().unwrap().replace(Kernel::new());
+    }
+
     // A mutex to make sure that all tests are executed one after another since the kernel requires a single thread.
-    static mut TEST_MUTEX: Mutex<()> = Mutex::new(());
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_empty_run() {
-        let lock = unsafe { TEST_MUTEX.lock() };
+        let lock = TEST_MUTEX.lock();
 
         init_logging(Trace);
-        init_kernel();
+        reset_kernel();
         run_processes();
     }
 
@@ -211,13 +240,13 @@ mod tests {
 
     #[test]
     fn test_basic_run() {
-        let lock = unsafe { TEST_MUTEX.lock() };
+        let lock = TEST_MUTEX.lock();
 
         unsafe {
             TEST_COUNTER = 0;
         }
         init_logging(Trace);
-        init_kernel();
+        reset_kernel();
         unsafe {
             assert_eq!(TEST_COUNTER, 0);
         }
@@ -247,13 +276,13 @@ mod tests {
 
     #[test]
     fn test_awaiting() {
-        let lock = unsafe { TEST_MUTEX.lock() };
+        let lock = TEST_MUTEX.lock();
 
         unsafe {
             TEST_COUNTER = 0;
         }
         init_logging(Trace);
-        init_kernel();
+        reset_kernel();
         unsafe {
             assert_eq!(TEST_COUNTER, 0);
         }
@@ -279,13 +308,13 @@ mod tests {
 
     #[test]
     fn test_sleep() {
-        let lock = unsafe { TEST_MUTEX.lock() };
+        let lock = TEST_MUTEX.lock();
 
         unsafe {
             TEST_COUNTER = 0;
         }
         init_logging(Trace);
-        init_kernel();
+        reset_kernel();
         unsafe {
             assert_eq!(TEST_COUNTER, 0);
         }
@@ -333,13 +362,13 @@ mod tests {
 
     #[test]
     fn test_chained_awaiting_and_sleep() {
-        let lock = unsafe { TEST_MUTEX.lock() };
+        let lock = TEST_MUTEX.lock();
 
         unsafe {
             TEST_COUNTER = 0;
         }
         init_logging(Trace);
-        init_kernel();
+        reset_kernel();
         unsafe {
             assert_eq!(TEST_COUNTER, 0);
         }
@@ -385,24 +414,24 @@ mod tests {
 
     #[test]
     fn test_priorities() {
-        let lock = unsafe { TEST_MUTEX.lock() };
+        let lock = TEST_MUTEX.lock();
 
         unsafe {
             TEST_COUNTER = 0;
         }
         init_logging(Trace);
-        init_kernel();
+        reset_kernel();
         drop(schedule("set_one", 50, set_one));
         drop(schedule("set_two", 100, set_two));
         run_processes();
         unsafe {
-            assert_eq!(TEST_COUNTER, 2);
+            assert_eq!(TEST_COUNTER, 1);
         }
         drop(schedule("set_one", 100, set_one));
         drop(schedule("set_two", 50, set_two));
         run_processes();
         unsafe {
-            assert_eq!(TEST_COUNTER, 1);
+            assert_eq!(TEST_COUNTER, 2);
         }
     }
 
@@ -414,13 +443,13 @@ mod tests {
             TEST_COUNTER = three;
         };
 
-        let lock = unsafe { TEST_MUTEX.lock() };
+        let lock = TEST_MUTEX.lock();
 
         unsafe {
             TEST_COUNTER = 0;
         }
         init_logging(Trace);
-        init_kernel();
+        reset_kernel();
         drop(schedule("set_three", 100, set_three));
         run_processes();
         unsafe {
@@ -432,7 +461,7 @@ mod tests {
     fn test_changing_priority() {
         let set_four = async move || unsafe {
             TEST_COUNTER = 4;
-            current_process_mut_meta().priority = 150;
+            meta!().priority = 150;
             sleep(1).await;
             TEST_COUNTER = 4;
         };
@@ -443,24 +472,24 @@ mod tests {
             TEST_COUNTER = 5;
         };
 
-        let lock = unsafe { TEST_MUTEX.lock() };
+        let lock = TEST_MUTEX.lock();
 
         unsafe {
             TEST_COUNTER = 0;
         }
         init_logging(Trace);
-        init_kernel();
+        reset_kernel();
         drop(schedule("set_four", 50, set_four));
         drop(schedule("set_five", 100, set_five));
         run_processes();
         unsafe {
-            assert_eq!(TEST_COUNTER, 5);
+            assert_eq!(TEST_COUNTER, 4);
             GAME_TIME += 1;
         }
         wake_up_sleeping_processes();
         run_processes();
         unsafe {
-            assert_eq!(TEST_COUNTER, 4);
+            assert_eq!(TEST_COUNTER, 5);
             GAME_TIME += 1;
         }
     }

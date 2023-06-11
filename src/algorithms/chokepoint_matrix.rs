@@ -6,7 +6,7 @@ use crate::algorithms::weighted_distance_matrix::obstacle_cost;
 use crate::geometry::direction::{mul_offsets, rotate_clockwise, rotate_counterclockwise, OFFSET_BY_DIRECTION};
 use crate::geometry::rect::Rect;
 use crate::geometry::room_xy::RoomXYUtils;
-use crate::unwrap;
+use crate::u;
 use rustc_hash::FxHashSet;
 use screeps::{Direction, RoomXY, ROOM_SIZE};
 
@@ -107,7 +107,7 @@ pub fn chokepoint_matrix(
                 let mut chokepoint_xys = Vec::default();
 
                 for check_dist in 0..dist1 - 1 {
-                    let chokepoint_xy = unwrap!(xy.try_add_diff(mul_offsets(
+                    let chokepoint_xy = u!(xy.try_add_diff(mul_offsets(
                         OFFSET_BY_DIRECTION[check_directions[0] as usize],
                         (dist1 - check_dist - 1) as i8
                     )));
@@ -115,7 +115,7 @@ pub fn chokepoint_matrix(
                 }
 
                 for check_dist in 0..dist2 {
-                    let chokepoint_xy = unwrap!(xy.try_add_diff(mul_offsets(
+                    let chokepoint_xy = u!(xy.try_add_diff(mul_offsets(
                         OFFSET_BY_DIRECTION[check_directions[1] as usize],
                         check_dist as i8
                     )));

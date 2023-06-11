@@ -8,13 +8,14 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
 use rustc_hash::FxHashMap;
 use crate::room_planner::plan::Plan;
+use crate::room_planner::RoomPlanner;
 
 pub mod packed_terrain;
 pub mod room_states;
-pub mod scan;
+pub mod scan_room;
+pub mod scan_rooms;
 
-// TODO make it serializable and put in memory in serialized form
-#[derive(Clone, Debug)]
+// TODO Make it serializable and put in memory in serialized form.
 pub struct RoomState {
     pub room_name: RoomName,
     pub owner: String,
@@ -28,6 +29,7 @@ pub struct RoomState {
     // TODO for unowned rooms, ids are not as important (if at all)
     pub structures: StructuresMap,
     pub plan: Option<Plan>,
+    pub planner: Option<RoomPlanner>,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -96,6 +98,7 @@ impl RoomState {
             mineral: None,
             structures: FxHashMap::default(),
             plan: None,
+            planner: None,
         }
     }
 }

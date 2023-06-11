@@ -1,11 +1,5 @@
-use std::sync::RwLock;
-#[cfg(not(test))]
-use js_sys::JsString;
-#[cfg(not(test))]
-use web_sys::console;
-
 use log::LevelFilter::*;
-use crate::game_time::game_time;
+use crate::game_time::game_tick;
 
 struct JsLog;
 struct JsNotify;
@@ -17,7 +11,7 @@ impl log::Log for JsLog {
 
     fn log(&self, record: &log::Record<'_>) {
         #[cfg(not(test))]
-        console::log_1(&JsString::from(format!("{}", record.args())));
+        web_sys::console::log_1(&js_sys::JsString::from(format!("{}", record.args())));
         #[cfg(test)]
         println!("{}", record.args());
     }
@@ -39,11 +33,11 @@ impl log::Log for JsNotify {
 }
 
 #[cfg(test)]
-static mut LOGGING_INITIALIZED: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
+static LOGGING_INITIALIZED: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
 
 pub fn init_logging(verbosity: log::LevelFilter) {
     #[cfg(test)]
-    unsafe {
+    {
         let mut lock = LOGGING_INITIALIZED.lock().unwrap();
 
         if *lock {
@@ -78,7 +72,7 @@ pub fn init_logging(verbosity: log::LevelFilter) {
             fern::Dispatch::new()
                 .level(Warn)
                 .format(|out, message, _record| {
-                    let time = game_time();
+                    let time = game_tick();
                     out.finish(format_args!("[{}] {}", time, message))
                 })
                 .chain(Box::new(JsNotify) as Box<dyn log::Log>),

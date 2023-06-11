@@ -1,6 +1,6 @@
 use screeps::{game, RoomName};
 use screeps::ResourceType::Energy;
-use crate::unwrap;
+use crate::u;
 
 pub struct RoomResources {
     pub spawn_energy: u32,
@@ -9,7 +9,7 @@ pub struct RoomResources {
 }
 
 pub fn room_resources(room_name: RoomName) -> RoomResources {
-    let room = unwrap!(game::rooms().get(room_name));
+    let room = u!(game::rooms().get(room_name));
     RoomResources {
         spawn_energy: room.energy_available(),
         spawn_energy_capacity: room.energy_capacity_available(),

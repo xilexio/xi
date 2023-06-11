@@ -15,6 +15,7 @@ use crate::cost_approximation::energy_balance_and_cpu_cost;
 use crate::geometry::rect::{ball, bounding_rect, room_rect, Rect};
 use crate::geometry::room_xy::RoomXYUtils;
 use crate::profiler::measure_time;
+use crate::random::random;
 use crate::room_planner::packed_tile_structures::MainStructureType;
 use crate::room_planner::plan::{Plan, PlanScore, PlannedControllerInfo, PlannedMineralInfo, PlannedSourceInfo};
 use crate::room_planner::planned_tile::{BasePart, PlannedTile};
@@ -26,7 +27,7 @@ use crate::room_planner::RoomPlannerError::{
 use crate::room_state::packed_terrain::PackedTerrain;
 use crate::room_state::RoomState;
 use crate::towers::tower_attack_power;
-use crate::unwrap;
+use crate::u;
 use derive_more::Constructor;
 use log::debug;
 use num_traits::{clamp, Signed};
@@ -41,10 +42,10 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::iter::{empty, once};
 use thiserror::Error;
-use crate::random::random;
 
 pub mod packed_tile_structures;
 pub mod plan;
+pub mod plan_rooms;
 pub mod planned_tile;
 pub mod stamps;
 
@@ -102,6 +103,8 @@ struct RoadParameters {
 
 pub struct RoomPlanner {
     fast_mode: bool,
+    tries_count: u16,
+    plans_count: u16,
 
     room_name: RoomName,
     controller_xy: RoomXY,
@@ -146,7 +149,7 @@ pub struct RoomPlanner {
 }
 
 impl RoomPlanner {
-    // TODO option to plan remotes used outside of shard3 or when there is enough space.
+    // TODO Option to plan remotes used outside of shard3 or when there is enough space.
     pub fn new(state: &RoomState, fast_mode: bool) -> Result<RoomPlanner, Box<dyn Error>> {
         // Preliminary checks of the room.
         let controller_xy = state.controller.ok_or(ControllerNotFound)?.xy;
@@ -184,6 +187,8 @@ impl RoomPlanner {
 
         let mut room_planner = RoomPlanner {
             fast_mode,
+            tries_count: 0,
+            plans_count: 0,
 
             room_name: state.room_name,
             controller_xy,
@@ -237,6 +242,8 @@ impl RoomPlanner {
     /// - distance from the nearest spawn to sources, controller and mineral,
     /// - distance between ramparts to maximize minimal tower damage right outside of ramparts.
     pub fn plan(&mut self) -> Result<Plan, Box<dyn Error>> {
+        self.tries_count += 1;
+
         self.labs_rotations_stack.pop();
         if self.labs_rotations_stack.is_empty() {
             self.labs_top_left_corners_stack.pop();
@@ -278,11 +285,18 @@ impl RoomPlanner {
             self.labs_dists_stack.clear();
         }
 
+        self.plans_count += 1;
+
         Ok(plan)
     }
 
     pub fn is_finished(&self) -> bool {
         self.core_centers_stack.is_empty()
+            || self.core_centers_stack.len() == 1
+                && self.core_rotations_stack.len() == 1
+                && self.labs_dists_stack.len() == 1
+                && self.labs_top_left_corners_stack.len() == 1
+                && self.labs_rotations_stack.len() == 1
     }
 
     pub fn init_core_centers(&mut self) -> Result<(), Box<dyn Error>> {
@@ -412,7 +426,7 @@ impl RoomPlanner {
                 .enumerate()
                 .map(|(i, xy)| (i, self.dt.get(xy)))
                 .min_by_key(|(_, dist)| *dist);
-            self.core_rotations_stack = vec![unwrap!(best_corner).0 as u8];
+            self.core_rotations_stack = vec![u!(best_corner).0 as u8];
         } else {
             // Try all rotations in regular mode.
             self.core_rotations_stack = vec![3, 2, 1, 0];
@@ -422,11 +436,11 @@ impl RoomPlanner {
     fn init_labs_dists_stack(&mut self) {
         self.core = core_stamp();
         let core_center = self.current_core_center();
-        unwrap!(self.core.translate(core_center.sub(self.core.rect.center())));
+        u!(self.core.translate(core_center.sub(self.core.rect.center())));
         let core_rotations = self.current_core_rotation();
-        unwrap!(self.core.rotate(core_rotations));
+        u!(self.core.rotate(core_rotations));
 
-        self.storage_xy = unwrap!(self
+        self.storage_xy = u!(self
             .core
             .iter()
             .find_map(|(xy, tile)| (tile.structures() == Storage.into()).then_some(xy)));
@@ -527,7 +541,7 @@ impl RoomPlanner {
         if self.fast_mode {
             // In fast mode, only use the lab rotation where its road corner is the closest to the storage.
             let top_left = self.current_labs_top_left_corner();
-            let labs_rect = unwrap!(Rect::new(top_left, unsafe { top_left.add_diff((3, 3)) }));
+            let labs_rect = u!(Rect::new(top_left, unsafe { top_left.add_diff((3, 3)) }));
             let corners = labs_rect.corners();
             if min(corners[1].dist(self.storage_xy), corners[3].dist(self.storage_xy))
                 < min(corners[0].dist(self.storage_xy), corners[2].dist(self.storage_xy))
@@ -543,11 +557,11 @@ impl RoomPlanner {
 
     fn init_planned_tiles(&mut self) -> Result<(), Box<dyn Error>> {
         self.labs = labs_stamp();
-        unwrap!(self
+        u!(self
             .labs
             .translate(self.current_labs_top_left_corner().sub((0, 0).try_into().unwrap()),));
         let labs_rotations = self.current_labs_rotation();
-        unwrap!(self.labs.rotate(labs_rotations));
+        u!(self.labs.rotate(labs_rotations));
 
         self.planned_tiles = RoomMatrix::new(PlannedTile::default()).map(|xy, tile| {
             if self.terrain.get(xy) == Wall {
@@ -806,13 +820,13 @@ impl RoomPlanner {
                 Err(StructurePlacementFailure)?
             }
 
-            let link_xy = unwrap!(link_xys.into_iter().min_by_key(|&near_work_xy| {
+            let link_xy = u!(link_xys.into_iter().min_by_key(|&near_work_xy| {
                 (
                     self.storage_xy.dist(near_work_xy),
                     obstacle_cost::<u8>() - self.exits_dm.get(near_work_xy),
                 )
             }));
-            unwrap!(self.planned_tiles.merge_structure(link_xy, Link, base_part, false));
+            u!(self.planned_tiles.merge_structure(link_xy, Link, base_part, false));
             self.planned_tiles.upgrade_base_part(work_xy, base_part);
 
             Ok(link_xy)
@@ -934,7 +948,7 @@ impl RoomPlanner {
         let current_count = self
             .planned_tiles
             .iter()
-            .filter(|(xy, tile)| tile.structures().main() == unwrap!(structure_type.try_into()))
+            .filter(|(xy, tile)| tile.structures().main() == u!(structure_type.try_into()))
             .count();
         let mut remaining_structures = (0..(target_count - current_count))
             .map(|_| structure_type)
@@ -944,7 +958,7 @@ impl RoomPlanner {
             let ((xy_score, _), (xy, placement)) = priority_queue.pop_first().unwrap();
             // debug!("[{}] {}: {}, {}", remaining_extensions, xy_score, xy, placement);
             if placement {
-                let current_structure_type = unwrap!(remaining_structures.pop());
+                let current_structure_type = u!(remaining_structures.pop());
 
                 self.planned_tiles
                     .replace_structure(xy, current_structure_type, BasePart::Interior, true);
@@ -984,7 +998,7 @@ impl RoomPlanner {
 
                     // TODO xi::unwrap: Unwrapping failed on Result::Err at src\room_planner.rs:943,47 in xi::room_planner: Err(InvalidMainStructureType).
                     debug_assert!(current_structure_type != MainStructureType::Empty);
-                    remaining_structures.push(unwrap!(current_structure_type.try_into()));
+                    remaining_structures.push(u!(current_structure_type.try_into()));
                 }
             }
         }
@@ -1051,7 +1065,7 @@ impl RoomPlanner {
                 .filter_map(|xy| {
                     if xy.y <= rect_center.y {
                         // TODO Unwrapping failed on Result::Err at src\room_planner.rs:1098,41 in xi::room_planner: Err(OutOfBoundsError(52)).
-                        let mirror_xy = unwrap!(rect.mirror_xy(xy));
+                        let mirror_xy = u!(rect.mirror_xy(xy));
                         if valid_tiles_matrix.get(mirror_xy) {
                             // It is better if the towers are not close to the border, as it decreases the average strength.
                             let near_rect_count = [xy, mirror_xy]
@@ -1200,7 +1214,7 @@ impl RoomPlanner {
                         }
 
                         if solution_vec.len() == 6 {
-                            let solution = unwrap!(solution_vec.try_into());
+                            let solution = u!(solution_vec.try_into());
                             debug!(
                                 "Near ramparts min damage: {}.",
                                 Self::min_tower_damage(&solution, &outside_of_main_ramparts)
@@ -1218,7 +1232,7 @@ impl RoomPlanner {
             let mut solution_vec = Vec::new();
             let mut current_damages = outside_of_main_ramparts.iter().map(|_| 0u16).collect::<Vec<_>>();
             for _ in 0..6 {
-                let mut best_xy = *unwrap!(valid_tiles.first());
+                let mut best_xy = *u!(valid_tiles.first());
                 let mut best_damage = 0u16;
                 for &xy in valid_tiles.iter() {
                     if solution_vec.contains(&xy) {
@@ -1243,7 +1257,7 @@ impl RoomPlanner {
             }
 
             if solution_vec.len() == 6 {
-                let solution = unwrap!(solution_vec.try_into());
+                let solution = u!(solution_vec.try_into());
                 debug!(
                     "Greedy min damage: {}.",
                     Self::min_tower_damage(&solution, &outside_of_main_ramparts)
@@ -1342,7 +1356,7 @@ impl RoomPlanner {
                         .into_iter()
                         .collect::<Vec<_>>();
 
-                    let best_damage = unwrap!(population
+                    let best_damage = u!(population
                         .iter()
                         .copied()
                         .map(|xys| (RoomPlanner::min_tower_damage(&xys, &outside_of_main_ramparts)))
@@ -1400,7 +1414,7 @@ impl RoomPlanner {
     }
 
     fn min_tower_damage(xys: &[RoomXY; 6], outside_of_main_ramparts: &[RoomXY]) -> u16 {
-        unwrap!(outside_of_main_ramparts
+        u!(outside_of_main_ramparts
             .iter()
             .copied()
             .map(|xy| xys.iter().map(|&tower_xy| tower_attack_power(xy.dist(tower_xy))).sum())
@@ -1720,26 +1734,26 @@ impl RoomPlanner {
 
     #[inline]
     fn current_core_center(&self) -> RoomXY {
-        *unwrap!(self.core_centers_stack.last())
+        *u!(self.core_centers_stack.last())
     }
 
     #[inline]
     fn current_core_rotation(&self) -> u8 {
-        *unwrap!(self.core_rotations_stack.last())
+        *u!(self.core_rotations_stack.last())
     }
 
     #[inline]
     fn current_labs_dist(&self) -> u8 {
-        *unwrap!(self.labs_dists_stack.last())
+        *u!(self.labs_dists_stack.last())
     }
 
     #[inline]
     fn current_labs_top_left_corner(&self) -> RoomXY {
-        *unwrap!(self.labs_top_left_corners_stack.last())
+        *u!(self.labs_top_left_corners_stack.last())
     }
 
     #[inline]
     fn current_labs_rotation(&self) -> u8 {
-        *unwrap!(self.labs_rotations_stack.last())
+        *u!(self.labs_rotations_stack.last())
     }
 }

@@ -1,7 +1,7 @@
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::geometry::rect::ball;
 use crate::geometry::room_xy::RoomXYUtils;
-use crate::unwrap;
+use crate::u;
 use screeps::RoomXY;
 
 #[inline]
@@ -10,7 +10,7 @@ pub fn distance_by_matrix<M, D>(distance_matrix: &M, target: RoomXY, target_circ
         M: MatrixCommon<D>,
         D: Copy + Ord,
 {
-    unwrap!(ball(target, target_circle_radius)
+    u!(ball(target, target_circle_radius)
         .boundary()
         .map(|xy| distance_matrix.get(xy))
         .min())
@@ -22,7 +22,7 @@ where
     M: MatrixCommon<D>,
     D: Copy + Ord,
 {
-    unwrap!(ball(target, target_circle_radius)
+    u!(ball(target, target_circle_radius)
         .boundary()
         .map(|xy| (xy, distance_matrix.get(xy)))
         .min_by_key(|&(_, d)| d))

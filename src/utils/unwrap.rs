@@ -2,9 +2,9 @@ use log::debug;
 use std::fmt::Debug;
 
 #[macro_export]
-macro_rules! unwrap(
+macro_rules! u (
     ($e:expr) => (
-        $crate::unwrap::CustomUnwrap::custom_unwrap($e, module_path!(), file!(), line!(), column!())
+        $crate::utils::unwrap::CustomUnwrap::custom_unwrap($e, module_path!(), file!(), line!(), column!())
     );
 );
 
