@@ -12,9 +12,16 @@ ssl = false
 [mmo]
 auth_token = "your screeps.com auth token"
 
+# This is required (except features) due to MMO having an outdated Node.js version.
+[mmo.build]
+extra_options = ["--features=mmo", "--config", "build.rustflags=['-Ctarget-cpu=mvp']", "-Z", "build-std=std,panic_abort", "-Z", "build-std-features=panic_immediate_abort"]
+
 [ptr]
 auth_token = "your screeps.com auth token"
 prefix = "ptr"
+
+[ptr.build]
+extra_options = ["--features=mmo", "--config", "build.rustflags=['-Ctarget-cpu=mvp']", "-Z", "build-std=std,panic_abort", "-Z", "build-std-features=panic_immediate_abort"]
 
 [copy]
 destination = "path to your local code directory from your game client, without branch directory"

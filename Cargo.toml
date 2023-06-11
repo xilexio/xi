@@ -50,7 +50,8 @@ debug = true
 # automatically, but must be installed separately on some operating systems
 # Removing the `"-g"` will further decrease the size of the binary at but removes function names,
 # making stack traces upon panic less useful
-wasm-opt = false
+wasm-opt = ["-O4", "--disable-sign-ext"]
 
 [features]
 default = []
+mmo = []
