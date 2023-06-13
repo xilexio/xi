@@ -1,9 +1,9 @@
-use std::cmp::Ordering;
-use std::fmt::{Debug, Formatter};
-use derive_more::Constructor;
-use screeps::RoomXY;
 use crate::algorithms::room_matrix::RoomMatrix;
 use crate::room_planner::planned_tile::PlannedTile;
+use derive_more::Constructor;
+use screeps::RoomXY;
+use std::cmp::Ordering;
+use std::fmt::Debug;
 
 #[derive(Clone, Constructor)]
 pub struct Plan {
@@ -30,13 +30,6 @@ pub struct PlannedSourceInfo {
 #[derive(Clone, Copy, Default, Constructor)]
 pub struct PlannedMineralInfo {
     pub work_xy: RoomXY,
-}
-
-impl Debug for Plan {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let planned_titles_display = format!("{}", self.tiles);
-        write!(f, "Plan {{ planned_titles:\n{}\n}}", planned_titles_display)
-    }
 }
 
 #[derive(Copy, Clone, PartialEq, Default, Debug, Constructor)]

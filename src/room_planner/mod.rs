@@ -27,19 +27,20 @@ use crate::room_planner::RoomPlannerError::{
 use crate::room_state::packed_terrain::PackedTerrain;
 use crate::room_state::RoomState;
 use crate::towers::tower_attack_power;
-use crate::u;
+use crate::{a, u};
 use derive_more::Constructor;
-use log::debug;
+use log::{debug, error};
 use num_traits::{clamp, Signed};
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::StructureType::{
-    Container, Extension, Extractor, Link, Nuker, Observer, Rampart, Road, Spawn, Storage, Tower,
+    Container, Extension, Extractor, Lab, Link, Nuker, Observer, Rampart, Road, Spawn, Storage, Tower,
 };
 use screeps::Terrain::{Plain, Swamp, Wall};
 use screeps::{RoomName, RoomXY, StructureType, ROOM_SIZE, TOWER_FALLOFF_RANGE, TOWER_OPTIMAL_RANGE};
 use std::cmp::{max, min, Reverse};
 use std::collections::BTreeMap;
 use std::error::Error;
+use std::fmt::{Debug, Formatter};
 use std::iter::{empty, once};
 use thiserror::Error;
 
@@ -48,6 +49,10 @@ pub mod plan;
 pub mod plan_rooms;
 pub mod planned_tile;
 pub mod stamps;
+
+pub const MIN_RAMPART_RCL: u8 = 5;
+const MIN_MIN_ROAD_RCL: u8 = 3;
+const MAX_MIN_ROAD_RCL: u8 = 6;
 
 const APPROXIMATE_BASE_TILES: u16 = 140;
 const SOURCE_DIST_WEIGHT: f32 = 2.0;
@@ -563,13 +568,7 @@ impl RoomPlanner {
         let labs_rotations = self.current_labs_rotation();
         u!(self.labs.rotate(labs_rotations));
 
-        self.planned_tiles = RoomMatrix::new(PlannedTile::default()).map(|xy, tile| {
-            if self.terrain.get(xy) == Wall {
-                tile.with_wall(true)
-            } else {
-                tile
-            }
-        });
+        self.planned_tiles = RoomMatrix::new(PlannedTile::default());
         self.planned_tiles.merge_structures(&self.core)?;
         self.planned_tiles.merge_structures(&self.labs)?;
         Ok(())
@@ -669,21 +668,21 @@ impl RoomPlanner {
         // Growing the extensions plus a spot for the nuker
         self.grow_reachable_structures(Extension, 61, self.storage_xy)?;
 
-        debug!("After initial grow\n{}", self.planned_tiles);
+        debug!("After initial grow\n{:?}", self);
 
         // Placing towers and roads to these towers.
         self.place_towers()?;
         // Regrowing extensions that were removed when placing the roads.
         self.grow_reachable_structures(Extension, 61, self.storage_xy)?;
 
-        debug!("After towers and regrow\n{}", self.planned_tiles);
+        debug!("After towers and regrow\n{:?}", self);
 
         // Placing main ramparts, roads to them and regrowing extensions removed when placing the roads.
         self.place_main_ramparts()?;
         self.place_rampart_roads()?;
         self.grow_reachable_structures(Extension, 61, self.storage_xy)?;
 
-        debug!("After rampart roads and regrow\n{}", self.planned_tiles);
+        debug!("After rampart roads and regrow\n{:?}", self);
 
         // Placing the observer in a free space, preferably at a `SAFE_DIST` from outside.
         self.place_observer()?;
@@ -699,6 +698,9 @@ impl RoomPlanner {
 
         // TODO Make a few iterations that improve existing plan. For example grow but try to keep further away from
         //      existing ramparts.
+
+        // Assigning the minimum RCL for buildings to be built.
+        self.assign_min_rcl()?;
 
         let (energy_balance, cpu_cost) = self.energy_balance_and_cpu_cost();
         let def_score = self.min_tower_damage as f32;
@@ -1732,6 +1734,191 @@ impl RoomPlanner {
         //  alternatively, it can be combined by subtracting cpu cost multiplied by average energy balance / cpu cost modified by how much we want to use on aggression
     }
 
+    fn assign_min_rcl(&mut self) -> Result<(), Box<dyn Error>> {
+        let obstacles = self
+            .planned_tiles
+            .iter()
+            .filter_map(|(xy, tile)| (!tile.structures().road()).then_some(xy));
+        let storage_road_dm = distance_matrix(obstacles, once(self.storage_xy));
+
+        {
+            // Towers build order is ordered by the distance from the storage.
+            let mut tower_xys = self.planned_tiles.find_structure_xys(Tower);
+            if tower_xys.len() != Tower.controller_structures(8) as usize {
+                error!("Wrong number of towers generated: {}.", tower_xys.len());
+                Err(StructurePlacementFailure)?;
+            }
+            tower_xys.sort_by_key(|&xy| distance_by_matrix(&storage_road_dm, xy, 1));
+            self.assign_min_rcl_from_ordering(Tower, tower_xys);
+        }
+
+        {
+            // First are built two central labs, then others, beginning with the closest one.
+            let mut lab_xys = self.planned_tiles.find_structure_xys(Lab);
+            if lab_xys.len() != Lab.controller_structures(8) as usize {
+                error!("Wrong number of labs generated: {}.", lab_xys.len());
+                Err(StructurePlacementFailure)?;
+            }
+            let labs_inner_rect = unsafe {
+                Rect::unchecked_new(
+                    self.current_labs_top_left_corner().add_diff((1, 1)),
+                    self.current_labs_top_left_corner().add_diff((2, 2)),
+                )
+            };
+            lab_xys.sort_by_key(|&xy| {
+                (
+                    !labs_inner_rect.contains(xy),
+                    distance_by_matrix(&storage_road_dm, xy, 1),
+                )
+            });
+            self.assign_min_rcl_from_ordering(Lab, lab_xys);
+        }
+
+        let core_rect = ball(self.current_core_center(), 2);
+
+        {
+            // First is built the core link, the link from the farthest source, then the other source (if exists), then controller.
+            let core_link_xy = u!(core_rect
+                .iter()
+                .find(|&xy| self.planned_tiles.get(xy).structures().main() == Link.try_into().unwrap()));
+            let mut source_link_xys = self
+                .planned_sources
+                .iter()
+                .map(|&planned_source| planned_source.link_xy)
+                .collect::<Vec<_>>();
+            source_link_xys.sort_by_key(|&xy| xy.dist(core_link_xy));
+            let link_xys = once(core_link_xy)
+                .chain(source_link_xys.into_iter())
+                .chain(once(self.planned_controller.link_xy))
+                .collect::<Vec<_>>();
+            self.assign_min_rcl_from_ordering(Link, link_xys);
+        }
+
+        {
+            // The ordering of core extensions is defined in the stamp. The rest are ordered by the distance from
+            // the storage.
+            let mut extension_xys = self.planned_tiles.find_structure_xys(Extension);
+            if extension_xys.len() != Extension.controller_structures(8) as usize {
+                error!("Wrong number of extensions generated: {}.", extension_xys.len());
+                Err(StructurePlacementFailure)?;
+            }
+            extension_xys.sort_by_key(|&xy| {
+                (
+                    !core_rect.contains(xy),
+                    self.planned_tiles.get(xy).min_rcl(),
+                    distance_by_matrix(&storage_road_dm, xy, 1),
+                )
+            });
+            self.assign_min_rcl_from_ordering(Extension, extension_xys);
+        }
+
+        {
+            // Nuker.
+            let mut nuker_xys = self.planned_tiles.find_structure_xys(Nuker);
+            if nuker_xys.len() != Nuker.controller_structures(8) as usize {
+                error!("Wrong number of nukers generated: {}.", nuker_xys.len());
+                Err(StructurePlacementFailure)?;
+            }
+            self.assign_min_rcl_from_ordering(Nuker, nuker_xys);
+        }
+
+        {
+            // Observer.
+            let mut observer_xys = self.planned_tiles.find_structure_xys(Observer);
+            if observer_xys.len() != Observer.controller_structures(8) as usize {
+                error!("Wrong number of observers generated: {}.", observer_xys.len());
+                Err(StructurePlacementFailure)?;
+            }
+            self.assign_min_rcl_from_ordering(Observer, observer_xys);
+        }
+
+        {
+            // Mineral container.
+            self.planned_tiles.set_min_rcl(self.planned_mineral.work_xy, 6);
+        }
+
+        {
+            // Extractor.
+            let mut extractor_xys = self.planned_tiles.find_structure_xys(Extractor);
+            if extractor_xys.len() != Extractor.controller_structures(8) as usize {
+                error!("Wrong number of extractors generated: {}.", extractor_xys.len());
+                Err(StructurePlacementFailure)?;
+            }
+            self.assign_min_rcl_from_ordering(Extractor, extractor_xys);
+        }
+
+        {
+            // Roads are built at the RCL when they are used. Note that ramparts are not included in the `min_rcl`, as they
+            // are all built in the same RCL. Additionally, there are no roads before RCL 3 and all remaining roads are
+            // built on RCL 6.
+            // TODO Consider making rampart roads built on-demand when there is a siedge.
+            let source_and_controller_work_xys = self
+                .planned_sources
+                .iter()
+                .map(|planned_source| planned_source.work_xy)
+                .chain(once(self.planned_controller.work_xy));
+
+            for work_xy in source_and_controller_work_xys {
+                let path = shortest_path_by_distance_matrix(&storage_road_dm, work_xy, 1);
+                a!(path.len() >= 2);
+                self.planned_tiles.set_min_rcl(path[1], MIN_MIN_ROAD_RCL);
+            }
+
+            let road_xys = self.planned_tiles.find_structure_xys(Road);
+
+            for &xy in road_xys.iter() {
+                let tile = self.planned_tiles.get(xy);
+                let mut min_rcl = tile.min_rcl();
+                if min_rcl == 0 {
+                    min_rcl = MAX_MIN_ROAD_RCL;
+
+                    for near in xy.around() {
+                        let tile = self.planned_tiles.get(near);
+                        if tile.min_rcl() != 0 && !tile.is_passable(true) && tile.min_rcl() < min_rcl {
+                            min_rcl = tile.min_rcl();
+                        }
+                    }
+                }
+
+                if min_rcl > MIN_RAMPART_RCL && tile.structures().rampart() {
+                    min_rcl = MIN_RAMPART_RCL;
+                }
+
+                self.planned_tiles.set_min_rcl(xy, min_rcl);
+            }
+
+            for xy in road_xys.into_iter() {
+                let min_rcl = self.planned_tiles.get(xy).min_rcl();
+                if xy.around().any(|near| {
+                    let near_tile = self.planned_tiles.get(near);
+                    near_tile.structures().road() && near_tile.min_rcl() > min_rcl
+                }) {
+                    let path = shortest_path_by_distance_matrix(&storage_road_dm, xy, 1);
+                    debug!("Pathed a RCL {} road of length {} from {}.", min_rcl, path.len(), xy);
+                    debug!("{:?}", path);
+                    for xy in path {
+                        let prev_min_rcl = self.planned_tiles.get(xy).min_rcl();
+                        if prev_min_rcl == 0 || prev_min_rcl > min_rcl {
+                            self.planned_tiles.set_min_rcl(xy, min_rcl);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn assign_min_rcl_from_ordering(&mut self, structure_type: StructureType, xys: Vec<RoomXY>) {
+        for rcl in 1u8..9u8 {
+            let prev_rcl_limit = structure_type.controller_structures((rcl - 1) as u32) as usize;
+            let current_rcl_limit = structure_type.controller_structures(rcl as u32) as usize;
+            for i in prev_rcl_limit..min(current_rcl_limit, xys.len()) {
+                self.planned_tiles.set_min_rcl(xys[i], rcl);
+            }
+        }
+    }
+
     #[inline]
     fn current_core_center(&self) -> RoomXY {
         *u!(self.core_centers_stack.last())
@@ -1755,5 +1942,79 @@ impl RoomPlanner {
     #[inline]
     fn current_labs_rotation(&self) -> u8 {
         *u!(self.labs_rotations_stack.last())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::room_planner::RoomPlanner;
+    use crate::room_state::{ControllerInfo, MineralInfo, RoomState, SourceInfo};
+    use screeps::ResourceType::Keanium;
+    use screeps::Terrain::Wall;
+    use screeps::{ObjectId, RoomName, Source, ROOM_SIZE};
+
+    #[test]
+    fn test_generate_some_plan() {
+        let mut room_state = RoomState::new(RoomName::new("W3N3").unwrap());
+        room_state.sources = vec![
+            SourceInfo::new(ObjectId::from_packed(1010), (10, 10).try_into().unwrap()),
+            SourceInfo::new(ObjectId::from_packed(3030), (30, 30).try_into().unwrap()),
+        ];
+        room_state.mineral = Some(MineralInfo::new(
+            ObjectId::from_packed(1030),
+            (10, 30).try_into().unwrap(),
+            Keanium,
+        ));
+        room_state.controller = Some(ControllerInfo::new(
+            ObjectId::from_packed(3010),
+            (30, 10).try_into().unwrap(),
+        ));
+        room_state.terrain.set((0, 0).try_into().unwrap(), Wall);
+        room_state.terrain.set((0, ROOM_SIZE - 1).try_into().unwrap(), Wall);
+        room_state.terrain.set((ROOM_SIZE - 1, 0).try_into().unwrap(), Wall);
+        room_state
+            .terrain
+            .set((ROOM_SIZE - 1, ROOM_SIZE - 1).try_into().unwrap(), Wall);
+        room_state.terrain.set((10, 10).try_into().unwrap(), Wall);
+        room_state.terrain.set((10, 30).try_into().unwrap(), Wall);
+        room_state.terrain.set((30, 10).try_into().unwrap(), Wall);
+        room_state.terrain.set((30, 30).try_into().unwrap(), Wall);
+
+        let mut planner = RoomPlanner::new(&room_state, true).unwrap();
+
+        for i in 0..10 {
+            if let Ok(plan) = planner.plan() {
+                return;
+            }
+        }
+
+        assert!(false);
+    }
+}
+
+impl Debug for RoomPlanner {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        for y in 0..ROOM_SIZE {
+            for x in 0..ROOM_SIZE {
+                unsafe {
+                    let tile = self.planned_tiles.get_xy(x, y);
+                    let terrain = self.terrain.get((x, y).try_into().unwrap());
+
+                    if tile.structures().is_empty() && tile.reserved() {
+                        write!(f, "{}", tile.structures())?;
+                    } else if terrain == Wall {
+                        write!(f, " # ")?;
+                    } else {
+                        write!(f, "{}", tile.structures())?;
+                    }
+
+                    if x != ROOM_SIZE - 1 {
+                        write!(f, " ")?;
+                    }
+                }
+            }
+            writeln!(f)?;
+        }
+        Ok(())
     }
 }

@@ -1,3 +1,4 @@
+use derive_more::Constructor;
 use crate::room_state::packed_terrain::PackedTerrain;
 use js_sys::{Object, Reflect};
 use log::info;
@@ -30,6 +31,15 @@ pub struct RoomState {
     pub structures: StructuresMap,
     pub plan: Option<Plan>,
     pub planner: Option<RoomPlanner>,
+    /// Structures to be built at current RCL.
+    pub current_rcl_structures: Option<StructuresMap>,
+    pub current_rcl_structures_built: bool,
+    // Information about fast filler and its extensions.
+    // pub fast_filler: Option<FastFiller>,
+    // Information about extensions outside of fast filler, ordered by the distance to the storage.
+    // pub outer_extensions: Option<Vec<Extension>>,
+    // Information about types and numbers of creeps to be regularly spawned.
+    // pub spawn_schedule: Option<SpawnSchedule>,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
@@ -42,19 +52,19 @@ pub enum RoomDesignation {
     Highway
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Constructor)]
 pub struct ControllerInfo {
     pub id: ObjectId<StructureController>,
     pub xy: RoomXY,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Constructor)]
 pub struct SourceInfo {
     pub id: ObjectId<Source>,
     pub xy: RoomXY,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Constructor)]
 pub struct MineralInfo {
     pub id: ObjectId<Mineral>,
     pub xy: RoomXY,
@@ -96,6 +106,8 @@ impl RoomState {
             controller: None,
             sources: Vec::new(),
             mineral: None,
+            current_rcl_structures: None,
+            current_rcl_structures_built: true,
             structures: FxHashMap::default(),
             plan: None,
             planner: None,

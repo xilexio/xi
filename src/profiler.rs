@@ -1,6 +1,7 @@
 use log::debug;
 use screeps::game;
 
+#[cfg(not(test))]
 pub fn measure_time<F, R>(name: &str, f: F) -> R
 where
     F: FnOnce() -> R,
@@ -15,4 +16,12 @@ where
         end - start
     );
     result
+}
+
+#[cfg(test)]
+pub fn measure_time<F, R>(name: &str, f: F) -> R
+    where
+        F: FnOnce() -> R,
+{
+    f()
 }

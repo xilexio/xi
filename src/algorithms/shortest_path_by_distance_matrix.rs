@@ -38,7 +38,7 @@ pub fn shortest_path_by_distance_matrix<M, D>(distance_matrix: &M, start: RoomXY
     let mut path = vec![start];
     let mut current = start;
     let mut current_dist = distance_matrix.get(current);
-    'main_loop: while current_dist >= final_dist {
+    'main_loop: while current_dist > final_dist {
         for near in current.around() {
             let near_dist = distance_matrix.get(near);
             if near_dist < current_dist {

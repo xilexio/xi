@@ -4,7 +4,7 @@ use log::error;
 macro_rules! a(
     ($e:expr) => (
         if !($e) {
-            $crate::assert::display_assert_error(module_path!(), file!(), line!(), column!());
+            $crate::utils::assert::display_assert_error(module_path!(), file!(), line!(), column!());
             unreachable!();
         }
     );

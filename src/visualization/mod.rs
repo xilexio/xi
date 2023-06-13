@@ -3,13 +3,15 @@ pub mod show_visualizations;
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix::RoomMatrix;
 use room_visual_ext::RoomVisualExt;
-use screeps::{CircleStyle, LineStyle, RectStyle, RoomName, RoomXY, TextStyle};
+use screeps::{CircleStyle, LineStyle, RectStyle, RoomName, RoomXY, StructureType, TextStyle};
 use std::f32::consts::PI;
 use petgraph::graph::NodeIndex;
 use petgraph::prelude::EdgeRef;
 use petgraph::stable_graph::StableGraph;
 use petgraph::Undirected;
 use rustc_hash::FxHashMap;
+use screeps::StructureType::{Rampart, Road};
+use crate::room_planner::planned_tile::PlannedTile;
 use crate::room_state::StructuresMap;
 use crate::u;
 
@@ -18,6 +20,8 @@ pub enum Visualization {
     Graph(StableGraph<RoomXY, u8, Undirected, u16>),
     NodeLabels(StableGraph<RoomXY, u8, Undirected, u16>, FxHashMap<NodeIndex<u16>, String>),
     Structures(StructuresMap),
+    // TODO whole plan with displaying stats, not just tiles
+    Plan(RoomMatrix<PlannedTile>),
     Text(String),
 }
 use crate::visualization::Visualization::*;
@@ -133,6 +137,38 @@ pub fn visualize(room_name: RoomName, visualization: Visualization) {
             for (&structure_type, xys) in structures_map.iter() {
                 for xy in xys.iter().copied() {
                     vis.structure_roomxy(xy, structure_type, 0.6);
+                }
+            }
+        },
+        Plan(planned_tiles) => {
+            for (xy, tile) in planned_tiles.iter() {
+                if tile.structures().road() {
+                    vis.structure_roomxy(xy, Road, 0.6);
+                }
+            }
+            for (xy, tile) in planned_tiles.iter() {
+                if let Ok(structure_type) = StructureType::try_from(tile.structures().main()) {
+                    vis.structure_roomxy(xy, structure_type, 0.6);
+                }
+            }
+            for (xy, tile) in planned_tiles.iter() {
+                if tile.structures().rampart() {
+                    vis.structure_roomxy(xy, Rampart, 0.6);
+                }
+            }
+            for (xy, tile) in planned_tiles.iter() {
+                if tile.min_rcl() != 0 {
+                    vis.text(
+                        xy.x.u8() as f32,
+                        xy.y.u8() as f32 + 0.3,
+                        tile.min_rcl().to_string(),
+                        Some(
+                            TextStyle::default()
+                                .font(0.8)
+                                .color("#00f")
+                                .opacity(0.8)
+                        ),
+                    );
                 }
             }
         },

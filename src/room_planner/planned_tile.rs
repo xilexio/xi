@@ -4,10 +4,10 @@ use crate::algorithms::room_matrix_slice::RoomMatrixSlice;
 use crate::room_planner::packed_tile_structures::{MainStructureType, PackedTileStructures, PackedTileStructuresError};
 use crate::room_state::StructuresMap;
 use log::debug;
-use modular_bitfield::specifiers::B3;
+use modular_bitfield::specifiers::B4;
 use modular_bitfield::{bitfield, BitfieldSpecifier};
 use rustc_hash::FxHashMap;
-use screeps::{RoomXY, StructureType, ROOM_SIZE};
+use screeps::{RoomXY, StructureType};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use thiserror::Error;
@@ -39,9 +39,8 @@ pub struct PlannedTile {
     pub structures: PackedTileStructures,
     pub reserved: bool,
     pub base_part: BasePart,
-    pub min_rcl: B3,
+    pub min_rcl: B4,
     pub grown: bool,
-    pub wall: bool,
 }
 
 impl Default for PlannedTile {
@@ -125,8 +124,6 @@ impl Display for PlannedTile {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.structures().is_empty() && self.reserved() {
             write!(f, " _ ")
-        } else if self.wall() {
-            write!(f, " # ")
         } else {
             write!(f, "{}", self.structures())
         }
@@ -211,6 +208,10 @@ impl RoomMatrix<PlannedTile> {
         self.set(xy, self.get(xy).upgrade_base_part(base_part));
     }
 
+    pub fn set_min_rcl(&mut self, xy: RoomXY, min_rcl: u8) {
+        self.set(xy, self.get(xy).with_min_rcl(min_rcl));
+    }
+
     #[inline]
     pub fn reserve(&mut self, xy: RoomXY) {
         // debug!("reserve {}", xy);
@@ -221,22 +222,5 @@ impl RoomMatrix<PlannedTile> {
     pub fn clear(&mut self, xy: RoomXY) {
         // debug!("clear {}", xy);
         self.set(xy, PlannedTile::default());
-    }
-}
-
-impl Display for RoomMatrix<PlannedTile> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        for y in 0..ROOM_SIZE {
-            for x in 0..ROOM_SIZE {
-                unsafe {
-                    write!(f, "{}", self.get_xy(x, y))?;
-                    if x != ROOM_SIZE - 1 {
-                        write!(f, " ")?;
-                    }
-                }
-            }
-            writeln!(f)?;
-        }
-        Ok(())
     }
 }
