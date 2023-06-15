@@ -17,7 +17,7 @@ use crate::geometry::room_xy::RoomXYUtils;
 use crate::profiler::measure_time;
 use crate::random::random;
 use crate::room_planner::packed_tile_structures::MainStructureType;
-use crate::room_planner::plan::{Plan, PlanScore, PlannedControllerInfo, PlannedMineralInfo, PlannedSourceInfo};
+use crate::room_planner::plan::{Plan, PlanScore, PlannedControllerData, PlannedMineralData, PlannedSourceData};
 use crate::room_planner::planned_tile::{BasePart, PlannedTile};
 use crate::room_planner::stamps::{core_stamp, labs_stamp};
 use crate::room_planner::RoomPlannerError::{
@@ -146,9 +146,9 @@ pub struct RoomPlanner {
 
     // Output.
     planned_tiles: RoomMatrix<PlannedTile>,
-    planned_sources: Vec<PlannedSourceInfo>,
-    planned_controller: PlannedControllerInfo,
-    planned_mineral: PlannedMineralInfo,
+    planned_sources: Vec<PlannedSourceData>,
+    planned_controller: PlannedControllerData,
+    planned_mineral: PlannedMineralData,
 
     pub best_plan: Option<Plan>,
 }
@@ -229,8 +229,8 @@ impl RoomPlanner {
 
             planned_tiles: RoomMatrix::default(),
             planned_sources: Vec::new(),
-            planned_controller: PlannedControllerInfo::default(),
-            planned_mineral: PlannedMineralInfo::default(),
+            planned_controller: PlannedControllerData::default(),
+            planned_mineral: PlannedMineralData::default(),
 
             best_plan: None,
         };
@@ -634,21 +634,24 @@ impl RoomPlanner {
         for (i, source_xy) in self.source_xys.clone().into_iter().enumerate() {
             let work_xy = work_xys[3 + i];
             let link_xy = self.place_resource_storage(work_xy, BasePart::Protected, true, false)?;
-            self.planned_sources
-                .push(PlannedSourceInfo::new(source_xy, link_xy, work_xy));
+            self.planned_sources.push(PlannedSourceData {
+                source_xy,
+                work_xy,
+                link_xy,
+            });
         }
 
         {
             let work_xy = work_xys[1];
             let link_xy = self.place_resource_storage(work_xy, BasePart::Interior, true, false)?;
-            self.planned_controller = PlannedControllerInfo::new(link_xy, work_xy);
+            self.planned_controller = PlannedControllerData { work_xy, link_xy };
         }
 
         // Adding mineral mining container and the extractor.
         {
             let work_xy = work_xys[2];
             self.place_resource_storage(work_xy, BasePart::Outside, false, false)?;
-            self.planned_mineral = PlannedMineralInfo::new(work_xy);
+            self.planned_mineral = PlannedMineralData { work_xy };
             self.planned_tiles
                 .merge_structure(self.mineral_xy, Extractor, BasePart::Outside, false)?;
         }
@@ -705,7 +708,12 @@ impl RoomPlanner {
         let (energy_balance, cpu_cost) = self.energy_balance_and_cpu_cost();
         let def_score = self.min_tower_damage as f32;
         let total_score = (energy_balance + def_score / 900.0) / cpu_cost;
-        let score = PlanScore::new(total_score, energy_balance, cpu_cost, def_score);
+        let score = PlanScore {
+            total_score,
+            energy_balance,
+            cpu_cost,
+            def_score,
+        };
         let plan = Plan::new(
             self.planned_tiles.clone(),
             self.planned_controller,
@@ -1605,7 +1613,10 @@ impl RoomPlanner {
                         self.place_resource_storage(planned_source.work_xy, BasePart::Protected, true, true)
                     {
                         self.planned_tiles.clear(planned_source.link_xy);
-                        PlannedSourceInfo::new(planned_source.source_xy, link_xy, planned_source.work_xy)
+                        PlannedSourceData {
+                            link_xy,
+                            ..planned_source
+                        }
                     } else {
                         planned_source
                     }
@@ -1814,7 +1825,7 @@ impl RoomPlanner {
 
         {
             // Nuker.
-            let mut nuker_xys = self.planned_tiles.find_structure_xys(Nuker);
+            let nuker_xys = self.planned_tiles.find_structure_xys(Nuker);
             if nuker_xys.len() != Nuker.controller_structures(8) as usize {
                 error!("Wrong number of nukers generated: {}.", nuker_xys.len());
                 Err(StructurePlacementFailure)?;
@@ -1824,7 +1835,7 @@ impl RoomPlanner {
 
         {
             // Observer.
-            let mut observer_xys = self.planned_tiles.find_structure_xys(Observer);
+            let observer_xys = self.planned_tiles.find_structure_xys(Observer);
             if observer_xys.len() != Observer.controller_structures(8) as usize {
                 error!("Wrong number of observers generated: {}.", observer_xys.len());
                 Err(StructurePlacementFailure)?;
@@ -1839,7 +1850,7 @@ impl RoomPlanner {
 
         {
             // Extractor.
-            let mut extractor_xys = self.planned_tiles.find_structure_xys(Extractor);
+            let extractor_xys = self.planned_tiles.find_structure_xys(Extractor);
             if extractor_xys.len() != Extractor.controller_structures(8) as usize {
                 error!("Wrong number of extractors generated: {}.", extractor_xys.len());
                 Err(StructurePlacementFailure)?;
@@ -1893,9 +1904,9 @@ impl RoomPlanner {
                     let near_tile = self.planned_tiles.get(near);
                     near_tile.structures().road() && near_tile.min_rcl() > min_rcl
                 }) {
+                    // TODO It should prefer lower-RCL paths to reduce the number of false positives.
                     let path = shortest_path_by_distance_matrix(&storage_road_dm, xy, 1);
                     debug!("Pathed a RCL {} road of length {} from {}.", min_rcl, path.len(), xy);
-                    debug!("{:?}", path);
                     for xy in path {
                         let prev_min_rcl = self.planned_tiles.get(xy).min_rcl();
                         if prev_min_rcl == 0 || prev_min_rcl > min_rcl {
@@ -1948,7 +1959,7 @@ impl RoomPlanner {
 #[cfg(test)]
 mod tests {
     use crate::room_planner::RoomPlanner;
-    use crate::room_state::{ControllerInfo, MineralInfo, RoomState, SourceInfo};
+    use crate::room_state::{ControllerData, MineralData, RoomState, SourceData};
     use screeps::ResourceType::Keanium;
     use screeps::Terrain::Wall;
     use screeps::{ObjectId, RoomName, Source, ROOM_SIZE};
@@ -1957,17 +1968,17 @@ mod tests {
     fn test_generate_some_plan() {
         let mut room_state = RoomState::new(RoomName::new("W3N3").unwrap());
         room_state.sources = vec![
-            SourceInfo::new(ObjectId::from_packed(1010), (10, 10).try_into().unwrap()),
-            SourceInfo::new(ObjectId::from_packed(3030), (30, 30).try_into().unwrap()),
+            SourceData::new(ObjectId::from_packed(1010), (10, 10).try_into().unwrap()),
+            SourceData::new(ObjectId::from_packed(3030), (30, 30).try_into().unwrap()),
         ];
-        room_state.mineral = Some(MineralInfo::new(
+        room_state.mineral = Some(MineralData::new(
             ObjectId::from_packed(1030),
             (10, 30).try_into().unwrap(),
             Keanium,
         ));
-        room_state.controller = Some(ControllerInfo::new(
-            ObjectId::from_packed(3010),
+        room_state.controller = Some(ControllerData::new(
             (30, 10).try_into().unwrap(),
+            ObjectId::from_packed(3010),
         ));
         room_state.terrain.set((0, 0).try_into().unwrap(), Wall);
         room_state.terrain.set((0, ROOM_SIZE - 1).try_into().unwrap(), Wall);

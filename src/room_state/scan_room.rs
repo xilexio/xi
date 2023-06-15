@@ -1,5 +1,5 @@
 use crate::room_state::room_states::replace_room_state;
-use crate::room_state::{ControllerInfo, MineralInfo, RoomDesignation, RoomState, SourceInfo};
+use crate::room_state::{ControllerData, MineralData, RoomDesignation, RoomState, SourceData};
 use screeps::{
     find, game, HasTypedId, Mineral, ObjectId, OwnedStructureProperties, Position, ResourceType, RoomName, Source,
     StructureController,
@@ -27,7 +27,12 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
         state.rcl = controller.level();
         let id: ObjectId<StructureController> = controller.id();
         let pos: Position = controller.pos().into();
-        state.controller = Some(ControllerInfo { id, xy: pos.xy() });
+        state.controller = Some(ControllerData {
+            id,
+            xy: pos.xy(),
+            work_xy: None,
+            link_xy: None,
+        });
         if let Some(owner) = controller.owner() {
             state.owner = owner.username();
             if controller.my() {
@@ -41,13 +46,18 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
     for source in room.find(find::SOURCES, None) {
         let id: ObjectId<Source> = source.id();
         let pos: Position = source.pos().into();
-        state.sources.push(SourceInfo { id, xy: pos.xy() });
+        state.sources.push(SourceData {
+            id,
+            xy: pos.xy(),
+            work_xy: None,
+            link_xy: None,
+        });
     }
     for mineral in room.find(find::MINERALS, None) {
         let id: ObjectId<Mineral> = mineral.id();
         let pos: Position = mineral.pos().into();
         let mineral_type: ResourceType = mineral.mineral_type();
-        state.mineral = Some(MineralInfo {
+        state.mineral = Some(MineralData {
             id,
             xy: pos.xy(),
             mineral_type,

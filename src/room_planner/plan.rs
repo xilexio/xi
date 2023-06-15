@@ -8,31 +8,31 @@ use std::fmt::Debug;
 #[derive(Clone, Constructor)]
 pub struct Plan {
     pub tiles: RoomMatrix<PlannedTile>,
-    pub controller: PlannedControllerInfo,
-    pub sources: Vec<PlannedSourceInfo>,
-    pub mineral: PlannedMineralInfo,
+    pub controller: PlannedControllerData,
+    pub sources: Vec<PlannedSourceData>,
+    pub mineral: PlannedMineralData,
     pub score: PlanScore,
 }
 
-#[derive(Clone, Copy, Default, Constructor)]
-pub struct PlannedControllerInfo {
-    pub link_xy: RoomXY,
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PlannedControllerData {
     pub work_xy: RoomXY,
+    pub link_xy: RoomXY,
 }
 
-#[derive(Clone, Copy, Default, Constructor)]
-pub struct PlannedSourceInfo {
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PlannedSourceData {
     pub source_xy: RoomXY,
+    pub work_xy: RoomXY,
     pub link_xy: RoomXY,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PlannedMineralData {
     pub work_xy: RoomXY,
 }
 
-#[derive(Clone, Copy, Default, Constructor)]
-pub struct PlannedMineralInfo {
-    pub work_xy: RoomXY,
-}
-
-#[derive(Copy, Clone, PartialEq, Default, Debug, Constructor)]
+#[derive(Copy, Clone, PartialEq, Default, Debug)]
 pub struct PlanScore {
     pub total_score: f32,
     pub energy_balance: f32,

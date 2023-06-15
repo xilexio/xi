@@ -4,6 +4,7 @@ use crate::geometry::rect::Rect;
 use crate::room_planner::planned_tile::{BasePart, PlannedTile};
 use screeps::StructureType::{Container, Extension, Factory, Lab, Link, PowerSpawn, Road, Spawn, Storage, Terminal};
 use crate::room_planner::MIN_MIN_ROAD_RCL;
+use crate::room_planner::plan_rooms::MIN_CONTAINER_RCL;
 
 /// Fast filler/core stamp.
 // {
@@ -95,17 +96,17 @@ pub fn core_stamp() -> RoomMatrixSlice<PlannedTile> {
     result.set((0, 2).try_into().unwrap(), PlannedTile::from(Road).with_min_rcl(MIN_MIN_ROAD_RCL));
     result.set((1, 2).try_into().unwrap(), PlannedTile::from(Factory).with_min_rcl(7));
     result.set((2, 2).try_into().unwrap(), PlannedTile::new().with_reserved(true));
-    result.set((2, 3).try_into().unwrap(), PlannedTile::from(Link).with_min_rcl(5));
+    result.set((3, 2).try_into().unwrap(), PlannedTile::from(Link).with_min_rcl(5));
     result.set((4, 2).try_into().unwrap(), PlannedTile::default().with_reserved(true));
     result.set((5, 2).try_into().unwrap(), PlannedTile::from(Extension).with_min_rcl(3));
     result.set((6, 2).try_into().unwrap(), PlannedTile::from(Road).with_min_rcl(MIN_MIN_ROAD_RCL));
 
     result.set((0, 3).try_into().unwrap(), PlannedTile::from(Road).with_min_rcl(MIN_MIN_ROAD_RCL));
     result.set((1, 3).try_into().unwrap(), PlannedTile::from(Spawn).with_min_rcl(1));
-    result.set((3, 2).try_into().unwrap(), PlannedTile::from(Extension).with_min_rcl(2));
+    result.set((2, 3).try_into().unwrap(), PlannedTile::from(Extension).with_min_rcl(2));
     result.set(
         (3, 3).try_into().unwrap(),
-        PlannedTile::from(Container).with_reserved(true).with_min_rcl(3),
+        PlannedTile::from(Container).with_reserved(true).with_min_rcl(MIN_CONTAINER_RCL),
     );
     result.set((4, 3).try_into().unwrap(), PlannedTile::from(Extension).with_min_rcl(4));
     result.set((5, 3).try_into().unwrap(), PlannedTile::from(Spawn).with_min_rcl(7));

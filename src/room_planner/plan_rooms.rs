@@ -1,15 +1,17 @@
-use std::thread::spawn;
-use log::{error, trace};
-use screeps::StructureType::{Extension, Spawn};
-use crate::game_time::{first_tick, game_tick};
+use crate::algorithms::matrix_common::MatrixCommon;
+use crate::game_time::first_tick;
 use crate::kernel::should_finish;
 use crate::kernel::sleep::{sleep, sleep_until};
-use crate::{a, log_err, u};
-use crate::algorithms::matrix_common::MatrixCommon;
-use crate::room_planner::RoomPlanner;
-use crate::room_state::room_states::{for_each_owned_room};
+use crate::room_planner::{RoomPlanner, MIN_RAMPART_RCL};
+use crate::room_state::room_states::for_each_owned_room;
 use crate::room_state::{RoomState, StructuresMap};
 use crate::utils::map_utils::MultiMapUtils;
+use crate::{a, log_err, u};
+use log::{debug, error, trace};
+use screeps::StructureType;
+use screeps::StructureType::{Container, Rampart, Road};
+
+pub const MIN_CONTAINER_RCL: u8 = 3;
 
 pub async fn plan_rooms() {
     // TODO Set to run only a total of CONST% of time unless it is the first room. Kernel should measure run times
@@ -28,7 +30,7 @@ pub async fn plan_rooms() {
             if room_state.planner.is_none() {
                 match RoomPlanner::new(room_state, true) {
                     Ok(planner) => {
-                        room_state.planner = Some(planner);
+                        room_state.planner = Some(Box::new(planner));
                     }
                     err => {
                         log_err!(err);
@@ -53,6 +55,8 @@ pub async fn plan_rooms() {
                         } else {
                             trace!("Successfully created a plan for room {}.", room_name);
                             room_state.plan = planner.best_plan.clone();
+                            // Removing the planner data.
+                            room_state.planner = None;
 
                             plan_current_rcl_structures(room_state);
                         }
@@ -62,7 +66,7 @@ pub async fn plan_rooms() {
                     }
                 }
             }
-        } else if !room_state.current_rcl_structures_built && room_state.current_rcl_structures.is_none() {
+        } else if room_state.current_rcl_structures.is_none() {
             plan_current_rcl_structures(room_state);
         }
     });
@@ -73,6 +77,10 @@ pub async fn plan_rooms() {
 
 /// Creates a map of structures to be built for given RCL.
 pub fn plan_current_rcl_structures(room_state: &mut RoomState) {
+    debug!(
+        "Creating a RCL{} plan for room {}.",
+        room_state.rcl, room_state.room_name
+    );
     a!(room_state.rcl > 0 && room_state.rcl <= 8);
 
     let plan = u!(room_state.plan.as_ref());
@@ -84,42 +92,33 @@ pub fn plan_current_rcl_structures(room_state: &mut RoomState) {
     } else {
         let mut structures_map = StructuresMap::default();
 
-        // TODO use the min_rcl after all
-        //  min_rcl is only about main structures
-        //  ramparts should be from RAMPARTS_RCL - configurable
-        //  roads should be to all ramparts/other stuff on the shortest road only except on ramparts - there always
-        //  however, do not make any roads before rcl 3
-
-        if room_state.rcl >= 1 {
-            // structures_map.push_or_insert(Spawn, spawns[0]);
+        for (xy, tile) in plan.tiles.iter() {
+            if tile.structures().road() && tile.min_rcl() <= room_state.rcl {
+                structures_map.push_or_insert(Road, xy);
+            }
+            if let Ok(structure_type) = StructureType::try_from(tile.structures().main()) {
+                if tile.min_rcl() <= room_state.rcl {
+                    structures_map.push_or_insert(structure_type, xy);
+                }
+            }
+            if tile.structures().rampart() && room_state.rcl >= MIN_RAMPART_RCL {
+                structures_map.push_or_insert(Rampart, xy);
+            }
         }
 
-        if room_state.rcl >= 2 {
-            // structures_map.push_or_insert(Spawn, spawns[0]);
+        for source_info in plan.sources.iter() {
+            if plan.tiles.get(source_info.link_xy).min_rcl() > room_state.rcl {
+                structures_map.push_or_insert(Container, source_info.work_xy);
+            }
         }
 
-        if room_state.rcl >= 3 {
-            // TODO
-        }
-
-        if room_state.rcl >= 4 {
-            // TODO
-        }
-
-        if room_state.rcl >= 5 {
-            // TODO
-        }
-
-        if room_state.rcl >= 6 {
-            // TODO
-        }
-
-        if room_state.rcl >= 7 {
-            // TODO
+        if room_state.rcl >= MIN_CONTAINER_RCL && plan.tiles.get(plan.controller.link_xy).min_rcl() > room_state.rcl {
+            structures_map.push_or_insert(Container, plan.controller.work_xy);
         }
 
         structures_map
     };
 
     room_state.current_rcl_structures = Some(structures_map);
+    room_state.current_rcl_structures_built = false;
 }

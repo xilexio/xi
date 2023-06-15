@@ -36,9 +36,10 @@ use std::cmp::min;
 use std::iter::once;
 use parking_lot::{Mutex, RawMutex};
 use wasm_bindgen::prelude::{wasm_bindgen, UnwrapThrowExt};
+use crate::construction::construct_structures;
 use crate::game_time::{first_tick, game_tick};
 use crate::maintenance::maintain_rooms;
-use crate::priorities::{ROOM_MAINTENANCE_PRIORITY, ROOM_PLANNING_PRIORITY, ROOM_SCANNING_PRIORITY, VISUALIZATIONS_PRIORITY};
+use crate::priorities::{CONSTRUCTING_STRUCTURES_PRIORITY, ROOM_MAINTENANCE_PRIORITY, ROOM_PLANNING_PRIORITY, ROOM_SCANNING_PRIORITY, VISUALIZATIONS_PRIORITY};
 use crate::room_planner::plan_rooms::plan_rooms;
 use crate::room_state::scan_rooms::scan_rooms;
 use crate::visualization::show_visualizations::show_visualizations;
@@ -67,6 +68,7 @@ mod game_time;
 mod random;
 mod priorities;
 mod utils;
+mod construction;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]
@@ -75,6 +77,7 @@ pub fn setup() {
 
     drop(kernel::schedule("scan_rooms", ROOM_SCANNING_PRIORITY, scan_rooms));
     drop(kernel::schedule("plan_rooms", ROOM_PLANNING_PRIORITY, plan_rooms));
+    drop(kernel::schedule("construct_structures", CONSTRUCTING_STRUCTURES_PRIORITY, construct_structures));
     drop(kernel::schedule("maintain_rooms", ROOM_MAINTENANCE_PRIORITY, maintain_rooms));
     drop(kernel::schedule("show_visualizations", VISUALIZATIONS_PRIORITY, show_visualizations));
 }

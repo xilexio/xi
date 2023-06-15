@@ -23,14 +23,14 @@ pub struct RoomState {
     pub designation: RoomDesignation,
     pub rcl: u8,
     pub terrain: PackedTerrain,
-    pub controller: Option<ControllerInfo>,
-    pub sources: Vec<SourceInfo>,
-    pub mineral: Option<MineralInfo>,
+    pub controller: Option<ControllerData>,
+    pub sources: Vec<SourceData>,
+    pub mineral: Option<MineralData>,
     // TODO ids of structures for owned rooms, where extensions and spawns and links are split by location, e.g., fastFillerExtensions
     // TODO for unowned rooms, ids are not as important (if at all)
     pub structures: StructuresMap,
     pub plan: Option<Plan>,
-    pub planner: Option<RoomPlanner>,
+    pub planner: Option<Box<RoomPlanner>>,
     /// Structures to be built at current RCL.
     pub current_rcl_structures: Option<StructuresMap>,
     pub current_rcl_structures_built: bool,
@@ -53,19 +53,23 @@ pub enum RoomDesignation {
 }
 
 #[derive(Copy, Clone, Debug, Constructor)]
-pub struct ControllerInfo {
+pub struct ControllerData {
     pub id: ObjectId<StructureController>,
     pub xy: RoomXY,
+    pub work_xy: Option<RoomXY>,
+    pub link_xy: Option<RoomXY>,
 }
 
 #[derive(Copy, Clone, Debug, Constructor)]
-pub struct SourceInfo {
+pub struct SourceData {
     pub id: ObjectId<Source>,
     pub xy: RoomXY,
+    pub work_xy: Option<RoomXY>,
+    pub link_xy: Option<RoomXY>,
 }
 
 #[derive(Copy, Clone, Debug, Constructor)]
-pub struct MineralInfo {
+pub struct MineralData {
     pub id: ObjectId<Mineral>,
     pub xy: RoomXY,
     pub mineral_type: ResourceType,

@@ -9,16 +9,6 @@ pub trait MultiMapUtils<K, V> {
     fn pop_from_key(&mut self, key: K) -> Option<V>;
 }
 
-pub trait MapUtils<K, V> {
-    fn get_or_insert<F>(&mut self, key: K, value_generator: F) -> &V
-    where
-        F: FnOnce() -> V;
-
-    fn get_mut_or_insert<F>(&mut self, key: K, value_generator: F) -> &mut V
-    where
-        F: FnOnce() -> V;
-}
-
 pub trait OrderedMultiMapUtils<K, V> {
     fn pop_from_first(&mut self) -> Option<(K, V)>;
     fn pop_from_last(&mut self) -> Option<(K, V)>;
@@ -54,32 +44,6 @@ where
     }
 }
 
-impl<K, V, S> MapUtils<K, V> for HashMap<K, V, S>
-where
-    K: Eq + Hash,
-    S: BuildHasher,
-{
-    fn get_or_insert<F>(&mut self, key: K, value_generator: F) -> &V
-    where
-        F: FnOnce() -> V,
-    {
-        match self.entry(key) {
-            HEntry::Occupied(e) => e.into_mut(),
-            HEntry::Vacant(e) => e.insert(value_generator()),
-        }
-    }
-
-    fn get_mut_or_insert<F>(&mut self, key: K, value_generator: F) -> &mut V
-    where
-        F: FnOnce() -> V,
-    {
-        match self.entry(key) {
-            HEntry::Occupied(e) => e.into_mut(),
-            HEntry::Vacant(e) => e.insert(value_generator()),
-        }
-    }
-}
-
 impl<K, V> MultiMapUtils<K, V> for BTreeMap<K, Vec<V>>
 where
     K: Ord,
@@ -105,31 +69,6 @@ where
                 Some(result)
             }
             BEntry::Vacant(_) => None,
-        }
-    }
-}
-
-impl<K, V> MapUtils<K, V> for BTreeMap<K, V>
-where
-    K: Ord,
-{
-    fn get_or_insert<F>(&mut self, key: K, value_generator: F) -> &V
-    where
-        F: FnOnce() -> V,
-    {
-        match self.entry(key) {
-            BEntry::Occupied(e) => e.into_mut(),
-            BEntry::Vacant(e) => e.insert(value_generator()),
-        }
-    }
-
-    fn get_mut_or_insert<F>(&mut self, key: K, value_generator: F) -> &mut V
-    where
-        F: FnOnce() -> V,
-    {
-        match self.entry(key) {
-            BEntry::Occupied(e) => e.into_mut(),
-            BEntry::Vacant(e) => e.insert(value_generator()),
         }
     }
 }
