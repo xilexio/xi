@@ -2,12 +2,11 @@ use derive_more::Constructor;
 use crate::room_state::packed_terrain::PackedTerrain;
 use js_sys::{Object, Reflect};
 use log::info;
-use screeps::{
-    Mineral, ObjectId, ResourceType, RoomName, RoomXY, Source, StructureController, StructureType,
-};
+use screeps::{game, Mineral, ObjectId, ResourceType, RoomName, RoomXY, Source, StructureController, StructureType};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
 use rustc_hash::FxHashMap;
+use serde::{Deserialize, Serialize};
 use crate::room_planner::plan::Plan;
 use crate::room_planner::RoomPlanner;
 
@@ -17,11 +16,14 @@ pub mod scan_room;
 pub mod scan_rooms;
 
 // TODO Make it serializable and put in memory in serialized form.
+#[derive(Deserialize, Serialize)]
 pub struct RoomState {
     pub room_name: RoomName,
     pub owner: String,
     pub designation: RoomDesignation,
     pub rcl: u8,
+    // TODO should not really be skipped
+    #[serde(skip_serializing, skip_deserializing)]
     pub terrain: PackedTerrain,
     pub controller: Option<ControllerData>,
     pub sources: Vec<SourceData>,
@@ -30,6 +32,7 @@ pub struct RoomState {
     // TODO for unowned rooms, ids are not as important (if at all)
     pub structures: StructuresMap,
     pub plan: Option<Plan>,
+    #[serde(skip_serializing, skip_deserializing)]
     pub planner: Option<Box<RoomPlanner>>,
     /// Structures to be built at current RCL.
     pub current_rcl_structures: Option<StructuresMap>,
@@ -42,7 +45,7 @@ pub struct RoomState {
     // pub spawn_schedule: Option<SpawnSchedule>,
 }
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Deserialize, Serialize, Copy, Clone, Eq, PartialEq, Debug)]
 pub enum RoomDesignation {
     Owned,
     NotOwned,
@@ -52,7 +55,7 @@ pub enum RoomDesignation {
     Highway
 }
 
-#[derive(Copy, Clone, Debug, Constructor)]
+#[derive(Deserialize, Serialize, Copy, Clone, Debug, Constructor)]
 pub struct ControllerData {
     pub id: ObjectId<StructureController>,
     pub xy: RoomXY,
@@ -60,7 +63,7 @@ pub struct ControllerData {
     pub link_xy: Option<RoomXY>,
 }
 
-#[derive(Copy, Clone, Debug, Constructor)]
+#[derive(Deserialize, Serialize, Copy, Clone, Debug, Constructor)]
 pub struct SourceData {
     pub id: ObjectId<Source>,
     pub xy: RoomXY,
@@ -68,7 +71,7 @@ pub struct SourceData {
     pub link_xy: Option<RoomXY>,
 }
 
-#[derive(Copy, Clone, Debug, Constructor)]
+#[derive(Deserialize, Serialize, Copy, Clone, Debug, Constructor)]
 pub struct MineralData {
     pub id: ObjectId<Mineral>,
     pub xy: RoomXY,
@@ -117,4 +120,8 @@ impl RoomState {
             planner: None,
         }
     }
+}
+
+fn packed_terrain(room_state: &RoomState) -> PackedTerrain {
+    game::map::get_room_terrain(room_state.room_name).into()
 }

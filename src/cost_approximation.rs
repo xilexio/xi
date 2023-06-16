@@ -4,7 +4,7 @@ use screeps::{
     RoomName, CARRY_CAPACITY, CONSTRUCTION_COST_ROAD_SWAMP_RATIO, CONSTRUCTION_COST_ROAD_WALL_RATIO, CONTAINER_DECAY,
     CONTAINER_DECAY_TIME_OWNED, CREEP_LIFE_TIME, ENERGY_REGEN_TIME, EXTRACTOR_COOLDOWN, HARVEST_MINERAL_POWER,
     HARVEST_POWER, LAB_REACTION_AMOUNT, LINK_CAPACITY, LINK_LOSS_RATIO, MINERAL_REGEN_TIME,
-    RAMPART_DECAY_AMOUNT, REPAIR_POWER, ROAD_DECAY_AMOUNT, ROAD_DECAY_TIME, SOURCE_ENERGY_CAPACITY,
+    RAMPART_DECAY_AMOUNT, REPAIR_POWER, ROAD_DECAY_AMOUNT, ROAD_DECAY_TIME, SOURCE_ENERGY_CAPACITY, INTENT_CPU_COST,
 };
 
 const FAST_FILLER_CARRY: [u32; 4] = [18, 4, 4, 6];
@@ -12,7 +12,6 @@ const FAST_FILLER_CARRY: [u32; 4] = [18, 4, 4, 6];
 // extensions or spawns.
 const FAST_FILLER_INTENTS_PER_ENERGY: f32 = (8 + 3 + 8 + 8 + 10) as f32 / ((12 * 200 + 3 * 300) as f32);
 
-const INTENT_CPU: f32 = 0.2;
 const SOURCE_ENERGY_PER_TICK: f32 = SOURCE_ENERGY_CAPACITY as f32 / ENERGY_REGEN_TIME as f32;
 
 const AVERAGE_MINERAL_DENSITY: f32 = 15_000.0 * 0.1 + 35_000.0 * 0.4 + 70_000.0 * 0.4 + 100_000.0 * 0.1;
@@ -208,13 +207,13 @@ pub fn energy_balance_and_cpu_cost(
         container_maintenance_energy_cost_per_tick,
         total_energy_balance,
         mining_intents_per_tick,
-        mining_intents_per_tick * INTENT_CPU,
+        mining_intents_per_tick * INTENT_CPU_COST as f32,
         ff_intents_per_tick,
-        ff_intents_per_tick * INTENT_CPU,
+        ff_intents_per_tick * INTENT_CPU_COST as f32,
         total_intents_per_tick,
-        total_intents_per_tick * INTENT_CPU,
-        total_energy_balance / (total_intents_per_tick * INTENT_CPU)
+        total_intents_per_tick * INTENT_CPU_COST as f32,
+        total_energy_balance / (total_intents_per_tick * INTENT_CPU_COST as f32)
     );
 
-    (total_energy_balance, total_intents_per_tick * INTENT_CPU)
+    (total_energy_balance, total_intents_per_tick * INTENT_CPU_COST as f32)
 }

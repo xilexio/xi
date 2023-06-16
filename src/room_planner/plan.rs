@@ -4,8 +4,9 @@ use derive_more::Constructor;
 use screeps::RoomXY;
 use std::cmp::Ordering;
 use std::fmt::Debug;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Constructor)]
+#[derive(Deserialize, Serialize, Clone, Constructor)]
 pub struct Plan {
     pub tiles: RoomMatrix<PlannedTile>,
     pub controller: PlannedControllerData,
@@ -14,25 +15,25 @@ pub struct Plan {
     pub score: PlanScore,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, Default)]
 pub struct PlannedControllerData {
     pub work_xy: RoomXY,
     pub link_xy: RoomXY,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, Default)]
 pub struct PlannedSourceData {
     pub source_xy: RoomXY,
     pub work_xy: RoomXY,
     pub link_xy: RoomXY,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, Default)]
 pub struct PlannedMineralData {
     pub work_xy: RoomXY,
 }
 
-#[derive(Copy, Clone, PartialEq, Default, Debug)]
+#[derive(Deserialize, Serialize, Copy, Clone, PartialEq, Default, Debug)]
 pub struct PlanScore {
     pub total_score: f32,
     pub energy_balance: f32,

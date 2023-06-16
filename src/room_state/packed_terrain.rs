@@ -84,6 +84,12 @@ impl PackedTerrain {
     }
 }
 
+impl Default for PackedTerrain {
+    fn default() -> Self {
+        PackedTerrain::new()
+    }
+}
+
 impl From<RoomTerrain> for PackedTerrain {
     fn from(value: RoomTerrain) -> Self {
         let mut packed_terrain = PackedTerrain::new();

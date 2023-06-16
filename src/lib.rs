@@ -69,6 +69,7 @@ mod random;
 mod priorities;
 mod utils;
 mod construction;
+mod memory_manager;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]

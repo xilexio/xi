@@ -8,6 +8,7 @@ use modular_bitfield::specifiers::B4;
 use modular_bitfield::{bitfield, BitfieldSpecifier};
 use rustc_hash::FxHashMap;
 use screeps::{RoomXY, StructureType};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use thiserror::Error;
@@ -222,5 +223,21 @@ impl RoomMatrix<PlannedTile> {
     pub fn clear(&mut self, xy: RoomXY) {
         // debug!("clear {}", xy);
         self.set(xy, PlannedTile::default());
+    }
+}
+
+impl Serialize for PlannedTile {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.into_bytes().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for PlannedTile {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+        let bytes = <[u8; 2]>::deserialize(deserializer)?;
+        Ok(PlannedTile::from_bytes(bytes))
     }
 }

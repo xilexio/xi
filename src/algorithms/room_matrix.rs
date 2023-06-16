@@ -3,6 +3,9 @@ use crate::consts::ROOM_AREA;
 use crate::geometry::rect::room_rect;
 use crate::geometry::room_xy::RoomXYUtils;
 use screeps::{RoomXY, ROOM_SIZE};
+use serde::de::{Error, SeqAccess, Visitor};
+use serde::ser::{SerializeSeq, SerializeTuple};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{Display, Formatter, LowerHex};
 use std::mem::size_of;
 
@@ -53,7 +56,7 @@ where
         self.data[xy.to_index()] = value;
     }
 
-    fn iter_xy<'a, 'b>(&'a self) -> impl Iterator<Item = RoomXY> + 'b {
+    fn iter_xy<'it>(&self) -> impl Iterator<Item = RoomXY> + 'it {
         (0..ROOM_AREA).map(|i| unsafe {
             RoomXY::unchecked_new((i % (ROOM_SIZE as usize)) as u8, (i / (ROOM_SIZE as usize)) as u8)
         })
@@ -101,5 +104,70 @@ where
             writeln!(f)?;
         }
         Ok(())
+    }
+}
+
+impl<T> Serialize for RoomMatrix<T>
+where
+    T: Serialize + Clone + Copy,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut seq_serializer = serializer.serialize_seq(Some(2500))?;
+        self.data
+            .iter()
+            .try_for_each(|val| seq_serializer.serialize_element(val))?;
+        seq_serializer.end()
+    }
+}
+
+impl<'de, T> Deserialize<'de> for RoomMatrix<T>
+where
+    T: Deserialize<'de> + Default + Serialize + Clone + Copy + PartialEq,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_seq(RoomMatrixVisitor::default())
+    }
+}
+
+#[derive(Default)]
+struct RoomMatrixVisitor<T>
+where
+    T: Default + Clone + Copy + PartialEq,
+{
+    /// Buffer in which to place deserialized `RoomMatrix`. Starts with default values.
+    buffer: RoomMatrix<T>,
+    /// The number of elements of the buffer that are already filled.
+    filled: usize,
+}
+
+impl<'de, T> Visitor<'de> for RoomMatrixVisitor<T>
+where
+    T: Deserialize<'de> + Default + Clone + Copy + PartialEq,
+{
+    type Value = RoomMatrix<T>;
+
+    fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+        write!(formatter, "a sequence of {} serialized values", ROOM_AREA)
+    }
+
+    fn visit_seq<A>(mut self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        for i in 0..ROOM_AREA {
+            let val = seq.next_element()?.ok_or(Error::invalid_length(ROOM_AREA, &self))?;
+            self.buffer.data[i] = val;
+            self.filled += 1;
+        }
+        if seq.next_element::<T>()?.is_some() {
+            return Err(Error::invalid_length(ROOM_AREA, &self));
+        }
+        Ok(self.buffer)
     }
 }

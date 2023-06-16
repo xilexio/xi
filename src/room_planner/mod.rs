@@ -36,7 +36,7 @@ use screeps::StructureType::{
     Container, Extension, Extractor, Lab, Link, Nuker, Observer, Rampart, Road, Spawn, Storage, Tower,
 };
 use screeps::Terrain::{Plain, Swamp, Wall};
-use screeps::{RoomName, RoomXY, StructureType, ROOM_SIZE, TOWER_FALLOFF_RANGE, TOWER_OPTIMAL_RANGE};
+use screeps::{RoomName, RoomXY, StructureType, ROOM_SIZE, TOWER_FALLOFF_RANGE, TOWER_OPTIMAL_RANGE, CREEP_RANGED_ACTION_RANGE};
 use std::cmp::{max, min, Reverse};
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -66,7 +66,6 @@ const FAST_MODE_LABS_DIST: u8 = 3;
 const GROWTH_RAMPART_COST: u8 = 4;
 const GROWN_STRUCTURE_REMOVAL_COST: u8 = 8;
 const SAFE_DIST: u8 = 6;
-const RANGED_ACTION_RANGE: u8 = 3;
 const RAMPART_TO_PLAINS_ROAD_MAINTENANCE_COST: u8 = 30;
 
 #[derive(Error, Debug, Eq, PartialEq)]
@@ -757,7 +756,7 @@ impl RoomPlanner {
             if self.interior_dm.get(xy) == 0 {
                 cost_matrix.set(xy, obstacle_cost());
             } else {
-                if self.interior_dm.get(xy) <= RANGED_ACTION_RANGE {
+                if self.interior_dm.get(xy) <= CREEP_RANGED_ACTION_RANGE {
                     cost_matrix.set(xy, cost_matrix.get(xy) + RAMPART_TO_PLAINS_ROAD_MAINTENANCE_COST);
                 }
 
@@ -823,7 +822,7 @@ impl RoomPlanner {
                 .filter(|&near| {
                     self.terrain.get(near) != Wall
                         && self.planned_tiles.get(near).is_empty()
-                        && (!force_safe || self.interior_dm.get(near) > RANGED_ACTION_RANGE)
+                        && (!force_safe || self.interior_dm.get(near) > CREEP_RANGED_ACTION_RANGE)
                 })
                 .collect::<Vec<_>>();
             if link_xys.is_empty() {
@@ -1085,7 +1084,7 @@ impl RoomPlanner {
                             // It is better if the towers are not near the ramparts since it requires an extra rampart on them.
                             let near_rampart_count = [xy, mirror_xy]
                                 .into_iter()
-                                .filter(|&xy| main_ramparts_dt.get(xy) <= RANGED_ACTION_RANGE)
+                                .filter(|&xy| main_ramparts_dt.get(xy) <= CREEP_RANGED_ACTION_RANGE)
                                 .count();
                             // It is better if the towers are near for ease of filling.
                             let storage_dist = storage_dm.get(xy).saturating_add(storage_dm.get(mirror_xy));
@@ -1196,7 +1195,7 @@ impl RoomPlanner {
                 .filter_map(|(xy, dist)| {
                     (self.interior_dm.get(xy) > 0
                         && self.planned_tiles.get(xy).is_empty()
-                        && RANGED_ACTION_RANGE < dist
+                        && CREEP_RANGED_ACTION_RANGE < dist
                         && dist < TOWER_FALLOFF_RANGE as u8 + 2)
                         .then_some(xy)
                 })
@@ -1443,7 +1442,7 @@ impl RoomPlanner {
         let min_cut_cost_matrix = interior_base_parts_dm.map(|xy, interior_dist| {
             if self.terrain.get(xy) == Wall {
                 obstacle_cost()
-            } else if interior_dist < RANGED_ACTION_RANGE
+            } else if interior_dist < CREEP_RANGED_ACTION_RANGE
                 || self.planned_tiles.get(xy).base_part() == BasePart::Connected
             {
                 0
@@ -1552,14 +1551,14 @@ impl RoomPlanner {
             .outward_iter(Some(2), None)
             .filter_map(|xy| {
                 (self.planned_tiles.get(xy).is_empty()
-                    && self.interior_dm.get(xy) > RANGED_ACTION_RANGE
+                    && self.interior_dm.get(xy) > CREEP_RANGED_ACTION_RANGE
                     && self.terrain.get(xy) != Wall
                     && xy.around().any(|near| !self.planned_tiles.get(near).is_empty()))
                 .then_some(xy)
             })
             .collect::<Vec<_>>();
 
-        for range in (RANGED_ACTION_RANGE + 1..SAFE_DIST + 1).rev() {
+        for range in (CREEP_RANGED_ACTION_RANGE + 1..SAFE_DIST + 1).rev() {
             let observer_xy = potential_tiles
                 .iter()
                 .find_map(|&xy| (self.interior_dm.get(xy) >= range).then_some(xy));
@@ -1579,7 +1578,7 @@ impl RoomPlanner {
             .storage_xy
             .outward_iter(Some(2), None)
             .filter_map(|xy| {
-                (self.interior_dm.get(xy) > RANGED_ACTION_RANGE
+                (self.interior_dm.get(xy) > CREEP_RANGED_ACTION_RANGE
                     && self.planned_tiles.get(xy).grown()
                     && self.planned_tiles.get(xy).structures().main() == Extension.try_into().unwrap())
                 .then_some(xy)
@@ -1587,7 +1586,7 @@ impl RoomPlanner {
             .collect::<Vec<_>>();
         extensions.reverse();
 
-        for range in (RANGED_ACTION_RANGE + 1..SAFE_DIST + 1).rev() {
+        for range in (CREEP_RANGED_ACTION_RANGE + 1..SAFE_DIST + 1).rev() {
             let nuker_xy = extensions
                 .iter()
                 .find_map(|&xy| (self.interior_dm.get(xy) >= range).then_some(xy));
@@ -1608,7 +1607,7 @@ impl RoomPlanner {
             .clone()
             .into_iter()
             .map(|planned_source| {
-                if self.interior_dm.get(planned_source.link_xy) <= RANGED_ACTION_RANGE {
+                if self.interior_dm.get(planned_source.link_xy) <= CREEP_RANGED_ACTION_RANGE {
                     if let Ok(link_xy) =
                         self.place_resource_storage(planned_source.work_xy, BasePart::Protected, true, true)
                     {
@@ -1644,7 +1643,7 @@ impl RoomPlanner {
             }
 
             // Covering some parts in ranged attack range outside or inside the base with ramparts.
-            if interior_dist <= RANGED_ACTION_RANGE
+            if interior_dist <= CREEP_RANGED_ACTION_RANGE
                 && (base_part == BasePart::Protected
                     || base_part == BasePart::Interior
                     || interior_dist > 0 && base_part == BasePart::ProtectedIfInside)
