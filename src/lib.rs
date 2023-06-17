@@ -22,7 +22,7 @@ use crate::room_planner::RoomPlanner;
 use crate::room_state::room_states::with_room_state;
 use crate::room_state::scan_room::scan_room;
 use crate::visualization::{visualize, Visualization};
-use log::debug;
+use log::{debug, info};
 use profiler::measure_time;
 use room_visual_ext::RoomVisualExt;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -92,7 +92,7 @@ pub fn setup() {
 pub fn game_loop() {
     let ticks_since_restart = game_tick() - first_tick();
 
-    debug!("[ξ] Tick: {} / {} -- Bucket: {}", ticks_since_restart, game::time(), game::cpu::bucket());
+    info!("[ξ] Tick: {} / {} -- Bucket: {}", ticks_since_restart, game::time(), game::cpu::bucket());
 
     kernel::wake_up_sleeping_processes();
     kernel::run_processes();

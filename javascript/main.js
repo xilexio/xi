@@ -3,7 +3,7 @@ let wasmModule;
 
 function displayError(...args) {
     const message = args.join(' ');
-    console.log('<span style="color: #ff9999">' + message + '</span>');
+    console.log('<span style="color: #f99">' + message + '</span>');
     Game.notify(args.join(' '));
 }
 

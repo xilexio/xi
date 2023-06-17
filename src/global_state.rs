@@ -30,13 +30,12 @@ struct GlobalStateDe {
 pub fn save_global_state() {
     match serialize_global_state() {
         Ok(serialized_global_state) => {
-            trace!("{}", serialized_global_state);
             // TODO Keep in mind that base32768 is an option to increase the capacity of memory almost 2x.
             let len = serialized_global_state.len() as u32;
             raw_memory::set(&JsString::from(serialized_global_state));
             trace!(
-                "Serialized the global state. Using approximately {}B ({}%).",
-                len,
+                "Serialized the global state. Using {:.1}kB ({}%) of the Memory limit.",
+                (len as f32) / 1024.0,
                 len / MEMORY_SIZE_LIMIT
             );
         }
