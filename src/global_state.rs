@@ -6,6 +6,7 @@ use screeps::raw_memory;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, PickFirst, FromInto};
 
+/// References to parts of the global state to avoid copying them.
 #[derive(Serialize)]
 struct GlobalStateSer<'a> {
     room_states: &'a RoomStates,
@@ -13,6 +14,11 @@ struct GlobalStateSer<'a> {
 
 type OldRoomStates = RoomStates;
 
+/// A structure holding parts of the global state.
+/// Serialization of each part combines `PickFirst` and `FromInto` so that a migration may be written after its format
+/// change. The migration consists of copying the structure with the old format to the type marking old version of given
+/// part and implementing `From` to convert it to the new version. After the migration has been applied, the type should
+/// be reverted back to the current one.
 #[serde_as]
 #[derive(Deserialize)]
 struct GlobalStateDe {
@@ -45,7 +51,7 @@ fn serialize_global_state() -> Result<String, serde_json::Error> {
 pub fn load_global_state() {
     let raw_memory_str = u!(raw_memory::get().as_string());
     match deserialize_global_state(&raw_memory_str) {
-        Ok(global_state) => {
+        Ok(()) => {
             trace!("Deserialized the global state.");
         }
         Err(e) => {
@@ -55,7 +61,7 @@ pub fn load_global_state() {
 }
 
 /// Deserializes the global state from a string.
-fn deserialize_global_state(raw_memory_str: &String) -> Result<(), serde_json::Error> {
+fn deserialize_global_state(raw_memory_str: &str) -> Result<(), serde_json::Error> {
     let deserialized_global_state: GlobalStateDe = serde_json::from_str(raw_memory_str)?;
     with_room_states(move |room_states| {
         let GlobalStateDe {
