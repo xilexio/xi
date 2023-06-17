@@ -2,10 +2,12 @@ use crate::game_time::first_tick;
 use crate::kernel::sleep::{sleep, sleep_until};
 use crate::room_state::room_states::for_each_owned_room;
 use crate::u;
+use crate::utils::find::get_structure;
 use crate::utils::map_utils::MultiMapUtils;
+use crate::utils::return_code_utils::ReturnCodeUtils;
 use derive_more::Constructor;
 use js_sys::JsString;
-use log::{debug, error, trace};
+use log::{debug, error, trace, warn};
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::game::{construction_sites, rooms};
 use screeps::StructureType::{
@@ -13,7 +15,8 @@ use screeps::StructureType::{
     Terminal, Tower, Wall,
 };
 use screeps::{
-    ConstructionSite, MaybeHasTypedId, ObjectId, Position, RoomName, RoomXY, StructureType, MAX_CONSTRUCTION_SITES,
+    game, ConstructionSite, MaybeHasTypedId, ObjectId, Position, RoomName, RoomXY, StructureType,
+    MAX_CONSTRUCTION_SITES,
 };
 
 const MAX_CONSTRUCTION_SITES_PER_ROOM: u32 = 10;
@@ -52,86 +55,130 @@ pub async fn construct_structures() {
                 trace!("Computing what construction sites to place in room {}.", room_name);
 
                 let room_construction_sites = construction_sites_by_room.entry(room_name).or_insert_with(Vec::new);
+                let existing_construction_sites_xys = room_construction_sites
+                    .iter()
+                    .map(|construction_site_data| construction_site_data.xy)
+                    .collect::<FxHashSet<_>>();
                 let mut room_construction_sites_count = room_construction_sites.len();
 
-                // TODO Removing invalid construction sites.
-                if room_construction_sites_count < MAX_CONSTRUCTION_SITES_PER_ROOM as usize {
-                    // Check what structures are missing in the order of priority and place their construction sites,
-                    // obeying MAX_CONSTRUCTION_SITES_PER_ROOM and global MAX_CONSTRUCTION_SITES.
-                    if let Some(current_rcl_structures) = room_state.current_rcl_structures.as_ref() {
-                        if let Some(room) = rooms().get(room_name) {
-                            for structure_type in PRIORITY_OF_STRUCTURES {
-                                if room_state.structures.get(&structure_type).map(|xys| xys.len())
-                                    != current_rcl_structures.get(&structure_type).map(|xys| xys.len())
-                                {
-                                    let structure_xys = room_state
-                                        .structures
-                                        .get(&structure_type)
-                                        .map(Vec::as_slice)
-                                        .unwrap_or(&[])
-                                        .iter()
-                                        .copied()
-                                        .collect::<FxHashSet<_>>();
-                                    let structure_current_rcl_xys = current_rcl_structures
-                                        .get(&structure_type)
-                                        .map(Vec::as_slice)
-                                        .unwrap_or(&[])
-                                        .iter()
-                                        .copied()
-                                        .collect::<FxHashSet<_>>();
+                if let Some(current_rcl_structures) = room_state.current_rcl_structures.as_ref() {
+                    // Removing invalid construction sites.
+                    for construction_site_data in room_construction_sites.iter() {
+                        if !current_rcl_structures
+                            .get(&construction_site_data.structure_type)
+                            .map(Vec::as_slice)
+                            .unwrap_or(&[])
+                            .contains(&construction_site_data.xy)
+                        {
+                            // TODO Remove them only if they are not present in the RCL8 plan, otherwise just ignore
+                            //      until required RCL.
+                            let construction_site = u!(game::get_object_by_id_typed(&construction_site_data.id));
+                            construction_site.remove().to_bool_and_warn(&format!(
+                                "Failed to remove a construction site of {:?} in {} at {}",
+                                construction_site_data.structure_type, room_name, construction_site_data.xy
+                            ));
+                        }
+                    }
 
-                                    for xy in structure_current_rcl_xys.iter() {
-                                        if !structure_xys.contains(xy) {
-                                            debug!(
-                                                "Placing a new construction site for {:?} at {} in {}.",
-                                                structure_type, xy, room_name
-                                            );
+                    for structure_type in PRIORITY_OF_STRUCTURES {
+                        let structure_xys = room_state
+                            .structures
+                            .get(&structure_type)
+                            .map(Vec::as_slice)
+                            .unwrap_or(&[])
+                            .iter()
+                            .copied()
+                            .collect::<FxHashSet<_>>();
+                        let structure_current_rcl_xys = current_rcl_structures
+                            .get(&structure_type)
+                            .map(Vec::as_slice)
+                            .unwrap_or(&[])
+                            .iter()
+                            .copied()
+                            .collect::<FxHashSet<_>>();
 
-                                            // There is a structure yet to be built. Placing the construction site.
-                                            let js_name = structure_js_name(structure_type, room_name, *xy);
-                                            room.create_construction_site(
+                        // Removing extra structures.
+                        for &xy in structure_xys.iter() {
+                            if !structure_current_rcl_xys.contains(&xy) {
+                                // There is an extra structure in the room. It might happen upon claiming
+                                // a room with structures present or when the room was downgraded.
+                                if structure_type != Spawn || structure_xys.len() > 1 {
+                                    // Destroying the structure.
+                                    if let Some(structure_obj) = get_structure(room_name, xy, structure_type) {
+                                        // TODO Do not destroy the structure if it is owned and supposed
+                                        //      to be built at RCL8 in that location unless it being
+                                        //      inactive breaks something (e.g., remote links being
+                                        //      active while the fast filler link is not).
+                                        structure_obj.as_structure().destroy().to_bool_and_warn(&format!(
+                                            "Failed to remove a structure {:?} in {} at {}",
+                                            structure_type, room_name, xy
+                                        ));
+                                    } else {
+                                        warn!("Failed to find the structure {:?} in {} at {} that was about to be removed", structure_type, room_name, xy);
+                                    }
+                                }
+                            }
+                        }
+
+                        // Placing construction sites for missing structures.
+                        if room_construction_sites_count < MAX_CONSTRUCTION_SITES_PER_ROOM as usize
+                            && total_construction_sites_count < MAX_CONSTRUCTION_SITES as usize
+                        {
+                            // Check what structures are missing in the order of priority and place their construction sites,
+                            // obeying MAX_CONSTRUCTION_SITES_PER_ROOM and global MAX_CONSTRUCTION_SITES.
+                            if let Some(room) = rooms().get(room_name) {
+                                for xy in structure_current_rcl_xys.iter() {
+                                    if !structure_xys.contains(xy) && !existing_construction_sites_xys.contains(xy) {
+                                        debug!(
+                                            "Placing a new construction site for {:?} at {} in {}.",
+                                            structure_type, xy, room_name
+                                        );
+
+                                        // There is a structure yet to be built. Placing the construction site.
+                                        let js_name = structure_js_name(structure_type, room_name, *xy);
+                                        if room
+                                            .create_construction_site(
                                                 xy.x.u8(),
                                                 xy.y.u8(),
                                                 structure_type,
                                                 js_name.as_ref(),
-                                            );
-
+                                            )
+                                            .to_bool_and_warn(&format!(
+                                                "Failed to create the construction site of {:?} in {} at {}",
+                                                structure_type, room_name, xy
+                                            ))
+                                        {
                                             room_construction_sites_count += 1;
                                             total_construction_sites_count += 1;
 
                                             // Checking if further construction sites may be created.
                                             if room_construction_sites_count >= MAX_CONSTRUCTION_SITES_PER_ROOM as usize
                                             {
-                                                break;
+                                                return;
                                             }
 
                                             if total_construction_sites_count >= MAX_CONSTRUCTION_SITES as usize {
                                                 return;
                                             }
-                                        }
-                                    }
-
-                                    for xy in structure_xys.iter() {
-                                        if !structure_current_rcl_xys.contains(xy) {
-                                            // There is an extra structure in the room. It might happen upon claiming
-                                            // a room with structures present or when the room was downgraded.
-                                            // TODO Destroy it unless it is on the RCL8 plan or maybe an extension.
+                                        } else {
+                                            // Interrupt the work on this room. Try again later.
+                                            return;
                                         }
                                     }
                                 }
                             }
                         }
-                    } else {
-                        error!(
-                            "Expected Some in current_rcl_structures in room {} when they are not built yet.",
-                            room_name
-                        );
                     }
+                } else {
+                    error!(
+                        "Expected Some in current_rcl_structures in room {} when they are not built yet.",
+                        room_name
+                    );
                 }
             }
         });
 
-        sleep(10).await;
+        sleep(20).await;
     }
 }
 

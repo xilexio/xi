@@ -30,7 +30,6 @@ use crate::towers::tower_attack_power;
 use crate::{a, u};
 use derive_more::Constructor;
 use log::{debug, error};
-use num_traits::{clamp, Signed};
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::StructureType::{
     Container, Extension, Extractor, Lab, Link, Nuker, Observer, Rampart, Road, Spawn, Storage, Tower,
@@ -44,6 +43,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::{Debug, Formatter};
 use std::iter::{empty, once};
+use num_traits::clamp;
 use thiserror::Error;
 
 pub mod packed_tile_structures;

@@ -23,7 +23,6 @@ use crate::room_state::room_states::with_room_state;
 use crate::room_state::scan_room::scan_room;
 use crate::visualization::{visualize, Visualization};
 use log::debug;
-use num_traits::Signed;
 use profiler::measure_time;
 use room_visual_ext::RoomVisualExt;
 use rustc_hash::{FxHashMap, FxHashSet};

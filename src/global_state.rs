@@ -2,9 +2,9 @@ use crate::room_state::room_states::{with_room_states, RoomStates};
 use crate::u;
 use js_sys::JsString;
 use log::{error, trace};
-use screeps::raw_memory;
+use screeps::{raw_memory, MEMORY_SIZE_LIMIT};
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, PickFirst, FromInto};
+use serde_with::{serde_as, FromInto, PickFirst};
 
 /// References to parts of the global state to avoid copying them.
 #[derive(Serialize)]
@@ -30,8 +30,15 @@ struct GlobalStateDe {
 pub fn save_global_state() {
     match serialize_global_state() {
         Ok(serialized_global_state) => {
+            trace!("{}", serialized_global_state);
+            // TODO Keep in mind that base32768 is an option to increase the capacity of memory almost 2x.
+            let len = serialized_global_state.len() as u32;
             raw_memory::set(&JsString::from(serialized_global_state));
-            trace!("Serialized the global state.");
+            trace!(
+                "Serialized the global state. Using approximately {}B ({}%).",
+                len,
+                len / MEMORY_SIZE_LIMIT
+            );
         }
         Err(e) => {
             error!("Failed to serialize global state: {:?}.", e);
@@ -65,8 +72,8 @@ fn deserialize_global_state(raw_memory_str: &str) -> Result<(), serde_json::Erro
     let deserialized_global_state: GlobalStateDe = serde_json::from_str(raw_memory_str)?;
     with_room_states(move |room_states| {
         let GlobalStateDe {
-                room_states: room_states_de
-            } = deserialized_global_state;
+            room_states: room_states_de,
+        } = deserialized_global_state;
         {
             *room_states = room_states_de;
         }

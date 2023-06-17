@@ -31,6 +31,7 @@ function wrap(f) {
 function run_loop(wasm_module) {
     // The deserialized Memory object is replaced with a fresh object that will be forgotten after the loop.
     // The RawMemory object is not touched here.
+    delete global.Memory;
     global.Memory = {};
     // Running the actual game loop.
     wasm_module.loop();

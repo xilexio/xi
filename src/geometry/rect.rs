@@ -1,6 +1,5 @@
 use crate::geometry::room_coordinate::RoomCoordinateUtils;
 use crate::geometry::room_xy::RoomXYUtils;
-use num_traits::Signed;
 use screeps::{OutOfBoundsError, RoomXY, ROOM_SIZE};
 use std::cmp::{max, min};
 use std::error::Error;
