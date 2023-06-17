@@ -23,7 +23,7 @@ pub struct RoomState {
     pub designation: RoomDesignation,
     pub rcl: u8,
     // TODO should not really be skipped
-    #[serde(skip_serializing, skip_deserializing)]
+    #[serde(skip)]
     pub terrain: PackedTerrain,
     pub controller: Option<ControllerData>,
     pub sources: Vec<SourceData>,
@@ -32,10 +32,11 @@ pub struct RoomState {
     // TODO for unowned rooms, ids are not as important (if at all)
     pub structures: StructuresMap,
     pub plan: Option<Plan>,
-    #[serde(skip_serializing, skip_deserializing)]
+    #[serde(skip)]
     pub planner: Option<Box<RoomPlanner>>,
     /// Structures to be built at current RCL.
     pub current_rcl_structures: Option<StructuresMap>,
+    /// Indicator whether all structures required in the current RCL are built. Used to trigger construction.
     pub current_rcl_structures_built: bool,
     // Information about fast filler and its extensions.
     // pub fast_filler: Option<FastFiller>,

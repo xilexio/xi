@@ -14,7 +14,7 @@ use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::minimal_shortest_paths_tree::{minimal_shortest_paths_tree, PathSpec};
 use crate::algorithms::room_matrix::RoomMatrix;
 use crate::algorithms::weighted_distance_matrix::{obstacle_cost, unreachable_cost};
-use crate::config::LOG_LEVEL;
+use crate::config::{FIRST_MEMORY_SAVE_TICK, LOG_LEVEL, MEMORY_SAVE_INTERVAL};
 use crate::consts::OBSTACLE_COST;
 use crate::geometry::rect::{ball, room_rect, Rect};
 use crate::geometry::room_xy::RoomXYUtils;
@@ -39,6 +39,7 @@ use wasm_bindgen::prelude::{wasm_bindgen, UnwrapThrowExt};
 use crate::construction::construct_structures;
 use crate::game_time::{first_tick, game_tick};
 use crate::maintenance::maintain_rooms;
+use crate::global_state::{load_global_state, save_global_state};
 use crate::priorities::{CONSTRUCTING_STRUCTURES_PRIORITY, ROOM_MAINTENANCE_PRIORITY, ROOM_PLANNING_PRIORITY, ROOM_SCANNING_PRIORITY, VISUALIZATIONS_PRIORITY};
 use crate::room_planner::plan_rooms::plan_rooms;
 use crate::room_state::scan_rooms::scan_rooms;
@@ -69,12 +70,14 @@ mod random;
 mod priorities;
 mod utils;
 mod construction;
-mod memory_manager;
+mod global_state;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]
 pub fn setup() {
     logging::init_logging(LOG_LEVEL);
+
+    load_global_state();
 
     drop(kernel::schedule("scan_rooms", ROOM_SCANNING_PRIORITY, scan_rooms));
     drop(kernel::schedule("plan_rooms", ROOM_PLANNING_PRIORITY, plan_rooms));
@@ -94,6 +97,10 @@ pub fn game_loop() {
 
     kernel::wake_up_sleeping_processes();
     kernel::run_processes();
+
+    if ticks_since_restart >= FIRST_MEMORY_SAVE_TICK && ticks_since_restart % MEMORY_SAVE_INTERVAL == 0 {
+        save_global_state();
+    }
 
     // if game::cpu::bucket() > 1000 {
     //     measure_time("test", || {

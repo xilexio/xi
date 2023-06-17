@@ -36,10 +36,10 @@ struct Kernel {
     current_process_awaited_process_pid: Option<Pid>,
 }
 
-/// Kernel must not be accessed from multiple threads at once.
+/// Kernel must not be accessed in a parallel fashion.
 unsafe impl Send for Kernel {}
 
-/// Kernel must not be accessed from multiple threads at once.
+/// Kernel must not be accessed in a parallel fashion.
 unsafe impl Sync for Kernel {}
 
 impl Kernel {

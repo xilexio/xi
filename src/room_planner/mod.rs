@@ -36,7 +36,9 @@ use screeps::StructureType::{
     Container, Extension, Extractor, Lab, Link, Nuker, Observer, Rampart, Road, Spawn, Storage, Tower,
 };
 use screeps::Terrain::{Plain, Swamp, Wall};
-use screeps::{RoomName, RoomXY, StructureType, ROOM_SIZE, TOWER_FALLOFF_RANGE, TOWER_OPTIMAL_RANGE, CREEP_RANGED_ACTION_RANGE};
+use screeps::{
+    RoomName, RoomXY, StructureType, CREEP_RANGED_ACTION_RANGE, ROOM_SIZE, TOWER_FALLOFF_RANGE, TOWER_OPTIMAL_RANGE,
+};
 use std::cmp::{max, min, Reverse};
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -1967,8 +1969,8 @@ mod tests {
     fn test_generate_some_plan() {
         let mut room_state = RoomState::new(RoomName::new("W3N3").unwrap());
         room_state.sources = vec![
-            SourceData::new(ObjectId::from_packed(1010), (10, 10).try_into().unwrap()),
-            SourceData::new(ObjectId::from_packed(3030), (30, 30).try_into().unwrap()),
+            SourceData::new(ObjectId::from_packed(1010), (10, 10).try_into().unwrap(), None, None),
+            SourceData::new(ObjectId::from_packed(3030), (30, 30).try_into().unwrap(), None, None),
         ];
         room_state.mineral = Some(MineralData::new(
             ObjectId::from_packed(1030),
@@ -1976,8 +1978,10 @@ mod tests {
             Keanium,
         ));
         room_state.controller = Some(ControllerData::new(
-            (30, 10).try_into().unwrap(),
             ObjectId::from_packed(3010),
+            (30, 10).try_into().unwrap(),
+            None,
+            None,
         ));
         room_state.terrain.set((0, 0).try_into().unwrap(), Wall);
         room_state.terrain.set((0, ROOM_SIZE - 1).try_into().unwrap(), Wall);
@@ -1998,7 +2002,7 @@ mod tests {
             }
         }
 
-        assert!(false);
+        panic!("Planner did not manage to produce a plan within 10 tries.");
     }
 }
 

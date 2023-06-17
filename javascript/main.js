@@ -1,5 +1,5 @@
 "use strict";
-let wasm_module;
+let wasmModule;
 
 function displayError(...args) {
     const message = args.join(' ');
@@ -12,7 +12,7 @@ let restartNextTick = false;
 function wrap(f) {
     return function(...args) {
         try {
-            if (wasm_module && wasm_module.__wasm) {
+            if (wasmModule && wasmModule.__wasm) {
                 f(...args);
             } else {
                 displayError('WASM VM is not ready.')
@@ -28,8 +28,16 @@ function wrap(f) {
     }
 }
 
+function run_loop(wasm_module) {
+    // The deserialized Memory object is replaced with a fresh object that will be forgotten after the loop.
+    // The RawMemory object is not touched here.
+    global.Memory = {};
+    // Running the actual game loop.
+    wasm_module.loop();
+}
+
 global.set_room_blueprint = wrap(function(roomName, blueprintJSON) {
-    wasm_module.set_room_blueprint(roomName, blueprintJSON);
+    wasmModule.set_room_blueprint(roomName, blueprintJSON);
 });
 
 module.exports.loop = function () {
@@ -38,8 +46,8 @@ module.exports.loop = function () {
     }
 
     try {
-        if (wasm_module && wasm_module.__wasm) {
-            wasm_module.loop();
+        if (wasmModule && wasmModule.__wasm) {
+            run_loop(wasmModule);
         } else {
             // Attempt to load the wasm only if there's enough bucket to do a bunch of work this tick.
             if (Game.cpu.bucket < 500) {
@@ -49,13 +57,13 @@ module.exports.loop = function () {
             }
 
             // Loading the Rust module compiled to WASM.
-            wasm_module = require('xi');
+            wasmModule = require('xi');
             // Load the WASM instance.
-            wasm_module.initialize_instance();
+            wasmModule.initialize_instance();
             // Running the exported setup function once.
-            wasm_module.setup();
+            wasmModule.setup();
             // Running the exported loop function this tick and then later each new tick.
-            wasm_module.loop();
+            run_loop(wasmModule);
         }
     } catch (ex) {
         displayError('Caught exception:', ex);

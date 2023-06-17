@@ -1,13 +1,13 @@
 use crate::room_state::{RoomDesignation, RoomState};
 use rustc_hash::FxHashMap;
-use screeps::{raw_memory, RoomName};
+use screeps::RoomName;
 use std::cell::RefCell;
-use std::ops::Deref;
-use js_sys::JsString;
-use log::error;
+use std::ops::DerefMut;
+
+pub type RoomStates = FxHashMap<RoomName, RoomState>;
 
 thread_local! {
-    static ROOM_STATES: RefCell<FxHashMap<RoomName, RoomState>> = RefCell::new(FxHashMap::default());
+    static ROOM_STATES: RefCell<RoomStates> = RefCell::new(FxHashMap::default());
 }
 
 pub fn with_room_state<F, R>(room_name: RoomName, f: F) -> Option<R>
@@ -57,19 +57,9 @@ where
     });
 }
 
-pub fn save_room_states() {
-    ROOM_STATES.with(|states| {
-        match serde_json::to_string(states.borrow().deref()) {
-            Ok(serlialized) => {
-                raw_memory::set(&JsString::from(serlialized));
-            }
-            Err(e) => {
-                error!("Failed to serialize room states: {:?}.", e);
-            }
-        }
-    });
-}
-
-pub fn load_room_states() {
-
+pub fn with_room_states<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut RoomStates) -> R,
+{
+    ROOM_STATES.with(|states| f(states.borrow_mut().deref_mut()))
 }

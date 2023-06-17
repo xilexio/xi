@@ -4,7 +4,7 @@ use crate::geometry::rect::room_rect;
 use crate::geometry::room_xy::RoomXYUtils;
 use screeps::{RoomXY, ROOM_SIZE};
 use serde::de::{Error, SeqAccess, Visitor};
-use serde::ser::{SerializeSeq, SerializeTuple};
+use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{Display, Formatter, LowerHex};
 use std::mem::size_of;
