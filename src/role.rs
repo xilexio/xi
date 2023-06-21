@@ -1,5 +1,4 @@
 use screeps::Part;
-use crate::creep::CreepRole;
 use crate::resources::RoomResources;
 
 pub trait Role {

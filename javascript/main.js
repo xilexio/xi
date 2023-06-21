@@ -1,5 +1,6 @@
 "use strict";
 let wasmModule;
+let initialized = false;
 
 function displayError(...args) {
     const message = args.join(' ');
@@ -47,7 +48,7 @@ module.exports.loop = function () {
     }
 
     try {
-        if (wasmModule && wasmModule.__wasm) {
+        if (wasmModule && wasmModule.__wasm && initialized) {
             run_loop(wasmModule);
         } else {
             // Attempt to load the wasm only if there's enough bucket to do a bunch of work this tick.
@@ -65,6 +66,8 @@ module.exports.loop = function () {
             wasmModule.setup();
             // Running the exported loop function this tick and then later each new tick.
             run_loop(wasmModule);
+            // Marking the bot as initialized.
+            initialized = true;
         }
     } catch (ex) {
         displayError('Caught exception:', ex);

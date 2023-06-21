@@ -1,21 +1,22 @@
 use crate::fresh_number::fresh_number;
 use crate::game_time::game_tick;
 use crate::kernel::process::{Pid, Priority, Process, WrappedProcessMeta};
-use crate::kernel::process_result::ProcessResult;
+use crate::kernel::process_handle::ProcessHandle;
 use crate::kernel::runnable::Runnable;
+use crate::utils::cold::cold;
+use crate::utils::map_utils::{MultiMapUtils, OrderedMultiMapUtils};
+use crate::{a, u};
 use log::{error, trace};
 use parking_lot::lock_api::MappedMutexGuard;
 use parking_lot::{Mutex, MutexGuard, RawMutex};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
+use screeps::game;
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::task::Poll;
-use screeps::game;
-use crate::utils::cold::cold;
-use crate::utils::map_utils::{MultiMapUtils, OrderedMultiMapUtils};
 
 pub mod process;
-pub mod process_result;
+pub mod process_handle;
 pub mod runnable;
 pub mod sleep;
 
@@ -32,8 +33,6 @@ struct Kernel {
     meta_by_pid: FxHashMap<Pid, WrappedProcessMeta>,
 
     current_process_meta: Option<WrappedProcessMeta>,
-    current_process_wake_up_tick: Option<u32>,
-    current_process_awaited_process_pid: Option<Pid>,
 }
 
 /// Kernel must not be accessed in a parallel fashion.
@@ -51,19 +50,16 @@ impl Kernel {
             meta_by_pid: FxHashMap::default(),
 
             current_process_meta: None,
-            current_process_wake_up_tick: None,
-            current_process_awaited_process_pid: None,
         }
     }
 }
 
 /// Schedules a future to run asynchronously. It will not run right away, but instead be enqueued.
-/// Returns `ProcessResult` which can be awaited and returns the value returned by the scheduled process.
+/// Returns `ProcessHandle` which can be awaited and returns the value returned by the scheduled process.
 /// If called outside of a process, the result should be manually dropped using `std::mem::drop`.
 #[must_use]
-pub fn schedule<P, F, T>(name: &str, priority: Priority, process_fn: P) -> ProcessResult<T>
+pub fn schedule<F, T>(name: &str, priority: Priority, future: F) -> ProcessHandle<T>
 where
-    P: FnMut() -> F,
     F: Future<Output = T> + 'static,
     T: 'static,
 {
@@ -71,7 +67,7 @@ where
 
     let pid = fresh_number(&kern.meta_by_pid);
     let parent_pid = kern.current_process_meta.as_ref().map(|meta| meta.borrow().pid);
-    let process = Process::new(name.into(), pid, parent_pid, priority, process_fn);
+    let process = Process::new(name.into(), pid, parent_pid, priority, future);
 
     let result = process.result.clone();
 
@@ -79,7 +75,105 @@ where
 
     enqueue_process(&mut kern, Box::new(process));
 
-    ProcessResult::new(pid, result)
+    ProcessHandle::new(pid, result)
+}
+
+/// Kills the process. Can be mildly expensive under some circumstances.
+/// Only a process that has not finished or returned yet may be killed.
+pub fn kill<T>(process_handle: ProcessHandle<T>, result: T) {
+    process_handle.result.replace(Some(result));
+
+    kill_without_result_or_cleanup(process_handle.pid);
+
+    cleanup_process(process_handle.pid);
+}
+
+/// Kills the process with all its children.
+/// Only a process that has not finished or returned yet may be killed.
+/// Furthermore, there must not exist any process awaiting completion of the process' children except for the process
+/// or its children themselves.
+pub fn kill_tree<T>(process_handle: ProcessHandle<T>, result: T) {
+    let mut killed_pids = FxHashSet::default();
+    let mut awaiting_pids = FxHashSet::default();
+    {
+        let kern = kernel();
+
+        let mut processes_children = FxHashMap::default();
+        for (&pid, meta) in kern.meta_by_pid.iter() {
+            if let Some(parent_pid) = meta.borrow().parent_pid {
+                processes_children.push_or_insert(parent_pid, pid);
+            }
+        }
+
+        let mut queue = processes_children.remove(&process_handle.pid).unwrap_or(Vec::new());
+        while let Some(pid) = queue.pop() {
+            let children = processes_children.remove(&pid).unwrap_or(Vec::new());
+            killed_pids.extend(children.iter());
+            queue.extend(children.iter());
+            if let Some(awaiting_processes) = kern.awaiting_processes.get(&pid) {
+                awaiting_pids.extend(awaiting_processes.iter().map(|process| process.borrow_meta().pid));
+            }
+        }
+    }
+
+    for pid in killed_pids {
+        awaiting_pids.remove(&pid);
+        kill_without_result_or_cleanup(pid);
+    }
+
+    awaiting_pids.remove(&process_handle.pid);
+
+    // There should be no process awaiting any killed processes except for the killed ones.
+    a!(awaiting_pids.is_empty());
+
+    kill(process_handle, result);
+}
+
+fn kill_without_result_or_cleanup(pid: Pid) {
+    let mut kern = kernel();
+    // Fail on unwrap indicates the process has finished already.
+    let meta = u!(kern.meta_by_pid.get(&pid)).borrow();
+    let process = if let Some(wake_up_tick) = meta.wake_up_tick {
+        drop(meta);
+        let vec_with_process = u!(kern.sleeping_processes.get_mut(&wake_up_tick));
+        // Not retain to make use of short-circuit and get the process.
+        let index = u!(vec_with_process
+        .iter()
+        .position(|process| process.borrow_meta().pid == pid));
+        let process = vec_with_process.remove(index);
+        if vec_with_process.is_empty() {
+            kern.sleeping_processes.remove(&wake_up_tick);
+        }
+        process
+    } else if let Some(awaited_pid) = meta.awaited_pid {
+        drop(meta);
+        let vec_with_process = u!(kern.awaiting_processes.get_mut(&awaited_pid));
+        // Not retain to make use of short-circuit and get the process.
+        let index = u!(vec_with_process
+        .iter()
+        .position(|process| process.borrow_meta().pid == pid));
+        let process = vec_with_process.remove(index);
+        if vec_with_process.is_empty() {
+            kern.awaiting_processes.remove(&awaited_pid);
+        }
+        process
+    } else {
+        let priority = meta.priority;
+        drop(meta);
+        // Fail on unwrap means that the process was neither awaiting anything nor active.
+        let vec_with_process = u!(kern.active_processes_by_priorities.get_mut(&priority));
+        // Not retain to make use of short-circuit and get the process.
+        let index = u!(vec_with_process
+        .iter()
+        .position(|process| process.borrow_meta().pid == pid));
+        let process = vec_with_process.remove(index);
+        if vec_with_process.is_empty() {
+            kern.active_processes_by_priorities.remove(&priority);
+        }
+        process
+    };
+
+    trace!("Killed {}.", process);
 }
 
 /// Runs all processes in the queue. Should be preceded by waking up all sleeping processes that should wake up this
@@ -95,23 +189,18 @@ pub fn run_processes() {
         match process.poll() {
             Poll::Ready(()) => {
                 trace!("{} finished.", process);
-                let maybe_awaiting_processes = kernel().awaiting_processes.remove(&pid);
-                if let Some(awaiting_processes) = maybe_awaiting_processes {
-                    for awaiting_process in awaiting_processes {
-                        trace!("Waking up {}.", awaiting_process);
-                        let priority = awaiting_process.borrow_meta().priority;
-                        enqueue_process(&mut kernel(), awaiting_process);
-                    }
-                }
-                kernel().meta_by_pid.remove(&pid);
+                cleanup_process(pid);
             }
             Poll::Pending => {
                 let mut kern = kernel();
+                let meta = u!(kern.current_process_meta.as_ref()).borrow_mut();
 
-                if let Some(awaited_process_pid) = kern.current_process_awaited_process_pid.take() {
+                if let Some(awaited_process_pid) = meta.awaited_pid {
+                    drop(meta);
                     trace!("{} waiting for P{}.", process, awaited_process_pid);
                     kern.awaiting_processes.push_or_insert(awaited_process_pid, process);
-                } else if let Some(wake_up_tick) = kern.current_process_wake_up_tick.take() {
+                } else if let Some(wake_up_tick) = meta.wake_up_tick {
+                    drop(meta);
                     trace!("{} sleeping until {}.", process, wake_up_tick);
                     kern.sleeping_processes.push_or_insert(wake_up_tick, process);
                 } else {
@@ -131,6 +220,7 @@ pub fn wake_up_sleeping_processes() {
     while let Some(first_entry) = kern.sleeping_processes.first_entry() {
         if game_tick() <= *first_entry.key() {
             for process in first_entry.remove() {
+                process.borrow_meta().wake_up_tick = None;
                 enqueue_process(&mut kern, process);
             }
             continue;
@@ -139,23 +229,32 @@ pub fn wake_up_sleeping_processes() {
 }
 
 pub(super) fn move_current_process_to_awaiting(awaited_process_pid: Pid) {
-    let mut kern = kernel();
-
-    if kern.current_process_meta.is_some() {
-        kern.current_process_awaited_process_pid = Some(awaited_process_pid);
+    if let Some(meta) = kernel().current_process_meta.as_ref() {
+        meta.borrow_mut().awaited_pid = Some(awaited_process_pid);
     } else {
         error!("Tried await completion of a process while there is no current process.")
     }
 }
 
 pub(super) fn move_current_process_to_sleeping(wake_up_tick: u32) {
-    let mut kern = kernel();
-
-    if kern.current_process_meta.is_some() {
-        kern.current_process_wake_up_tick = Some(wake_up_tick);
+    if let Some(meta) = kernel().current_process_meta.as_ref() {
+        meta.borrow_mut().wake_up_tick = Some(wake_up_tick);
     } else {
         error!("Tried to sleep while there is no current process.");
     }
+}
+
+/// Perform actions made after a process has ended.
+fn cleanup_process(pid: Pid) {
+    let maybe_awaiting_processes = kernel().awaiting_processes.remove(&pid);
+    if let Some(awaiting_processes) = maybe_awaiting_processes {
+        for awaiting_process in awaiting_processes {
+            trace!("Waking up {}.", awaiting_process);
+            awaiting_process.borrow_meta().awaited_pid = None;
+            enqueue_process(&mut kernel(), awaiting_process);
+        }
+    }
+    kernel().meta_by_pid.remove(&pid);
 }
 
 fn enqueue_process(kern: &mut MappedMutexGuard<RawMutex, Kernel>, process: Box<dyn Runnable>) {
@@ -207,7 +306,7 @@ fn kernel() -> MappedMutexGuard<'static, RawMutex, Kernel> {
 mod tests {
     use crate::game_time::GAME_TIME;
     use crate::kernel::sleep::sleep;
-    use crate::kernel::{run_processes, schedule, wake_up_sleeping_processes, Kernel, KERNEL};
+    use crate::kernel::{kill, run_processes, schedule, wake_up_sleeping_processes, Kernel, KERNEL};
     use crate::logging::init_logging;
     use log::LevelFilter::Trace;
     use std::sync::Mutex;
@@ -250,7 +349,7 @@ mod tests {
         unsafe {
             assert_eq!(TEST_COUNTER, 0);
         }
-        drop(schedule("do_stuff", 100, do_stuff));
+        drop(schedule("do_stuff", 100, do_stuff()));
         unsafe {
             assert_eq!(TEST_COUNTER, 0);
         }
@@ -268,7 +367,7 @@ mod tests {
         unsafe {
             TEST_COUNTER += 1;
         }
-        let result = schedule("do_stuff", 100, do_stuff).await;
+        let result = schedule("do_stuff", 100, do_stuff()).await;
         unsafe {
             TEST_COUNTER += result;
         }
@@ -286,7 +385,7 @@ mod tests {
         unsafe {
             assert_eq!(TEST_COUNTER, 0);
         }
-        drop(schedule("await_do_stuff", 100, await_do_stuff));
+        drop(schedule("await_do_stuff", 100, await_do_stuff()));
         unsafe {
             assert_eq!(TEST_COUNTER, 0);
         }
@@ -321,7 +420,7 @@ mod tests {
         drop(schedule(
             "do_stuff_and_sleep_and_stuff",
             100,
-            do_stuff_and_sleep_and_stuff,
+            do_stuff_and_sleep_and_stuff(),
         ));
         unsafe {
             assert_eq!(TEST_COUNTER, 0);
@@ -354,7 +453,7 @@ mod tests {
         unsafe {
             TEST_COUNTER += 1;
         }
-        schedule("do_stuff_and_sleep_and_stuff", 100, do_stuff_and_sleep_and_stuff).await;
+        schedule("do_stuff_and_sleep_and_stuff", 100, do_stuff_and_sleep_and_stuff()).await;
         unsafe {
             TEST_COUNTER += 1;
         }
@@ -372,7 +471,7 @@ mod tests {
         unsafe {
             assert_eq!(TEST_COUNTER, 0);
         }
-        drop(schedule("await_sleeping", 50, await_sleeping));
+        drop(schedule("await_sleeping", 50, await_sleeping()));
         unsafe {
             assert_eq!(TEST_COUNTER, 0);
         }
@@ -421,14 +520,14 @@ mod tests {
         }
         init_logging(Trace);
         reset_kernel();
-        drop(schedule("set_one", 50, set_one));
-        drop(schedule("set_two", 100, set_two));
+        drop(schedule("set_one", 50, set_one()));
+        drop(schedule("set_two", 100, set_two()));
         run_processes();
         unsafe {
             assert_eq!(TEST_COUNTER, 1);
         }
-        drop(schedule("set_one", 100, set_one));
-        drop(schedule("set_two", 50, set_two));
+        drop(schedule("set_one", 100, set_one()));
+        drop(schedule("set_two", 50, set_two()));
         run_processes();
         unsafe {
             assert_eq!(TEST_COUNTER, 2);
@@ -439,8 +538,10 @@ mod tests {
     fn test_closure() {
         let three = 3u8;
 
-        let set_three = async move || unsafe {
-            TEST_COUNTER = three;
+        let set_three = async move {
+            unsafe {
+                TEST_COUNTER = three;
+            }
         };
 
         let lock = TEST_MUTEX.lock();
@@ -459,17 +560,21 @@ mod tests {
 
     #[test]
     fn test_changing_priority() {
-        let set_four = async move || unsafe {
-            TEST_COUNTER = 4;
-            meta!().priority = 150;
-            sleep(1).await;
-            TEST_COUNTER = 4;
+        let set_four = async move {
+            unsafe {
+                TEST_COUNTER = 4;
+                meta!().priority = 150;
+                sleep(1).await;
+                TEST_COUNTER = 4;
+            }
         };
 
-        let set_five = async move || unsafe {
-            TEST_COUNTER = 5;
-            sleep(1).await;
-            TEST_COUNTER = 5;
+        let set_five = async move {
+            unsafe {
+                TEST_COUNTER = 5;
+                sleep(1).await;
+                TEST_COUNTER = 5;
+            }
         };
 
         let lock = TEST_MUTEX.lock();
@@ -491,6 +596,48 @@ mod tests {
         unsafe {
             assert_eq!(TEST_COUNTER, 5);
             GAME_TIME += 1;
+        }
+    }
+
+    #[test]
+    fn test_kill() {
+        let spawn_and_kill = async {
+            let process_handle = schedule("increment", 50, async {
+                loop {
+                    unsafe {
+                        TEST_COUNTER += 1;
+                    }
+                    sleep(1).await;
+                }
+            });
+            sleep(1).await;
+            let ph = process_handle.clone();
+            drop(schedule("kill", 100, async {
+                kill(ph, 10);
+            }));
+            let result = process_handle.await;
+            unsafe {
+                TEST_COUNTER += result;
+            }
+        };
+
+        let lock = TEST_MUTEX.lock();
+
+        unsafe {
+            TEST_COUNTER = 0;
+        }
+        init_logging(Trace);
+        reset_kernel();
+        drop(schedule("spawn_and_kill", 100, spawn_and_kill));
+        run_processes();
+        unsafe {
+            assert_eq!(TEST_COUNTER, 1);
+            GAME_TIME += 1;
+        }
+        wake_up_sleeping_processes();
+        run_processes();
+        unsafe {
+            assert_eq!(TEST_COUNTER, 11);
         }
     }
 }

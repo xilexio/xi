@@ -10,12 +10,12 @@ use std::task::{Context, Poll};
 /// A structure containing result of a finished process or None before that.
 /// It can be awaited and returns the result returned by the process.
 #[derive(Clone, Constructor)]
-pub struct ProcessResult<T> {
-    pid: Pid,
-    result: Rc<RefCell<Option<T>>>,
+pub struct ProcessHandle<T> {
+    pub pid: Pid,
+    pub(super) result: Rc<RefCell<Option<T>>>,
 }
 
-impl<T> Future for ProcessResult<T> {
+impl<T> Future for ProcessHandle<T> {
     type Output = T;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {

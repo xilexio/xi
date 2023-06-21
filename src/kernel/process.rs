@@ -1,6 +1,6 @@
 use crate::kernel::runnable::Runnable;
 use derive_more::Constructor;
-use std::cell::{Ref, RefCell};
+use std::cell::{RefCell, RefMut};
 use std::fmt::{Display, Formatter};
 use std::future::Future;
 use std::pin::Pin;
@@ -18,6 +18,8 @@ pub struct ProcessMeta {
     pub parent_pid: Option<Pid>,
     pub priority: Priority,
     pub creeps: Vec<String>,
+    pub wake_up_tick: Option<u32>,
+    pub awaited_pid: Option<Pid>,
 }
 
 pub type WrappedProcessMeta = Rc<RefCell<ProcessMeta>>;
@@ -29,15 +31,14 @@ pub(super) struct Process<T> {
 }
 
 impl<T> Process<T> {
-    pub(super) fn new<P, F>(
+    pub(super) fn new<F>(
         name: String,
         pid: Pid,
         parent_pid: Option<Pid>,
         priority: Priority,
-        mut process_fn: P,
+        future: F,
     ) -> Self
     where
-        P: FnMut() -> F,
         F: Future<Output = T> + 'static,
     {
         let meta = ProcessMeta {
@@ -46,10 +47,11 @@ impl<T> Process<T> {
             parent_pid,
             priority,
             creeps: Vec::new(),
+            wake_up_tick: None,
+            awaited_pid: None,
         };
         let wrapped_meta = Rc::new(RefCell::new(meta));
 
-        let future = process_fn();
         let boxed_future = Box::pin(future);
 
         Process {
@@ -72,8 +74,8 @@ impl<T> Display for Process<T> {
 }
 
 impl<T> Runnable for Process<T> {
-    fn borrow_meta(&self) -> Ref<ProcessMeta> {
-        self.meta.borrow()
+    fn borrow_meta(&self) -> RefMut<ProcessMeta> {
+        self.meta.borrow_mut()
     }
 
     fn clone_meta(&self) -> WrappedProcessMeta {
@@ -82,7 +84,7 @@ impl<T> Runnable for Process<T> {
 
     fn poll(&mut self) -> Poll<()> {
         let wake = Arc::new(ProcessWaker::new());
-        let waker = Waker::from(wake.clone());
+        let waker = Waker::from(wake);
         let mut cx = Context::from_waker(&waker);
 
         match self.future.as_mut().poll(&mut cx) {
