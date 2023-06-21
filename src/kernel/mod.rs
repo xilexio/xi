@@ -88,7 +88,7 @@ pub fn kill<T>(process_handle: ProcessHandle<T>, result: T) {
     cleanup_process(process_handle.pid);
 }
 
-/// Kills the process with all its children.
+/// Kills the process with all its children. Can be mildly expensive under some circumstances.
 /// Only a process that has not finished or returned yet may be killed.
 /// Furthermore, there must not exist any process awaiting completion of the process' children except for the process
 /// or its children themselves.
