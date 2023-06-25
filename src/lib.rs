@@ -3,6 +3,7 @@
 #![feature(async_closure)]
 #![feature(once_cell)]
 #![feature(core_intrinsics)]
+#![feature(btree_cursors)]
 
 use wasm_bindgen::prelude::wasm_bindgen;
 

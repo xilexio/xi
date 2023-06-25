@@ -1,4 +1,6 @@
+#[cfg(not(test))]
 use log::debug;
+#[cfg(not(test))]
 use screeps::game;
 
 #[cfg(not(test))]

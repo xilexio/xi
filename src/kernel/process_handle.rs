@@ -15,12 +15,15 @@ pub struct ProcessHandle<T> {
     pub(super) result: Rc<RefCell<Option<T>>>,
 }
 
-impl<T> Future for ProcessHandle<T> {
+impl<T> Future for ProcessHandle<T>
+where
+    T: Clone,
+{
     type Output = T;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if let Some(result) = self.result.borrow_mut().take() {
-            Poll::Ready(result)
+        if let Some(result) = self.result.borrow().as_ref() {
+            Poll::Ready(result.clone())
         } else {
             move_current_process_to_awaiting(self.pid);
             Poll::Pending

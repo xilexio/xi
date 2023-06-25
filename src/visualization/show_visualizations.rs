@@ -32,6 +32,7 @@ pub async fn show_visualizations() {
                                 vis.structure_roomxy(xy, Road, opacity);
                             }
                         }
+
                         for (xy, tile) in plan.tiles.iter() {
                             if let Ok(structure_type) = StructureType::try_from(tile.structures().main()) {
                                 if get_structure(room_name, xy, structure_type).is_none() {
@@ -48,6 +49,7 @@ pub async fn show_visualizations() {
                                 }
                             }
                         }
+
                         for (xy, tile) in plan.tiles.iter() {
                             if tile.structures().rampart() && get_structure(room_name, xy, Rampart).is_none() {
                                 let opacity = if current_rcl_structures

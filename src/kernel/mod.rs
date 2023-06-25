@@ -14,11 +14,13 @@ use screeps::game;
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::task::Poll;
+use crate::kernel::condition::Cid;
 
 pub mod process;
 pub mod process_handle;
 pub mod runnable;
 pub mod sleep;
+pub mod condition;
 
 /// A singleton executor and reactor. To work correctly, only one Kernel may be used at a time and it must be used
 /// from one thread.
@@ -27,8 +29,10 @@ struct Kernel {
     active_processes_by_priorities: BTreeMap<Priority, Vec<Box<dyn Runnable>>>,
     /// Processes that are sleeping until the tick in the key.
     sleeping_processes: BTreeMap<u32, Vec<Box<dyn Runnable>>>,
-    /// Processes that are awaiting completion of another process with PID given in the key.
+    /// Processes that are awaiting completion of another process with PID in the key.
     awaiting_processes: FxHashMap<Pid, Vec<Box<dyn Runnable>>>,
+    /// Processes that are waiting on a condition with the CID in the key.
+    condition_processes: FxHashMap<Cid, Vec<Box<dyn Runnable>>>,
     /// Processes by PID.
     meta_by_pid: FxHashMap<Pid, WrappedProcessMeta>,
 
@@ -47,6 +51,7 @@ impl Kernel {
             active_processes_by_priorities: BTreeMap::default(),
             sleeping_processes: BTreeMap::default(),
             awaiting_processes: FxHashMap::default(),
+            condition_processes: FxHashMap::default(),
             meta_by_pid: FxHashMap::default(),
 
             current_process_meta: None,
@@ -73,9 +78,15 @@ where
 
     kern.meta_by_pid.insert(pid, process.meta.clone());
 
+    trace!("Scheduling {}.", process);
+
     enqueue_process(&mut kern, Box::new(process));
 
     ProcessHandle::new(pid, result)
+}
+
+pub(super) fn fresh_cid() -> Cid {
+    fresh_number(&kernel().condition_processes)
 }
 
 /// Kills the process. Can be mildly expensive under some circumstances.
@@ -92,6 +103,7 @@ pub fn kill<T>(process_handle: ProcessHandle<T>, result: T) {
 /// Only a process that has not finished or returned yet may be killed.
 /// Furthermore, there must not exist any process awaiting completion of the process' children except for the process
 /// or its children themselves.
+// TODO Processes whose parents are already finished but given process is an ancestors will not be killed.
 pub fn kill_tree<T>(process_handle: ProcessHandle<T>, result: T) {
     let mut killed_pids = FxHashSet::default();
     let mut awaiting_pids = FxHashSet::default();
@@ -203,6 +215,10 @@ pub fn run_processes() {
                     drop(meta);
                     trace!("{} sleeping until {}.", process, wake_up_tick);
                     kern.sleeping_processes.push_or_insert(wake_up_tick, process);
+                } else if let Some(awaited_cid) = meta.awaited_cid {
+                    drop(meta);
+                    trace!("{} waiting for C{}.", process, awaited_cid);
+                    kern.condition_processes.push_or_insert(awaited_cid, process);
                 } else {
                     error!("{} is pending but not waiting for anything.", process)
                 }
@@ -241,6 +257,24 @@ pub(super) fn move_current_process_to_sleeping(wake_up_tick: u32) {
         meta.borrow_mut().wake_up_tick = Some(wake_up_tick);
     } else {
         error!("Tried to sleep while there is no current process.");
+    }
+}
+
+pub(super) fn signal_condition(cid: Cid) {
+    let mut kern = kernel();
+
+    // Ignoring when a condition is not waited on since it is not required and may happen instantly.
+    while let Some(process) = kern.condition_processes.pop_from_key(cid) {
+        process.borrow_meta().awaited_cid = None;
+        enqueue_process(&mut kern, process);
+    }
+}
+
+pub(super) fn move_current_process_to_waiting_for_condition(cid: Cid) {
+    if let Some(meta) = kernel().current_process_meta.as_ref() {
+        meta.borrow_mut().awaited_cid = Some(cid);
+    } else {
+        error!("Tried to wait on a condition while there is no current process.");
     }
 }
 
@@ -310,6 +344,7 @@ mod tests {
     use crate::logging::init_logging;
     use log::LevelFilter::Trace;
     use std::sync::Mutex;
+    use crate::kernel::condition::Condition;
 
     /// Reinitializes the kernel.
     pub fn reset_kernel() {
@@ -638,6 +673,101 @@ mod tests {
         run_processes();
         unsafe {
             assert_eq!(TEST_COUNTER, 11);
+        }
+    }
+
+    #[test]
+    fn test_two_processes_waiting_for_one() {
+        let lock = TEST_MUTEX.lock();
+
+        unsafe {
+            TEST_COUNTER = 0;
+        }
+        init_logging(Trace);
+        reset_kernel();
+        drop(schedule("waiting_outer", 100, async {
+            let waited = schedule("waited", 99, async {
+                unsafe {
+                    TEST_COUNTER += 1;
+                }
+                sleep(1).await;
+                unsafe {
+                    TEST_COUNTER += 1;
+                }
+                42
+            });
+            let waited_copy = waited.clone();
+            drop(schedule("waiting_inner", 98, async {
+                sleep(2).await;
+                let value = waited_copy.await;
+                unsafe {
+                    TEST_COUNTER += value;
+                }
+            }));
+            unsafe {
+                TEST_COUNTER += waited.await;
+            }
+        }));
+        run_processes();
+        unsafe {
+            assert_eq!(TEST_COUNTER, 1);
+            GAME_TIME += 1;
+        }
+        wake_up_sleeping_processes();
+        run_processes();
+        unsafe {
+            assert_eq!(TEST_COUNTER, 44);
+            GAME_TIME += 1;
+        }
+        wake_up_sleeping_processes();
+        run_processes();
+        unsafe {
+            assert_eq!(TEST_COUNTER, 86);
+        }
+    }
+
+    #[test]
+    fn test_condition() {
+        let lock = TEST_MUTEX.lock();
+
+        unsafe {
+            TEST_COUNTER = 0;
+        }
+        init_logging(Trace);
+        reset_kernel();
+        drop(schedule("waker", 100, async {
+            let mut cond = Condition::<u8>::new();
+            let cond_copy1 = cond.clone();
+            let cond_copy2 = cond.clone();
+            drop(schedule("waiter_immediate", 99, async {
+                sleep(2).await;
+                unsafe {
+                    TEST_COUNTER += cond_copy1.await
+                }
+            }));
+            drop(schedule("waiter", 100, async {
+                unsafe {
+                    TEST_COUNTER += cond_copy2.await
+                }
+            }));
+            sleep(1).await;
+            cond.signal(42);
+        }));
+        run_processes();
+        unsafe {
+            assert_eq!(TEST_COUNTER, 0);
+            GAME_TIME += 1;
+        }
+        wake_up_sleeping_processes();
+        run_processes();
+        unsafe {
+            assert_eq!(TEST_COUNTER, 42);
+            GAME_TIME += 1;
+        }
+        wake_up_sleeping_processes();
+        run_processes();
+        unsafe {
+            assert_eq!(TEST_COUNTER, 84);
         }
     }
 }

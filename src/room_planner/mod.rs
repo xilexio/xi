@@ -1963,7 +1963,7 @@ mod tests {
     use crate::room_state::{ControllerData, MineralData, RoomState, SourceData};
     use screeps::ResourceType::Keanium;
     use screeps::Terrain::Wall;
-    use screeps::{ObjectId, RoomName, Source, ROOM_SIZE};
+    use screeps::{ObjectId, RoomName, ROOM_SIZE};
 
     #[test]
     fn test_generate_some_plan() {

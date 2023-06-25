@@ -7,6 +7,7 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::task::{Context, Poll, Wake, Waker};
+use crate::kernel::condition::Cid;
 
 pub type Pid = u32;
 pub type Priority = u8;
@@ -20,6 +21,7 @@ pub struct ProcessMeta {
     pub creeps: Vec<String>,
     pub wake_up_tick: Option<u32>,
     pub awaited_pid: Option<Pid>,
+    pub awaited_cid: Option<Cid>,
 }
 
 pub type WrappedProcessMeta = Rc<RefCell<ProcessMeta>>;
@@ -49,6 +51,7 @@ impl<T> Process<T> {
             creeps: Vec::new(),
             wake_up_tick: None,
             awaited_pid: None,
+            awaited_cid: None,
         };
         let wrapped_meta = Rc::new(RefCell::new(meta));
 
