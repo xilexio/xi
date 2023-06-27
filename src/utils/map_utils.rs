@@ -1,8 +1,9 @@
+use crate::u;
 use std::collections::btree_map::Entry as BEntry;
 use std::collections::hash_map::Entry as HEntry;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{BuildHasher, Hash};
-use crate::u;
+use std::iter::once;
 
 pub trait MultiMapUtils<K, V> {
     fn push_or_insert(&mut self, key: K, value: V);
@@ -38,6 +39,41 @@ where
                     e.remove();
                 }
                 Some(result)
+            }
+            HEntry::Vacant(_) => None,
+        }
+    }
+}
+
+impl<K, V, S1, S2> MultiMapUtils<K, V> for HashMap<K, HashSet<V, S2>, S1>
+where
+    K: Eq + Hash,
+    V: Eq + Hash + Clone,
+    S1: BuildHasher,
+    S2: Default + BuildHasher,
+{
+    fn push_or_insert(&mut self, key: K, value: V) {
+        match self.entry(key) {
+            HEntry::Occupied(mut e) => {
+                e.get_mut().insert(value);
+            }
+            HEntry::Vacant(e) => {
+                e.insert(once(value).collect());
+            }
+        }
+    }
+
+    fn pop_from_key(&mut self, key: K) -> Option<V> {
+        match self.entry(key) {
+            HEntry::Occupied(mut e) => {
+                let e_mut = e.get_mut();
+
+                let value = u!(e_mut.iter().next()).clone();
+                e_mut.remove(&value);
+                if e.get().is_empty() {
+                    e.remove();
+                }
+                Some(value)
             }
             HEntry::Vacant(_) => None,
         }

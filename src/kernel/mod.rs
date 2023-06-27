@@ -1,5 +1,6 @@
 use crate::fresh_number::fresh_number;
 use crate::game_time::game_tick;
+use crate::kernel::condition::Cid;
 use crate::kernel::process::{Pid, Priority, Process, WrappedProcessMeta};
 use crate::kernel::process_handle::ProcessHandle;
 use crate::kernel::runnable::Runnable;
@@ -14,13 +15,12 @@ use screeps::game;
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::task::Poll;
-use crate::kernel::condition::Cid;
 
+pub mod condition;
 pub mod process;
 pub mod process_handle;
 pub mod runnable;
 pub mod sleep;
-pub mod condition;
 
 /// A singleton executor and reactor. To work correctly, only one Kernel may be used at a time and it must be used
 /// from one thread.
@@ -85,10 +85,6 @@ where
     ProcessHandle::new(pid, result)
 }
 
-pub(super) fn fresh_cid() -> Cid {
-    fresh_number(&kernel().condition_processes)
-}
-
 /// Kills the process. Can be mildly expensive under some circumstances.
 /// Only a process that has not finished or returned yet may be killed.
 pub fn kill<T>(process_handle: ProcessHandle<T>, result: T) {
@@ -150,8 +146,8 @@ fn kill_without_result_or_cleanup(pid: Pid) {
         let vec_with_process = u!(kern.sleeping_processes.get_mut(&wake_up_tick));
         // Not retain to make use of short-circuit and get the process.
         let index = u!(vec_with_process
-        .iter()
-        .position(|process| process.borrow_meta().pid == pid));
+            .iter()
+            .position(|process| process.borrow_meta().pid == pid));
         let process = vec_with_process.remove(index);
         if vec_with_process.is_empty() {
             kern.sleeping_processes.remove(&wake_up_tick);
@@ -162,8 +158,8 @@ fn kill_without_result_or_cleanup(pid: Pid) {
         let vec_with_process = u!(kern.awaiting_processes.get_mut(&awaited_pid));
         // Not retain to make use of short-circuit and get the process.
         let index = u!(vec_with_process
-        .iter()
-        .position(|process| process.borrow_meta().pid == pid));
+            .iter()
+            .position(|process| process.borrow_meta().pid == pid));
         let process = vec_with_process.remove(index);
         if vec_with_process.is_empty() {
             kern.awaiting_processes.remove(&awaited_pid);
@@ -176,8 +172,8 @@ fn kill_without_result_or_cleanup(pid: Pid) {
         let vec_with_process = u!(kern.active_processes_by_priorities.get_mut(&priority));
         // Not retain to make use of short-circuit and get the process.
         let index = u!(vec_with_process
-        .iter()
-        .position(|process| process.borrow_meta().pid == pid));
+            .iter()
+            .position(|process| process.borrow_meta().pid == pid));
         let process = vec_with_process.remove(index);
         if vec_with_process.is_empty() {
             kern.active_processes_by_priorities.remove(&priority);
@@ -264,9 +260,11 @@ pub(super) fn signal_condition(cid: Cid) {
     let mut kern = kernel();
 
     // Ignoring when a condition is not waited on since it is not required and may happen instantly.
-    while let Some(process) = kern.condition_processes.pop_from_key(cid) {
-        process.borrow_meta().awaited_cid = None;
-        enqueue_process(&mut kern, process);
+    if let Some(processes) = kern.condition_processes.remove(&cid) {
+        for process in processes {
+            process.borrow_meta().awaited_cid = None;
+            enqueue_process(&mut kern, process);
+        }
     }
 }
 
@@ -278,17 +276,41 @@ pub(super) fn move_current_process_to_waiting_for_condition(cid: Cid) {
     }
 }
 
-/// Perform actions made after a process has ended.
+/// Perform actions made after a process has ended and was removed from one of kernel process collections.
 fn cleanup_process(pid: Pid) {
-    let maybe_awaiting_processes = kernel().awaiting_processes.remove(&pid);
+    let mut kern = kernel();
+
+    let maybe_awaiting_processes = kern.awaiting_processes.remove(&pid);
     if let Some(awaiting_processes) = maybe_awaiting_processes {
         for awaiting_process in awaiting_processes {
             trace!("Waking up {}.", awaiting_process);
             awaiting_process.borrow_meta().awaited_pid = None;
-            enqueue_process(&mut kernel(), awaiting_process);
+            enqueue_process(&mut kern, awaiting_process);
         }
     }
-    kernel().meta_by_pid.remove(&pid);
+
+    let meta = u!(kern.meta_by_pid.remove(&pid));
+
+    // TODO Implement in kill somewhere cleanup of conditions no process is awaiting.
+    // let meta_ref = meta.borrow();
+    // // If the process was waiting on a condition, we need to remove it from there.
+    // if let Some(awaited_cid) = meta_ref.awaited_cid {
+    //     drop(meta_ref);
+    //     match kern.condition_processes.entry(awaited_cid) {
+    //         Entry::Occupied(mut occupied_entry) => {
+    //             if occupied_entry.get().len() == 1 {
+    //                 occupied_entry.remove();
+    //             } else {
+    //                 occupied_entry
+    //                     .get_mut()
+    //                     .retain(|process| process.borrow_meta().pid != pid);
+    //             }
+    //         }
+    //         Entry::Vacant(_) => {
+    //             unreachable!();
+    //         }
+    //     }
+    // }
 }
 
 fn enqueue_process(kern: &mut MappedMutexGuard<RawMutex, Kernel>, process: Box<dyn Runnable>) {
@@ -339,12 +361,12 @@ fn kernel() -> MappedMutexGuard<'static, RawMutex, Kernel> {
 #[cfg(test)]
 mod tests {
     use crate::game_time::GAME_TIME;
+    use crate::kernel::condition::Condition;
     use crate::kernel::sleep::sleep;
     use crate::kernel::{kill, run_processes, schedule, wake_up_sleeping_processes, Kernel, KERNEL};
     use crate::logging::init_logging;
     use log::LevelFilter::Trace;
     use std::sync::Mutex;
-    use crate::kernel::condition::Condition;
 
     /// Reinitializes the kernel.
     pub fn reset_kernel() {
@@ -736,19 +758,15 @@ mod tests {
         init_logging(Trace);
         reset_kernel();
         drop(schedule("waker", 100, async {
-            let mut cond = Condition::<u8>::new();
+            let cond = Condition::<u8>::default();
             let cond_copy1 = cond.clone();
             let cond_copy2 = cond.clone();
             drop(schedule("waiter_immediate", 99, async {
                 sleep(2).await;
-                unsafe {
-                    TEST_COUNTER += cond_copy1.await
-                }
+                unsafe { TEST_COUNTER += cond_copy1.await }
             }));
             drop(schedule("waiter", 100, async {
-                unsafe {
-                    TEST_COUNTER += cond_copy2.await
-                }
+                unsafe { TEST_COUNTER += cond_copy2.await }
             }));
             sleep(1).await;
             cond.signal(42);

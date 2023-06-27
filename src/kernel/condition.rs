@@ -1,10 +1,15 @@
-use crate::kernel::{fresh_cid, move_current_process_to_waiting_for_condition, signal_condition};
+use crate::game_time::game_tick;
+use crate::kernel::{move_current_process_to_waiting_for_condition, signal_condition};
 use log::trace;
 use std::cell::RefCell;
 use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll};
+
+thread_local! {
+    static NEXT_CID: RefCell<Cid> = RefCell::new(0);
+}
 
 /// Condition Identifier.
 pub type Cid = u32;
@@ -16,15 +21,20 @@ pub struct Condition<T> {
     value: Rc<RefCell<Option<T>>>,
 }
 
-impl<T> Condition<T> {
-    pub fn new() -> Self {
+impl<T> Default for Condition<T> {
+    fn default() -> Self {
+        let cid = fresh_cid();
+
         Condition {
-            cid: fresh_cid(),
+            cid,
             value: Rc::new(RefCell::new(None)),
         }
     }
+}
 
-    pub fn signal(&mut self, value: T) {
+impl<T> Condition<T> {
+    /// Wakes up all processes waiting on the condition.
+    pub fn signal(&self, value: T) {
         self.value.replace(Some(value));
         signal_condition(self.cid);
     }
@@ -44,9 +54,70 @@ where
                 Poll::Pending
             }
             Some(x) => {
-                trace!("Condition ready.",);
+                trace!("Condition ready.");
                 Poll::Ready(x.clone())
             }
         }
     }
+}
+
+/// A condition which can be repeatedly waited on. Waits even if there is a value present.
+#[derive(Clone)]
+pub struct Broadcast<T> {
+    cid: Cid,
+    value: Rc<RefCell<Option<(T, u32)>>>,
+}
+
+impl<T> Default for Broadcast<T> {
+    fn default() -> Self {
+        let cid = fresh_cid();
+
+        Broadcast {
+            cid,
+            value: Rc::new(RefCell::new(None)),
+        }
+    }
+}
+
+impl<T> Broadcast<T> {
+    /// Wakes up all processes waiting on the broadcast.
+    pub fn broadcast(&self, value: T) {
+        self.value.replace(Some((value, game_tick())));
+        signal_condition(self.cid);
+    }
+}
+
+impl<T> Future for Broadcast<T>
+where
+    T: Clone,
+{
+    type Output = T;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match self.value.borrow().as_ref() {
+            None => {
+                trace!("Broadcast pending (no data).");
+                move_current_process_to_waiting_for_condition(self.cid);
+                Poll::Pending
+            }
+            Some((value, tick)) => {
+                if *tick == game_tick() {
+                    trace!("Broadcast ready.");
+                    Poll::Ready(value.clone())
+                } else {
+                    trace!("Broadcast pending (old data).");
+                    move_current_process_to_waiting_for_condition(self.cid);
+                    Poll::Pending
+                }
+            }
+        }
+    }
+}
+
+fn fresh_cid() -> Cid {
+    // Assuming this will never overflow.
+    NEXT_CID.with_borrow_mut(|cid| {
+        *cid += 1;
+        *cid
+    })
 }

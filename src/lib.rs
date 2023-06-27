@@ -4,6 +4,7 @@
 #![feature(once_cell)]
 #![feature(core_intrinsics)]
 #![feature(btree_cursors)]
+#![feature(local_key_cell_methods)]
 
 use wasm_bindgen::prelude::wasm_bindgen;
 

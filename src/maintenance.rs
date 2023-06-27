@@ -1,10 +1,14 @@
+use crate::creep::CreepRole;
 use crate::kernel::sleep::sleep;
 use crate::kernel::{kill_tree, schedule};
-use crate::priorities::{MINING_PRIORITY, ROOM_MAINTENANCE_PRIORITY};
+use crate::priorities::{MINER_SPAWN_PRIORITY, MINING_PRIORITY, ROOM_MAINTENANCE_PRIORITY, SPAWNING_CREEPS_PRIORITY};
+use crate::resources::room_resources;
 use crate::room_state::room_states::with_room_state;
+use crate::spawning::{schedule_creep, spawn_room_creeps, update_spawn_list, CreepBody, PreferredSpawn, SpawnRequest};
 use crate::u;
 use log::debug;
 use rustc_hash::{FxHashMap, FxHashSet};
+use screeps::Part::{Carry, Move, Work};
 use screeps::{game, RoomName};
 use std::iter::once;
 
@@ -20,7 +24,7 @@ pub async fn maintain_rooms() {
             room_processes.entry(room_name).or_insert_with(|| {
                 schedule(
                     &format!("room_process_{}", room_name),
-                    ROOM_MAINTENANCE_PRIORITY - 1,
+                    ROOM_MAINTENANCE_PRIORITY - 2,
                     maintain_room(room_name),
                 )
             });
@@ -28,6 +32,7 @@ pub async fn maintain_rooms() {
 
         for room_name in lost_rooms.into_iter() {
             let room_process = u!(room_processes.remove(&room_name));
+            // TODO There are still many problems with kill_tree and releasing resources.
             kill_tree(room_process, ());
         }
 
@@ -43,6 +48,7 @@ struct Miner {
 async fn maintain_room(room_name: RoomName) {
     // TODO the sources are constant, but link/container/drop is not
 
+    // Collecting some initial data and waiting until the room state is set.
     let number_of_sources = loop {
         if let Some(number_of_sources) = with_room_state(room_name, |room_state| room_state.sources.len()) {
             break number_of_sources;
@@ -50,6 +56,22 @@ async fn maintain_room(room_name: RoomName) {
             sleep(1).await;
         }
     };
+
+    with_room_state(room_name, |room_state| {
+        let structures_broadcast = room_state.structures_broadcast.clone();
+        schedule(
+            &format!("update_structures_{}", room_name),
+            ROOM_MAINTENANCE_PRIORITY - 1,
+            async move {
+                loop {
+                    update_spawn_list(room_name);
+
+                    structures_broadcast.clone().await;
+                    sleep(1).await;
+                }
+            },
+        )
+    });
 
     let miners: Vec<Option<u8>> = once(None).cycle().take(number_of_sources).collect();
 
@@ -75,6 +97,17 @@ async fn maintain_room(room_name: RoomName) {
         }
     });
 
+    drop(schedule(
+        &format!("spawn_creeps_{}", room_name),
+        SPAWNING_CREEPS_PRIORITY,
+        async move {
+            loop {
+                spawn_room_creeps(room_name);
+                sleep(1).await;
+            }
+        },
+    ));
+
     loop {
         debug!("Maintaining room {}.", room_name);
 
@@ -83,9 +116,65 @@ async fn maintain_room(room_name: RoomName) {
 }
 
 async fn mine_source(room_name: RoomName, source_ix: usize) {
+    // Initialization in which spawns for next SPAWN_SCHEDULE_TICKS are scheduled.
+    let base_spawn_request = u!(with_room_state(room_name, |room_state| SpawnRequest {
+        role: CreepRole::Miner,
+        body: miner_body(room_name),
+        priority: MINER_SPAWN_PRIORITY,
+        preferred_spawn: room_state
+            .spawns
+            .iter()
+            .map(|spawn_data| PreferredSpawn {
+                id: spawn_data.id,
+                directions: Vec::new(),
+                extra_cost: 0
+            })
+            .collect(),
+        preferred_tick: (0, 0),
+    }));
+
+    debug!("!!! {:?}", base_spawn_request.preferred_spawn);
+
+    // TODO On structures change, if spawns changed, manually resetting base spawn request, cancelling all requests and
+    //      adding them again.
+    // TODO The same if miner dies.
+    // TODO This requires the ability to manually check broadcasts if they have new data from last time.
+    // TODO Body should depend on max extension fill and also on current resources. Later, also on statistics about
+    //      energy income, but this applies mostly before the storage is online.
     loop {
+        // Scheduling a spawn if needed.
+        let mut spawn_request = base_spawn_request.clone();
+        spawn_request.preferred_tick = (game::time(), game::time() + 100);
+        schedule_creep(room_name, spawn_request);
 
+        // Getting a miner if the current one is dead.
 
+        // Mining.
+
+        // Transporting the energy in a way depending on room plan.
+        // Ordering a hauler to get dropped energy.
+
+        // Ordering a hauler to get energy from the container.
+
+        // Storing the energy into the link and sending it if the next batch would not fit.
+
+        // The source is exhausted for now, so sleeping until it is regenerated.
+
+        // Sleeping for a single tick.
         sleep(1).await;
     }
+}
+
+fn miner_body(room_name: RoomName) -> CreepBody {
+    let resources = room_resources(room_name);
+
+    let parts = if resources.spawn_energy >= 600 {
+        vec![Work, Work, Work, Work, Move, Move, Carry, Carry]
+    } else if resources.spawn_energy >= 300 {
+        vec![Work, Work, Move, Carry]
+    } else {
+        vec![Work, Move]
+    };
+
+    CreepBody::new(parts)
 }

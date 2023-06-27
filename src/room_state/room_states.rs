@@ -12,9 +12,9 @@ thread_local! {
 
 pub fn with_room_state<F, R>(room_name: RoomName, f: F) -> Option<R>
 where
-    F: Fn(&RoomState) -> R,
+    F: FnOnce(&mut RoomState) -> R,
 {
-    ROOM_STATES.with(|states| states.borrow().get(&room_name).map(f))
+    ROOM_STATES.with(|states| states.borrow_mut().get_mut(&room_name).map(f))
 }
 
 pub fn replace_room_state<F, R>(room_name: RoomName, mut f: F) -> R

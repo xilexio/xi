@@ -1,9 +1,8 @@
+use rustc_hash::{FxHashMap, FxHashSet};
 use crate::room_state::room_states::replace_room_state;
-use crate::room_state::{ControllerData, MineralData, RoomDesignation, RoomState, SourceData};
-use screeps::{
-    find, game, HasTypedId, Mineral, ObjectId, OwnedStructureProperties, Position, ResourceType, RoomName, Source,
-    StructureController,
-};
+use crate::room_state::{ControllerData, MineralData, RoomDesignation, RoomState, SourceData, SpawnData};
+use screeps::{find, game, HasPosition, HasTypedId, Mineral, ObjectId, OwnedStructureProperties, Position, ResourceType, RoomName, Source, StructureController};
+use screeps::StructureType::Spawn;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -26,7 +25,7 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
     if let Some(controller) = room.controller() {
         state.rcl = controller.level();
         let id: ObjectId<StructureController> = controller.id();
-        let pos: Position = controller.pos().into();
+        let pos: Position = controller.pos();
         state.controller = Some(ControllerData {
             id,
             xy: pos.xy(),
@@ -45,7 +44,7 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
     state.sources = Vec::new();
     for source in room.find(find::SOURCES, None) {
         let id: ObjectId<Source> = source.id();
-        let pos: Position = source.pos().into();
+        let pos: Position = source.pos();
         state.sources.push(SourceData {
             id,
             xy: pos.xy(),
@@ -55,7 +54,7 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
     }
     for mineral in room.find(find::MINERALS, None) {
         let id: ObjectId<Mineral> = mineral.id();
-        let pos: Position = mineral.pos().into();
+        let pos: Position = mineral.pos();
         let mineral_type: ResourceType = mineral.mineral_type();
         state.mineral = Some(MineralData {
             id,
@@ -63,7 +62,44 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
             mineral_type,
         });
     }
+    // TODO Only needed the first time.
     state.terrain = game::map::get_room_terrain(room_name).into();
-    // TODO structures
+    let mut structures = FxHashMap::default();
+    state.spawns.clear();
+    let mut structures_changed = false;
+    for structure in room.find(find::STRUCTURES, None) {
+        let structure_type = structure.as_structure().structure_type();
+        let xy = structure.pos().xy();
+        structures.entry(structure_type).or_insert_with(FxHashSet::default).insert(xy);
+
+        if state.designation == RoomDesignation::Owned && structure_type == Spawn {
+            state.spawns.push(SpawnData::new(structure.as_structure().id().into_type(), xy));
+        }
+
+        if let Some(xys) = state.structures.get(&structure_type) {
+            if !xys.contains(&xy) {
+                structures_changed = true;
+            }
+        } else {
+            structures_changed = true;
+        }
+    }
+    if !structures_changed {
+        for (structure_type, state_xys) in state.structures.iter() {
+            if let Some(xys) = structures.get(structure_type) {
+                if xys.len() != state_xys.len() {
+                    structures_changed = true;
+                    break;
+                }
+            } else {
+                structures_changed = true;
+                break;
+            }
+        }
+    }
+    if structures_changed {
+        // Informing waiting processes that the structure changed.
+        state.structures_broadcast.broadcast(());
+    }
     Ok(())
 }

@@ -3,6 +3,7 @@ use crate::algorithms::room_matrix::RoomMatrix;
 use crate::algorithms::room_matrix_slice::RoomMatrixSlice;
 use crate::room_planner::packed_tile_structures::{MainStructureType, PackedTileStructures, PackedTileStructuresError};
 use crate::room_state::StructuresMap;
+use crate::utils::map_utils::MultiMapUtils;
 use log::debug;
 use modular_bitfield::specifiers::B4;
 use modular_bitfield::{bitfield, BitfieldSpecifier};
@@ -136,7 +137,7 @@ impl RoomMatrix<PlannedTile> {
         let mut result = FxHashMap::default();
         for (xy, tile) in self.iter() {
             for structure_type in tile.iter() {
-                result.entry(structure_type).or_insert(Vec::new()).push(xy);
+                result.push_or_insert(structure_type, xy);
             }
         }
         result
@@ -236,7 +237,10 @@ impl Serialize for PlannedTile {
 }
 
 impl<'de> Deserialize<'de> for PlannedTile {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         let bytes = <[u8; 2]>::deserialize(deserializer)?;
         Ok(PlannedTile::from_bytes(bytes))
     }

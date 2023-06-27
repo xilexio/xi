@@ -2,11 +2,12 @@ use derive_more::Constructor;
 use crate::room_state::packed_terrain::PackedTerrain;
 use js_sys::{Object, Reflect};
 use log::info;
-use screeps::{game, Mineral, ObjectId, ResourceType, RoomName, RoomXY, Source, StructureController, StructureType};
+use screeps::{game, Mineral, ObjectId, ResourceType, RoomName, RoomXY, Source, StructureController, StructureSpawn, StructureType};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
+use crate::kernel::condition::{Broadcast};
 use crate::room_planner::plan::Plan;
 use crate::room_planner::RoomPlanner;
 
@@ -15,7 +16,6 @@ pub mod room_states;
 pub mod scan_room;
 pub mod scan_rooms;
 
-// TODO Make it serializable and put in memory in serialized form.
 #[derive(Deserialize, Serialize)]
 pub struct RoomState {
     pub room_name: RoomName,
@@ -42,8 +42,11 @@ pub struct RoomState {
     // pub fast_filler: Option<FastFiller>,
     // Information about extensions outside of fast filler, ordered by the distance to the storage.
     // pub outer_extensions: Option<Vec<Extension>>,
-    // Information about types and numbers of creeps to be regularly spawned.
-    // pub spawn_schedule: Option<SpawnSchedule>,
+    #[serde(skip)]
+    pub spawns: Vec<SpawnData>,
+    /// Broadcast signalled each time the set of structures in the room changes.
+    #[serde(skip)]
+    pub structures_broadcast: Broadcast<()>,
 }
 
 #[derive(Deserialize, Serialize, Copy, Clone, Eq, PartialEq, Debug)]
@@ -79,7 +82,13 @@ pub struct MineralData {
     pub mineral_type: ResourceType,
 }
 
-pub type StructuresMap = FxHashMap<StructureType, Vec<RoomXY>>;
+#[derive(Debug, Clone, Constructor)]
+pub struct SpawnData {
+    pub id: ObjectId<StructureSpawn>,
+    pub xy: RoomXY,
+}
+
+pub type StructuresMap = FxHashMap<StructureType, FxHashSet<RoomXY>>;
 
 #[wasm_bindgen]
 pub fn set_room_blueprint(room_name: String, blueprint: JsValue) {
@@ -119,6 +128,8 @@ impl RoomState {
             structures: FxHashMap::default(),
             plan: None,
             planner: None,
+            spawns: Vec::new(),
+            structures_broadcast: Broadcast::default(),
         }
     }
 }

@@ -66,9 +66,8 @@ pub async fn construct_structures() {
                     for construction_site_data in room_construction_sites.iter() {
                         if !current_rcl_structures
                             .get(&construction_site_data.structure_type)
-                            .map(Vec::as_slice)
-                            .unwrap_or(&[])
-                            .contains(&construction_site_data.xy)
+                            .map(|xys| xys.contains(&construction_site_data.xy))
+                            .unwrap_or(false)
                         {
                             // TODO Remove them only if they are not present in the RCL8 plan, otherwise just ignore
                             //      until required RCL.
@@ -84,18 +83,12 @@ pub async fn construct_structures() {
                         let structure_xys = room_state
                             .structures
                             .get(&structure_type)
-                            .map(Vec::as_slice)
-                            .unwrap_or(&[])
-                            .iter()
-                            .copied()
-                            .collect::<FxHashSet<_>>();
+                            .map(|xys| xys.clone())
+                            .unwrap_or_else(|| FxHashSet::default());
                         let structure_current_rcl_xys = current_rcl_structures
                             .get(&structure_type)
-                            .map(Vec::as_slice)
-                            .unwrap_or(&[])
-                            .iter()
-                            .copied()
-                            .collect::<FxHashSet<_>>();
+                            .map(|xys| xys.clone())
+                            .unwrap_or_else(|| FxHashSet::default());
 
                         // Removing extra structures.
                         for &xy in structure_xys.iter() {
