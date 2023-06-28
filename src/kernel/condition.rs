@@ -17,7 +17,7 @@ pub type Cid = u32;
 /// A generic condition to wait on. Can be awaited until `condition.signal(value)` is called.
 #[derive(Clone)]
 pub struct Condition<T> {
-    cid: Cid,
+    pub cid: Cid,
     value: Rc<RefCell<Option<T>>>,
 }
 
@@ -66,6 +66,7 @@ where
 pub struct Broadcast<T> {
     cid: Cid,
     value: Rc<RefCell<Option<(T, u32)>>>,
+    last_try_tick: u32,
 }
 
 impl<T> Default for Broadcast<T> {
@@ -75,15 +76,34 @@ impl<T> Default for Broadcast<T> {
         Broadcast {
             cid,
             value: Rc::new(RefCell::new(None)),
+            last_try_tick: 0,
         }
     }
 }
 
-impl<T> Broadcast<T> {
+impl<T> Broadcast<T>
+where
+    T: Clone,
+{
     /// Wakes up all processes waiting on the broadcast.
     pub fn broadcast(&self, value: T) {
         self.value.replace(Some((value, game_tick())));
         signal_condition(self.cid);
+    }
+
+    /// Checks if the value changed since last try. Will not detect more than one broadcast per tick.
+    pub fn check(&mut self) -> Option<T> {
+        match self.value.borrow().as_ref() {
+            None => None,
+            Some((value, tick)) => {
+                if *tick > self.last_try_tick {
+                    self.last_try_tick = *tick;
+                    Some(value.clone())
+                } else {
+                    None
+                }
+            }
+        }
     }
 }
 

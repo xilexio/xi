@@ -116,52 +116,62 @@ async fn maintain_room(room_name: RoomName) {
 }
 
 async fn mine_source(room_name: RoomName, source_ix: usize) {
-    // Initialization in which spawns for next SPAWN_SCHEDULE_TICKS are scheduled.
-    let base_spawn_request = u!(with_room_state(room_name, |room_state| SpawnRequest {
-        role: CreepRole::Miner,
-        body: miner_body(room_name),
-        priority: MINER_SPAWN_PRIORITY,
-        preferred_spawn: room_state
-            .spawns
-            .iter()
-            .map(|spawn_data| PreferredSpawn {
-                id: spawn_data.id,
-                directions: Vec::new(),
-                extra_cost: 0
-            })
-            .collect(),
-        preferred_tick: (0, 0),
+    let mut structures_broadcast = u!(with_room_state(room_name, |room_state| {
+        room_state.structures_broadcast.clone()
     }));
 
-    debug!("!!! {:?}", base_spawn_request.preferred_spawn);
-
-    // TODO On structures change, if spawns changed, manually resetting base spawn request, cancelling all requests and
-    //      adding them again.
-    // TODO The same if miner dies.
-    // TODO This requires the ability to manually check broadcasts if they have new data from last time.
-    // TODO Body should depend on max extension fill and also on current resources. Later, also on statistics about
-    //      energy income, but this applies mostly before the storage is online.
     loop {
-        // Scheduling a spawn if needed.
-        let mut spawn_request = base_spawn_request.clone();
-        spawn_request.preferred_tick = (game::time(), game::time() + 100);
-        schedule_creep(room_name, spawn_request);
+        // A schema for spawn request that will later have its tick intervals modified.
+        let base_spawn_request = u!(with_room_state(room_name, |room_state| SpawnRequest {
+            role: CreepRole::Miner,
+            body: miner_body(room_name),
+            priority: MINER_SPAWN_PRIORITY,
+            preferred_spawn: room_state
+                .spawns
+                .iter()
+                .map(|spawn_data| PreferredSpawn {
+                    id: spawn_data.id,
+                    directions: Vec::new(),
+                    extra_cost: 0
+                })
+                .collect(),
+            preferred_tick: (0, 0),
+        }));
 
-        // Getting a miner if the current one is dead.
+        debug!("!!! {:?}", base_spawn_request.preferred_spawn);
 
-        // Mining.
+        // TODO On structures change, if spawns changed, manually resetting base spawn request, cancelling all requests and
+        //      adding them again.
+        // TODO The same if miner dies.
+        // TODO Body should depend on max extension fill and also on current resources. Later, also on statistics about
+        //      energy income, but this applies mostly before the storage is online.
+        loop {
+            // Scheduling missing spawn requests for the next SPAWN_SCHEDULE_TICKS.
+            let mut spawn_request = base_spawn_request.clone();
+            spawn_request.preferred_tick = (game::time(), game::time() + 100);
+            schedule_creep(room_name, spawn_request);
 
-        // Transporting the energy in a way depending on room plan.
-        // Ordering a hauler to get dropped energy.
+            // Getting a miner if the current one is dead.
 
-        // Ordering a hauler to get energy from the container.
+            // Mining.
 
-        // Storing the energy into the link and sending it if the next batch would not fit.
+            // Transporting the energy in a way depending on room plan.
+            // Ordering a hauler to get dropped energy.
 
-        // The source is exhausted for now, so sleeping until it is regenerated.
+            // Ordering a hauler to get energy from the container.
 
-        // Sleeping for a single tick.
-        sleep(1).await;
+            // Storing the energy into the link and sending it if the next batch would not fit.
+
+            // The source is exhausted for now, so sleeping until it is regenerated.
+
+            // Sleeping for a single tick.
+            sleep(1).await;
+
+            // Reinitializing the process if there are changes in structures.
+            if structures_broadcast.check().is_some() {
+                break;
+            }
+        }
     }
 }
 

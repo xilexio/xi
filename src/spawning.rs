@@ -145,6 +145,26 @@ fn find_spawn_tick(request: &SpawnRequest, schedule: &BTreeMap<u32, SpawnEvent>)
     }
 }
 
+/// Cancels scheduled creep. Requires iterating over each scheduled spawn in a room. Does not cancel creeps that are
+/// already spawning.
+pub fn cancel_scheduled_creep(room_name: RoomName, condition: Condition<Option<CreepRef>>) {
+    with_spawn_schedule(room_name, |room_spawn_schedule| {
+        for (_, spawn_schedule) in room_spawn_schedule.scheduled_spawns.iter_mut() {
+            let mut cancelled_spawn_tick = None;
+            for (spawn_tick, spawn_event) in spawn_schedule.iter() {
+                if spawn_event.condition.cid == condition.cid {
+                    cancelled_spawn_tick = Some(*spawn_tick);
+                    break;
+                }
+            }
+            if let Some(spawn_tick) = cancelled_spawn_tick {
+                spawn_schedule.remove(&spawn_tick);
+                break;
+            }
+        }
+    })
+}
+
 /// Issue the intents to spawn creeps in given room according to the schedule.
 pub fn spawn_room_creeps(room_name: RoomName) {
     // let resources = room_resources(room_name);
