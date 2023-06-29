@@ -1,8 +1,12 @@
-use rustc_hash::{FxHashMap, FxHashSet};
 use crate::room_state::room_states::replace_room_state;
 use crate::room_state::{ControllerData, MineralData, RoomDesignation, RoomState, SourceData, SpawnData};
-use screeps::{find, game, HasPosition, HasTypedId, Mineral, ObjectId, OwnedStructureProperties, Position, ResourceType, RoomName, Source, StructureController};
+use crate::u;
+use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::StructureType::Spawn;
+use screeps::{
+    find, game, HasPosition, HasTypedId, Mineral, ObjectId, OwnedStructureProperties, Position, ResourceType, RoomName,
+    Source, StructureController,
+};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -44,11 +48,15 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
     state.sources = Vec::new();
     for source in room.find(find::SOURCES, None) {
         let id: ObjectId<Source> = source.id();
-        let pos: Position = source.pos();
+        let xy = source.pos().xy();
+        let work_xy = state
+            .plan
+            .as_ref()
+            .map(|plan| u!(plan.sources.iter().find(|source_data| source_data.source_xy == xy)).work_xy);
         state.sources.push(SourceData {
             id,
-            xy: pos.xy(),
-            work_xy: None,
+            xy,
+            work_xy,
             link_xy: None,
         });
     }
@@ -70,10 +78,15 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
     for structure in room.find(find::STRUCTURES, None) {
         let structure_type = structure.as_structure().structure_type();
         let xy = structure.pos().xy();
-        structures.entry(structure_type).or_insert_with(FxHashSet::default).insert(xy);
+        structures
+            .entry(structure_type)
+            .or_insert_with(FxHashSet::default)
+            .insert(xy);
 
         if state.designation == RoomDesignation::Owned && structure_type == Spawn {
-            state.spawns.push(SpawnData::new(structure.as_structure().id().into_type(), xy));
+            state
+                .spawns
+                .push(SpawnData::new(structure.as_structure().id().into_type(), xy));
         }
 
         if let Some(xys) = state.structures.get(&structure_type) {

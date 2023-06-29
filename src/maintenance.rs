@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use crate::creep::CreepRole;
 use crate::kernel::sleep::sleep;
 use crate::kernel::{kill_tree, schedule};
@@ -9,8 +10,11 @@ use crate::u;
 use log::debug;
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::Part::{Carry, Move, Work};
-use screeps::{game, RoomName};
+use screeps::{game, Position, RoomName};
 use std::iter::once;
+use crate::config::SPAWN_SCHEDULE_TICKS;
+use crate::game_time::game_tick;
+use crate::travel::{travel, TravelSpec};
 
 pub async fn maintain_rooms() {
     let mut room_processes = FxHashMap::default();
@@ -48,7 +52,7 @@ struct Miner {
 async fn maintain_room(room_name: RoomName) {
     // TODO the sources are constant, but link/container/drop is not
 
-    // Collecting some initial data and waiting until the room state is set.
+    // Collecting some constant data and waiting until the room state is set.
     let number_of_sources = loop {
         if let Some(number_of_sources) = with_room_state(room_name, |room_state| room_state.sources.len()) {
             break number_of_sources;
@@ -119,6 +123,9 @@ async fn mine_source(room_name: RoomName, source_ix: usize) {
     let mut structures_broadcast = u!(with_room_state(room_name, |room_state| {
         room_state.structures_broadcast.clone()
     }));
+    let mut spawn_conditions = VecDeque::new();
+    let mut current_creep = None;
+    // let mut prespawned_creep = None;
 
     loop {
         // A schema for spawn request that will later have its tick intervals modified.
@@ -138,6 +145,12 @@ async fn mine_source(room_name: RoomName, source_ix: usize) {
             preferred_tick: (0, 0),
         }));
 
+        let source_data = u!(with_room_state(room_name, |room_state| {
+            room_state.sources[source_ix]
+        }));
+
+        let work_xy = u!(source_data.work_xy);
+
         debug!("!!! {:?}", base_spawn_request.preferred_spawn);
 
         // TODO On structures change, if spawns changed, manually resetting base spawn request, cancelling all requests and
@@ -147,25 +160,47 @@ async fn mine_source(room_name: RoomName, source_ix: usize) {
         //      energy income, but this applies mostly before the storage is online.
         loop {
             // Scheduling missing spawn requests for the next SPAWN_SCHEDULE_TICKS.
-            let mut spawn_request = base_spawn_request.clone();
-            spawn_request.preferred_tick = (game::time(), game::time() + 100);
-            schedule_creep(room_name, spawn_request);
+            while spawn_conditions.back().map(|(max_preferred_tick, _)| *max_preferred_tick <= SPAWN_SCHEDULE_TICKS).unwrap_or(true) {
+                let mut spawn_request = base_spawn_request.clone();
+                let min_preferred_tick = game_tick();
+                let max_preferred_tick = game_tick() + 100; // TODO
+                spawn_request.preferred_tick = (min_preferred_tick, max_preferred_tick);
+                // If the scheduling failed then trying again later.
+                if let Some(condition) = schedule_creep(room_name, spawn_request) {
+                    spawn_conditions.push_back((max_preferred_tick, condition));
+                }
+            }
 
             // Getting a miner if the current one is dead.
+            if let Some(miner) = current_creep.as_ref() {
+                // Moving towards the location.
+                // Owned room is expected to have `work_xy` set.
+                let travel_spec = TravelSpec {
+                    target: Position::new(work_xy.x, work_xy.y, room_name),
+                    range: 0,
+                };
+                travel(miner, travel_spec).await;
 
-            // Mining.
+                // Mining.
 
-            // Transporting the energy in a way depending on room plan.
-            // Ordering a hauler to get dropped energy.
+                // Transporting the energy in a way depending on room plan.
+                // Ordering a hauler to get dropped energy.
 
-            // Ordering a hauler to get energy from the container.
+                // Ordering a hauler to get energy from the container.
 
-            // Storing the energy into the link and sending it if the next batch would not fit.
+                // Storing the energy into the link and sending it if the next batch would not fit.
 
-            // The source is exhausted for now, so sleeping until it is regenerated.
+                // The source is exhausted for now, so sleeping until it is regenerated.
 
-            // Sleeping for a single tick.
-            sleep(1).await;
+                // Sleeping for a single tick.
+                sleep(1).await;
+            } else if let Some((_, spawn_condition)) = spawn_conditions.pop_front() {
+                // Assigning the current creep and immediately retrying.
+                current_creep = spawn_condition.await;
+            } else {
+                // Retrying next tick.
+                sleep(1).await;
+            }
 
             // Reinitializing the process if there are changes in structures.
             if structures_broadcast.check().is_some() {

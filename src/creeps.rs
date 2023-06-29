@@ -5,6 +5,7 @@ use screeps::game;
 use std::cell::RefCell;
 use std::ops::DerefMut;
 use std::rc::Rc;
+use crate::travel::TravelState;
 
 pub type CreepRef = Rc<RefCell<Creep>>;
 
@@ -12,18 +13,14 @@ thread_local! {
     static CREEPS: RefCell<FxHashMap<CreepRole, FxHashMap<u32, CreepRef>>> = RefCell::new(FxHashMap::default());
 }
 
-fn with_creeps<F, R>(mut f: F) -> R
+fn with_creeps<F, R>(f: F) -> R
 where
-    F: FnMut(&mut FxHashMap<CreepRole, FxHashMap<u32, CreepRef>>) -> R,
+    F: FnOnce(&mut FxHashMap<CreepRole, FxHashMap<u32, CreepRef>>) -> R,
 {
     CREEPS.with(|creeps| {
         let mut borrowed_creeps = creeps.borrow_mut();
         f(borrowed_creeps.deref_mut())
     })
-}
-
-pub struct CreepManager {
-    creeps: FxHashMap<String, Creep>,
 }
 
 pub fn cleanup_creeps() {
@@ -60,14 +57,31 @@ pub fn register_creep(role: CreepRole) -> CreepRef {
             name,
             role,
             number,
+            travel_state: TravelState::default(),
         };
 
         let creep_ref = Rc::new(RefCell::new(creep));
 
-        creeps.entry(role).or_insert_with(|| FxHashMap::default()).insert(number, creep_ref.clone());
+        creeps
+            .entry(role)
+            .or_insert_with(|| FxHashMap::default())
+            .insert(number, creep_ref.clone());
 
         creep_ref
     })
+}
+
+pub fn for_each_creep<F>(mut f: F)
+where
+    F: FnMut(&CreepRef),
+{
+    with_creeps(|creeps| {
+        for (_, role_creeps) in creeps.iter() {
+            for (_, creep_ref) in role_creeps.iter() {
+                f(creep_ref);
+            }
+        }
+    });
 }
 
 fn fresh_creep_name(role: CreepRole) -> String {

@@ -9,7 +9,6 @@ use derive_more::Constructor;
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::RoomXY;
 use std::collections::BTreeMap;
-use tap::Tap;
 
 #[derive(Clone, Debug, Constructor)]
 pub struct PathSpec {
@@ -53,26 +52,27 @@ pub fn minimal_shortest_paths_tree(
     // Obstacles and reserved fields - real targets.
     let mut obstacles = cost_matrix.find_xy(obstacle_cost()).collect::<Vec<_>>();
 
-    let (path_ixs, mut path_areas): (Vec<_>, Vec<_>) = path_specs
-        .iter()
-        .enumerate()
-        .map(|(path_ix, path_spec)| {
-            shortest_path_area(
-                &path_spec.source_dm(&obstacles),
-                &path_spec.target_dm(&obstacles, &cost_matrix),
-                dist_tolerance,
-            )
-            .map(|(path_area, dist)| (path_ix, path_area, dist))
-        })
-        .collect::<Option<Vec<_>>>()?
-        .tap_mut(|ps| {
-            // TODO Detecting continuous (maybe with tolerance) fragments and selecting roads more or less in
-            //      the middle will most likely result in less roads.
-            ps.sort_by_key(|(i, _, dist)| *dist);
-        })
-        .into_iter()
-        .map(|(path_ix, path_area, _)| (path_ix, path_area))
-        .unzip();
+    let (path_ixs, mut path_areas): (Vec<_>, Vec<_>) = {
+        let mut path_areas_data = path_specs
+            .iter()
+            .enumerate()
+            .map(|(path_ix, path_spec)| {
+                shortest_path_area(
+                    &path_spec.source_dm(&obstacles),
+                    &path_spec.target_dm(&obstacles, &cost_matrix),
+                    dist_tolerance,
+                )
+                .map(|(path_area, dist)| (path_ix, path_area, dist))
+            })
+            .collect::<Option<Vec<_>>>()?;
+        // TODO Detecting continuous (maybe with tolerance) fragments and selecting roads more or less in
+        //      the middle will most likely result in less roads.
+        path_areas_data.sort_by_key(|(i, _, dist)| *dist);
+        path_areas_data
+            .into_iter()
+            .map(|(path_ix, path_area, _)| (path_ix, path_area))
+            .unzip()
+    };
 
     let mut path_xys = FxHashSet::default();
 

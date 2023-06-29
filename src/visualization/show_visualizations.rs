@@ -1,4 +1,3 @@
-use log::debug;
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::kernel::sleep::sleep;
 use crate::profiler::measure_time;

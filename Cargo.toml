@@ -28,7 +28,6 @@ room_visual_ext = { git = "https://github.com/xilexio/room_visual_ext.git" }
 enum-iterator = "1.4.0"
 petgraph = "0.6.3"
 more-asserts = "0.3.1"
-tap = "1.0.1"
 rustc-hash = "1.1.0"
 thiserror = "1.0.40"
 derive_more = "0.99.17"

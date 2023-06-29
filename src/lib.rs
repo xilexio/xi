@@ -1,7 +1,6 @@
 #![allow(incomplete_features)]
 #![feature(return_position_impl_trait_in_trait)]
 #![feature(async_closure)]
-#![feature(once_cell)]
 #![feature(core_intrinsics)]
 #![feature(btree_cursors)]
 #![feature(local_key_cell_methods)]
@@ -35,6 +34,7 @@ mod spawning;
 mod towers;
 mod utils;
 mod visualization;
+mod travel;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]

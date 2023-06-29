@@ -15,7 +15,7 @@ thread_local! {
 pub type Cid = u32;
 
 /// A generic condition to wait on. Can be awaited until `condition.signal(value)` is called.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Condition<T> {
     pub cid: Cid,
     value: Rc<RefCell<Option<T>>>,
@@ -62,11 +62,21 @@ where
 }
 
 /// A condition which can be repeatedly waited on. Waits even if there is a value present.
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct Broadcast<T> {
     cid: Cid,
     value: Rc<RefCell<Option<(T, u32)>>>,
     last_try_tick: u32,
+}
+
+impl<T> Clone for Broadcast<T> {
+    fn clone(&self) -> Self {
+        Broadcast {
+            cid: self.cid,
+            value: self.value.clone(),
+            last_try_tick: 0,
+        }
+    }
 }
 
 impl<T> Default for Broadcast<T> {
@@ -89,6 +99,10 @@ where
     pub fn broadcast(&self, value: T) {
         self.value.replace(Some((value, game_tick())));
         signal_condition(self.cid);
+    }
+
+    pub fn reset(&self) {
+        self.value.replace(None);
     }
 
     /// Checks if the value changed since last try. Will not detect more than one broadcast per tick.

@@ -13,7 +13,6 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::RoomXY;
 use std::cmp::Reverse;
 use std::iter::once;
-use tap::prelude::*;
 
 pub type ChunkId = NodeIndex<u16>;
 
@@ -116,10 +115,13 @@ pub fn chunk_graph(terrain: &RoomMatrix<u8>, chunk_radius: u8) -> ChunkGraph {
 
     let dt = distance_transform_from_obstacles(terrain.find_xy(OBSTACLE_COST), 1);
 
-    let tiles = terrain
-        .find_xy(0)
-        .collect::<Vec<RoomXY>>()
-        .tap_mut(|v| v.sort_by_key(|a| Reverse(exit_distances.get(*a))));
+    let tiles = {
+        let mut tiles = terrain
+            .find_xy(0)
+            .collect::<Vec<RoomXY>>();
+        tiles.sort_by_key(|a| Reverse(exit_distances.get(*a)));
+        tiles
+    };
 
     let mut chunk_center_distances = RoomMatrix::new(255);
 
