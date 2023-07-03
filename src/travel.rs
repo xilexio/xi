@@ -5,6 +5,9 @@ use crate::u;
 use crate::utils::return_code_utils::ReturnCodeUtils;
 use screeps::Position;
 use crate::creep::Creep;
+use crate::creep_error::CreepError;
+use crate::creep_error::CreepError::CreepDead;
+use crate::spawning::CreepBody;
 
 #[derive(Debug)]
 pub struct TravelState {
@@ -13,7 +16,7 @@ pub struct TravelState {
     /// Cached information whether the creep arrived at its destination and does not need to move.
     arrived: bool,
     /// Broadcast that the creep arrived at travel spec location.
-    pub arrival_broadcast: Broadcast<Position>,
+    pub arrival_broadcast: Broadcast<Result<Position, CreepError>>,
 }
 
 impl Default for TravelState {
@@ -26,18 +29,18 @@ impl Default for TravelState {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TravelSpec {
     pub(crate) target: Position,
     pub(crate) range: u8,
 }
 
-pub async fn travel(creep_ref: &CreepRef, travel_spec: TravelSpec) -> Broadcast<Position> {
+pub fn travel(creep_ref: &CreepRef, travel_spec: TravelSpec) -> Broadcast<Result<Position, CreepError>> {
     let mut creep = creep_ref.borrow_mut();
     creep.travel_state.spec = Some(travel_spec);
     if has_creep_arrived(&creep) {
         creep.travel_state.arrived = true;
-        creep.travel_state.arrival_broadcast.broadcast(creep.pos());
+        creep.travel_state.arrival_broadcast.broadcast(Ok(creep.pos()));
         creep.travel_state.arrival_broadcast.clone()
     } else {
         creep.travel_state.arrived = false;
@@ -46,15 +49,22 @@ pub async fn travel(creep_ref: &CreepRef, travel_spec: TravelSpec) -> Broadcast<
     }
 }
 
+pub fn predicted_travel_ticks(source: Position, target: Position, start_range: u8, range: u8, body: &CreepBody) -> u32 {
+    // TODO
+    42
+}
+
 pub async fn move_creeps() {
     loop {
         for_each_creep(|creep_ref| {
             let mut creep = creep_ref.borrow_mut();
             if !creep.travel_state.arrived {
-                if has_creep_arrived(&creep) {
+                if !creep.exists() {
+                    creep.travel_state.arrival_broadcast.broadcast(Err(CreepDead));
+                } else if has_creep_arrived(&creep) {
                     let creep_pos = creep.pos();
                     creep.travel_state.arrived = true;
-                    creep.travel_state.arrival_broadcast.broadcast(creep_pos);
+                    creep.travel_state.arrival_broadcast.broadcast(Ok(creep_pos));
                 } else {
                     let target = u!(creep.travel_state.spec.as_ref()).target;
                     creep

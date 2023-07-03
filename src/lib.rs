@@ -35,6 +35,8 @@ mod towers;
 mod utils;
 mod visualization;
 mod travel;
+mod creep_error;
+mod mining;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]

@@ -56,7 +56,7 @@ pub struct SpawnRequest {
     pub body: CreepBody,
     pub priority: u8,
     /// Spawns in the order of preference. Must list all valid spawns and be ordered by `extra_cost`.
-    pub preferred_spawn: Vec<PreferredSpawn>,
+    pub preferred_spawns: Vec<PreferredSpawn>,
     pub preferred_tick: (u32, u32),
     // limit_tick: (u32, u32),
 }
@@ -87,7 +87,7 @@ pub fn schedule_creep(room_name: RoomName, request: SpawnRequest) -> Option<Cond
     with_spawn_schedule(room_name, move |room_spawn_schedule| {
         let mut selected_spawn_data = None;
 
-        for preferred_spawn in request.preferred_spawn.iter() {
+        for preferred_spawn in request.preferred_spawns.iter() {
             if let Some(spawn_schedule) = room_spawn_schedule.scheduled_spawns.get(&preferred_spawn.id) {
                 if let Some(spawn_tick) = find_spawn_tick(&request, spawn_schedule) {
                     selected_spawn_data = Some((preferred_spawn.id, spawn_tick));

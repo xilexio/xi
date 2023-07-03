@@ -1,10 +1,11 @@
 use crate::creep::{Creep, CreepRole};
 use crate::fresh_number::fresh_number_if_some;
 use rustc_hash::FxHashMap;
-use screeps::game;
+use screeps::{game, Position, RoomName};
 use std::cell::RefCell;
 use std::ops::DerefMut;
 use std::rc::Rc;
+use crate::spawning::CreepBody;
 use crate::travel::TravelState;
 
 pub type CreepRef = Rc<RefCell<Creep>>;
@@ -48,6 +49,8 @@ pub fn cleanup_creeps() {
     });
 }
 
+/// Registers a new creep within the creeps module. May be called on the tick the creep is spawned
+/// after `cleanup_creeps`.
 pub fn register_creep(role: CreepRole) -> CreepRef {
     with_creeps(|creeps| {
         let number = fresh_number_if_some(creeps.get(&role));
@@ -69,6 +72,12 @@ pub fn register_creep(role: CreepRole) -> CreepRef {
 
         creep_ref
     })
+}
+
+/// Finds a creep free to be assigned to any task.
+pub fn find_idle_creep(room_name: RoomName, role: CreepRole, body: &CreepBody, preferred_pos: Option<Position>) -> Option<CreepRef> {
+    // TODO
+    None
 }
 
 pub fn for_each_creep<F>(mut f: F)

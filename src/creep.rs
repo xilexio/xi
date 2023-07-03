@@ -1,6 +1,6 @@
 use crate::travel::TravelState;
 use crate::u;
-use screeps::{game, Position, ReturnCode, SharedCreepProperties};
+use screeps::{game, Position, ReturnCode, SharedCreepProperties, Source};
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub enum CreepRole {
@@ -33,6 +33,22 @@ pub struct Creep {
 }
 
 impl Creep {
+    // Utility
+
+    pub fn exists(&self) -> bool {
+        self.screeps_obj().is_some()
+    }
+
+    fn screeps_obj(&self) -> Option<screeps::Creep> {
+        game::creeps().get(self.name.clone())
+    }
+
+    // API wrappers
+
+    pub fn harvest(&self, source: &Source) -> ReturnCode {
+        u!(self.screeps_obj()).harvest(source)
+    }
+
     pub fn move_to(&self, pos: Position) -> ReturnCode {
         u!(self.screeps_obj()).move_to(pos)
     }
@@ -41,11 +57,19 @@ impl Creep {
         u!(self.screeps_obj()).pos().into()
     }
 
-    pub fn exists(&self) -> bool {
-        self.screeps_obj().is_some()
+    pub fn public_say(&self, message: &str) {
+        // Ignoring any error from this function.
+        u!(self.screeps_obj()).say(message, true);
     }
 
-    fn screeps_obj(&self) -> Option<screeps::Creep> {
-        game::creeps().get(self.name.clone())
+    pub fn suicide(&self) -> ReturnCode {
+        self.screeps_obj().map(|creep| {
+            creep.suicide()
+        }).unwrap_or(ReturnCode::Ok)
+    }
+
+    /// Zero indicates a dead creep.
+    pub fn ticks_to_live(&self) -> u32 {
+        self.screeps_obj().map(|creep| creep.ticks_to_live()).flatten().unwrap_or(0)
     }
 }

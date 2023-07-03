@@ -32,11 +32,19 @@ impl<T> Default for Condition<T> {
     }
 }
 
-impl<T> Condition<T> {
+impl<T> Condition<T>
+where
+    T: Clone,
+{
     /// Wakes up all processes waiting on the condition.
     pub fn signal(&self, value: T) {
         self.value.replace(Some(value));
         signal_condition(self.cid);
+    }
+
+    /// Manually checks if the value has been set.
+    pub fn check(&self) -> Option<T> {
+        self.value.borrow().as_ref().cloned()
     }
 }
 

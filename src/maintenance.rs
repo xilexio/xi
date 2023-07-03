@@ -1,20 +1,14 @@
-use std::collections::VecDeque;
-use crate::creep::CreepRole;
 use crate::kernel::sleep::sleep;
 use crate::kernel::{kill_tree, schedule};
-use crate::priorities::{MINER_SPAWN_PRIORITY, MINING_PRIORITY, ROOM_MAINTENANCE_PRIORITY, SPAWNING_CREEPS_PRIORITY};
-use crate::resources::room_resources;
+use crate::mining::mine_source;
+use crate::priorities::{MINING_PRIORITY, ROOM_MAINTENANCE_PRIORITY, SPAWNING_CREEPS_PRIORITY};
 use crate::room_state::room_states::with_room_state;
-use crate::spawning::{schedule_creep, spawn_room_creeps, update_spawn_list, CreepBody, PreferredSpawn, SpawnRequest};
+use crate::spawning::{spawn_room_creeps, update_spawn_list};
 use crate::u;
 use log::debug;
 use rustc_hash::{FxHashMap, FxHashSet};
-use screeps::Part::{Carry, Move, Work};
-use screeps::{game, Position, RoomName};
+use screeps::{game, RoomName};
 use std::iter::once;
-use crate::config::SPAWN_SCHEDULE_TICKS;
-use crate::game_time::game_tick;
-use crate::travel::{travel, TravelSpec};
 
 pub async fn maintain_rooms() {
     let mut room_processes = FxHashMap::default();
@@ -117,109 +111,4 @@ async fn maintain_room(room_name: RoomName) {
 
         sleep(1).await;
     }
-}
-
-async fn mine_source(room_name: RoomName, source_ix: usize) {
-    let mut structures_broadcast = u!(with_room_state(room_name, |room_state| {
-        room_state.structures_broadcast.clone()
-    }));
-    let mut spawn_conditions = VecDeque::new();
-    let mut current_creep = None;
-    // let mut prespawned_creep = None;
-
-    loop {
-        // A schema for spawn request that will later have its tick intervals modified.
-        let base_spawn_request = u!(with_room_state(room_name, |room_state| SpawnRequest {
-            role: CreepRole::Miner,
-            body: miner_body(room_name),
-            priority: MINER_SPAWN_PRIORITY,
-            preferred_spawn: room_state
-                .spawns
-                .iter()
-                .map(|spawn_data| PreferredSpawn {
-                    id: spawn_data.id,
-                    directions: Vec::new(),
-                    extra_cost: 0
-                })
-                .collect(),
-            preferred_tick: (0, 0),
-        }));
-
-        let source_data = u!(with_room_state(room_name, |room_state| {
-            room_state.sources[source_ix]
-        }));
-
-        let work_xy = u!(source_data.work_xy);
-
-        debug!("!!! {:?}", base_spawn_request.preferred_spawn);
-
-        // TODO On structures change, if spawns changed, manually resetting base spawn request, cancelling all requests and
-        //      adding them again.
-        // TODO The same if miner dies.
-        // TODO Body should depend on max extension fill and also on current resources. Later, also on statistics about
-        //      energy income, but this applies mostly before the storage is online.
-        loop {
-            // Scheduling missing spawn requests for the next SPAWN_SCHEDULE_TICKS.
-            while spawn_conditions.back().map(|(max_preferred_tick, _)| *max_preferred_tick <= SPAWN_SCHEDULE_TICKS).unwrap_or(true) {
-                let mut spawn_request = base_spawn_request.clone();
-                let min_preferred_tick = game_tick();
-                let max_preferred_tick = game_tick() + 100; // TODO
-                spawn_request.preferred_tick = (min_preferred_tick, max_preferred_tick);
-                // If the scheduling failed then trying again later.
-                if let Some(condition) = schedule_creep(room_name, spawn_request) {
-                    spawn_conditions.push_back((max_preferred_tick, condition));
-                }
-            }
-
-            // Getting a miner if the current one is dead.
-            if let Some(miner) = current_creep.as_ref() {
-                // Moving towards the location.
-                // Owned room is expected to have `work_xy` set.
-                let travel_spec = TravelSpec {
-                    target: Position::new(work_xy.x, work_xy.y, room_name),
-                    range: 0,
-                };
-                travel(miner, travel_spec).await;
-
-                // Mining.
-
-                // Transporting the energy in a way depending on room plan.
-                // Ordering a hauler to get dropped energy.
-
-                // Ordering a hauler to get energy from the container.
-
-                // Storing the energy into the link and sending it if the next batch would not fit.
-
-                // The source is exhausted for now, so sleeping until it is regenerated.
-
-                // Sleeping for a single tick.
-                sleep(1).await;
-            } else if let Some((_, spawn_condition)) = spawn_conditions.pop_front() {
-                // Assigning the current creep and immediately retrying.
-                current_creep = spawn_condition.await;
-            } else {
-                // Retrying next tick.
-                sleep(1).await;
-            }
-
-            // Reinitializing the process if there are changes in structures.
-            if structures_broadcast.check().is_some() {
-                break;
-            }
-        }
-    }
-}
-
-fn miner_body(room_name: RoomName) -> CreepBody {
-    let resources = room_resources(room_name);
-
-    let parts = if resources.spawn_energy >= 600 {
-        vec![Work, Work, Work, Work, Move, Move, Carry, Carry]
-    } else if resources.spawn_energy >= 300 {
-        vec![Work, Work, Move, Carry]
-    } else {
-        vec![Work, Move]
-    };
-
-    CreepBody::new(parts)
 }
