@@ -37,7 +37,7 @@ where
 
 #[derive(Default)]
 struct RoomSpawnSchedule {
-    /// Map from ticks to spawn events at that tick.
+    /// Map from ticks to spawn events in that tick.
     scheduled_spawns: FxHashMap<ObjectId<StructureSpawn>, BTreeMap<u32, SpawnEvent>>,
     // /// Map of spawn schedules for each creep role.
     // schedules: FxHashMap<CreepRole, SpawnSchedule>,

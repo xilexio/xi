@@ -1,6 +1,6 @@
 use crate::travel::TravelState;
 use crate::u;
-use screeps::{game, Position, ReturnCode, SharedCreepProperties, Source};
+use screeps::{game, Position, ResourceType, ReturnCode, SharedCreepProperties, Source, Withdrawable};
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub enum CreepRole {
@@ -63,13 +63,22 @@ impl Creep {
     }
 
     pub fn suicide(&self) -> ReturnCode {
-        self.screeps_obj().map(|creep| {
-            creep.suicide()
-        }).unwrap_or(ReturnCode::Ok)
+        self.screeps_obj()
+            .map(|creep| creep.suicide())
+            .unwrap_or(ReturnCode::Ok)
     }
 
     /// Zero indicates a dead creep.
     pub fn ticks_to_live(&self) -> u32 {
-        self.screeps_obj().map(|creep| creep.ticks_to_live()).flatten().unwrap_or(0)
+        self.screeps_obj()
+            .and_then(|creep| creep.ticks_to_live())
+            .unwrap_or(0)
+    }
+
+    pub fn withdraw<T>(self, target: &T, resource_type: ResourceType, amount: Option<u32>) -> ReturnCode
+    where
+        T: Withdrawable,
+    {
+        u!(self.screeps_obj()).withdraw(target, resource_type, amount)
     }
 }

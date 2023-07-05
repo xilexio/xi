@@ -11,3 +11,4 @@ pub const SPAWNING_CREEPS_PRIORITY: Priority = 40;
 pub const VISUALIZATIONS_PRIORITY: Priority = 10;
 
 pub const MINER_SPAWN_PRIORITY: Priority = 200;
+pub const HAULER_SPAWN_PRIORITY: Priority = 150;

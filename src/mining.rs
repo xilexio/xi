@@ -13,7 +13,7 @@ use crate::u;
 use crate::utils::return_code_utils::ReturnCodeUtils;
 use log::warn;
 use screeps::game::get_object_by_id_typed;
-use screeps::Part::{Carry, Move, Work};
+use screeps::Part::{Move, Work};
 use screeps::{Position, RoomName, CREEP_LIFE_TIME};
 use std::collections::VecDeque;
 
@@ -223,12 +223,10 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
 fn miner_body(room_name: RoomName) -> CreepBody {
     let resources = room_resources(room_name);
 
-    let parts = if resources.spawn_energy >= 600 {
-        vec![Work, Work, Work, Work, Move, Move, Carry, Carry]
-    } else if resources.spawn_energy >= 300 {
-        vec![Work, Work, Move, Carry]
+    let parts = if resources.spawn_energy >= 550 {
+        vec![Work, Work, Work, Work, Work, Move]
     } else {
-        vec![Work, Move]
+        vec![Work, Work, Move, Move]
     };
 
     CreepBody::new(parts)
