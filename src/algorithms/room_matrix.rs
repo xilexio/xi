@@ -10,7 +10,7 @@ use std::fmt::{Display, Formatter, LowerHex};
 use std::mem::size_of;
 
 /// A `ROOM_SIZE` x `ROOM_SIZE` matrix backed by an array with size known at compile time.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct RoomMatrix<T> {
     pub data: [T; ROOM_AREA],
 }

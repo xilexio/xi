@@ -9,6 +9,7 @@ use log::debug;
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::{game, RoomName};
 use std::iter::once;
+use crate::filling_spawns::fill_spawns;
 
 pub async fn maintain_rooms() {
     let mut room_processes = FxHashMap::default();
@@ -18,14 +19,21 @@ pub async fn maintain_rooms() {
 
         for room_name in game::rooms().keys() {
             lost_rooms.remove(&room_name);
-
-            room_processes.entry(room_name).or_insert_with(|| {
-                schedule(
-                    &format!("room_process_{}", room_name),
-                    ROOM_MAINTENANCE_PRIORITY - 2,
-                    maintain_room(room_name),
-                )
-            });
+            
+            let has_plan = with_room_state(room_name, |room_state| {
+                room_state.plan.is_some()
+            }).unwrap_or(false);
+            
+            if has_plan {
+                // TODO do this only when it is already mapped
+                room_processes.entry(room_name).or_insert_with(|| {
+                    schedule(
+                        &format!("room_process_{}", room_name),
+                        ROOM_MAINTENANCE_PRIORITY - 2,
+                        maintain_room(room_name),
+                    )
+                });
+            }
         }
 
         for room_name in lost_rooms.into_iter() {
@@ -74,6 +82,14 @@ async fn maintain_room(room_name: RoomName) {
     let miners: Vec<Option<u8>> = once(None).cycle().take(number_of_sources).collect();
 
     with_room_state(room_name, |room_state| {
+        // TODO schedule hauling
+        // Scheduling filling the spawns and extensions.
+        drop(schedule(
+            &format!("fill_spawns_{}", room_name),
+            MINING_PRIORITY - 1, // TODO
+            fill_spawns(room_name)
+        ));
+        // Scheduling mining sources inside the room.
         for (source_ix, source_data) in room_state.sources.iter().enumerate() {
             debug!("Setting up mining of {} in {}.", source_data.xy, room_name);
             drop(schedule(
@@ -81,17 +97,6 @@ async fn maintain_room(room_name: RoomName) {
                 MINING_PRIORITY,
                 mine_source(room_name, source_ix),
             ));
-            //         let miner = spawn(MINER).await;
-            //         // TODO in background
-            //         miner.mine().then(|res| {
-            //             match res with {
-            //                 Dead => ;
-            //                 ...
-            //             }
-            //         })
-            //         if dropped_resource > 100 {
-            //             haul(resource).();
-            //         }
         }
     });
 

@@ -1,8 +1,8 @@
 use crate::room_state::room_states::replace_room_state;
-use crate::room_state::{ControllerData, MineralData, RoomDesignation, RoomState, SourceData, SpawnData};
+use crate::room_state::{ControllerData, MineralData, RoomDesignation, RoomState, SourceData, StructureData};
 use crate::u;
 use rustc_hash::{FxHashMap, FxHashSet};
-use screeps::StructureType::Spawn;
+use screeps::StructureType::{Extension, Spawn};
 use screeps::{
     find, game, HasPosition, HasTypedId, Mineral, ObjectId, OwnedStructureProperties, Position, ResourceType, RoomName,
     Source, StructureController,
@@ -49,15 +49,21 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
     for source in room.find(find::SOURCES, None) {
         let id: ObjectId<Source> = source.id();
         let xy = source.pos().xy();
-        let work_xy = state
-            .plan
-            .as_ref()
-            .map(|plan| u!(plan.sources.iter().find(|source_data| source_data.source_xy == xy)).work_xy);
+        let mut work_xy = None;
+        if state.designation == RoomDesignation::Owned {
+            work_xy = state
+                .plan
+                .as_ref()
+                .map(|plan| u!(plan.sources.iter().find(|source_data| source_data.source_xy == xy)).work_xy);
+        }
+        // TODO container_id, link_xy, link_id
         state.sources.push(SourceData {
             id,
             xy,
             work_xy,
+            container_id: None,
             link_xy: None,
+            link_id: None,
         });
     }
     for mineral in room.find(find::MINERALS, None) {
@@ -73,7 +79,6 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
     // TODO Only needed the first time.
     state.terrain = game::map::get_room_terrain(room_name).into();
     let mut structures = FxHashMap::default();
-    state.spawns.clear();
     let mut structures_changed = false;
     for structure in room.find(find::STRUCTURES, None) {
         let structure_type = structure.as_structure().structure_type();
@@ -82,12 +87,6 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
             .entry(structure_type)
             .or_insert_with(FxHashSet::default)
             .insert(xy);
-
-        if state.designation == RoomDesignation::Owned && structure_type == Spawn {
-            state
-                .spawns
-                .push(SpawnData::new(structure.as_structure().id().into_type(), xy));
-        }
 
         if let Some(xys) = state.structures.get(&structure_type) {
             if !xys.contains(&xy) {
@@ -111,6 +110,26 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
         }
     }
     if structures_changed {
+        // Updating sorted lists of structures.
+        for structure in room.find(find::STRUCTURES, None) {
+            let structure_type = structure.as_structure().structure_type();
+            let xy = structure.pos().xy();
+            if state.designation == RoomDesignation::Owned {
+                if structure_type == Spawn {
+                    state
+                        .spawns
+                        .push(StructureData::new(structure.as_structure().id().into_type(), xy));
+                }
+                if structure_type == Extension {
+                    state
+                        .extensions
+                        .push(StructureData::new(structure.as_structure().id().into_type(), xy));
+                }
+            }
+        }
+        // TODO sort lists of structures
+        // TODO fast filler data
+
         // Informing waiting processes that the structure changed.
         state.structures_broadcast.broadcast(());
     }

@@ -6,7 +6,7 @@ use std::cmp::Ordering;
 use std::fmt::Debug;
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Serialize, Clone, Constructor)]
+#[derive(Debug, Deserialize, Serialize, Clone, Constructor)]
 pub struct Plan {
     pub tiles: RoomMatrix<PlannedTile>,
     pub controller: PlannedControllerData,

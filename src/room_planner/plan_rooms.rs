@@ -8,10 +8,12 @@ use crate::room_state::{RoomState, StructuresMap};
 use crate::utils::map_utils::MultiMapUtils;
 use crate::{a, log_err, u};
 use log::{debug, error, trace};
-use screeps::StructureType;
+use screeps::{game, StructureType};
 use screeps::StructureType::{Container, Rampart, Road};
 
 pub const MIN_CONTAINER_RCL: u8 = 3;
+
+const MIN_PLAN_ROOMS_CPU: f64 = 300.0;
 
 pub async fn plan_rooms() {
     // TODO Set to run only a total of CONST% of time unless it is the first room. Kernel should measure run times
@@ -21,58 +23,64 @@ pub async fn plan_rooms() {
     // TODO Should run as long as it needs during the planning of the first room.
 
     sleep_until(first_tick() + 5).await;
-
-    // Iterating over all scanned and owned rooms.
-    for_each_owned_room(|room_name, room_state| {
-        // Creating the room plan if there isn't one.
-        if room_state.plan.is_none() {
-            // Creating the planner. It should not fail unless it is a bug.
-            if room_state.planner.is_none() {
-                match RoomPlanner::new(room_state, true) {
-                    Ok(planner) => {
-                        room_state.planner = Some(Box::new(planner));
-                    }
-                    err => {
-                        log_err!(err);
-                    }
-                }
+    
+    loop {
+        // Iterating over all scanned and owned rooms.
+        for_each_owned_room(|room_name, room_state| {
+            if game::cpu::tick_limit() - game::cpu::get_used() < MIN_PLAN_ROOMS_CPU {
+                return;
             }
 
-            if let Some(planner) = room_state.planner.as_mut() {
-                loop {
-                    // Errors are normal when planning.
-                    let result = planner.plan();
-                    if let Err(err) = result {
-                        trace!("Failed to create a plan for room {}: {}.", room_name, err);
-                    }
-
-                    // TODO Finishing planning should depend on used CPU more than on the number of tries.
-                    if planner.plans_count >= 1 && planner.tries_count >= 20 || planner.is_finished() {
-                        if planner.best_plan.is_none() {
-                            error!("Failed to create a plan for room {}.", room_name);
-                            // Resetting the planner.
-                            room_state.planner = None;
-                        } else {
-                            trace!("Successfully created a plan for room {}.", room_name);
-                            room_state.plan = planner.best_plan.clone();
-                            // Removing the planner data.
-                            room_state.planner = None;
-
-                            plan_current_rcl_structures(room_state);
+            // Creating the room plan if there isn't one.
+            if room_state.plan.is_none() {
+                // Creating the planner. It should not fail unless it is a bug.
+                if room_state.planner.is_none() {
+                    match RoomPlanner::new(room_state, true) {
+                        Ok(planner) => {
+                            room_state.planner = Some(Box::new(planner));
                         }
-                        break;
-                    } else if should_finish() {
-                        break;
+                        err => {
+                            log_err!(err);
+                        }
                     }
                 }
-            }
-        } else if room_state.current_rcl_structures.is_none() {
-            plan_current_rcl_structures(room_state);
-        }
-    });
 
-    // Running only once per few ticks.
-    sleep(10).await;
+                if let Some(planner) = room_state.planner.as_mut() {
+                    loop {
+                        // Errors are normal when planning.
+                        let result = planner.plan();
+                        if let Err(err) = result {
+                            trace!("Failed to create a plan for room {}: {}.", room_name, err);
+                        }
+
+                        // TODO Finishing planning should depend on used CPU more than on the number of tries.
+                        if planner.plans_count >= 1 && planner.tries_count >= 20 || planner.is_finished() {
+                            if planner.best_plan.is_none() {
+                                error!("Failed to create a plan for room {}.", room_name);
+                                // Resetting the planner.
+                                room_state.planner = None;
+                            } else {
+                                trace!("Successfully created a plan for room {}.", room_name);
+                                room_state.plan = planner.best_plan.clone();
+                                // Removing the planner data.
+                                room_state.planner = None;
+
+                                plan_current_rcl_structures(room_state);
+                            }
+                            break;
+                        } else if should_finish() {
+                            break;
+                        }
+                    }
+                }
+            } else if room_state.current_rcl_structures.is_none() {
+                plan_current_rcl_structures(room_state);
+            }
+        });
+
+        // Running only once per few ticks.
+        sleep(10).await;
+    }
 }
 
 /// Creates a map of structures to be built for given RCL.

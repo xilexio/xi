@@ -38,6 +38,8 @@ mod travel;
 mod creep_error;
 mod mining;
 mod hauling;
+mod spawn_pool;
+mod filling_spawns;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]

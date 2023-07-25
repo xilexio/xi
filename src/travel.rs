@@ -31,8 +31,8 @@ impl Default for TravelState {
 
 #[derive(Debug, Clone)]
 pub struct TravelSpec {
-    pub(crate) target: Position,
-    pub(crate) range: u8,
+    pub target: Position,
+    pub range: u8,
 }
 
 pub fn travel(creep_ref: &CreepRef, travel_spec: TravelSpec) -> Broadcast<Result<Position, CreepError>> {

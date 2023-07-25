@@ -1,6 +1,8 @@
+use std::fmt::{Display, Formatter};
 use crate::travel::TravelState;
 use crate::u;
-use screeps::{game, Position, ResourceType, ReturnCode, SharedCreepProperties, Source, Withdrawable};
+use screeps::{game, HARVEST_POWER, Position, ResourceType, ReturnCode, SharedCreepProperties, Source, Withdrawable};
+use screeps::Part::Work;
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub enum CreepRole {
@@ -9,12 +11,27 @@ pub enum CreepRole {
     Scout,
 }
 
+impl Display for CreepRole {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 impl CreepRole {
     pub fn creep_name_prefix(self) -> &'static str {
         match self {
             CreepRole::Miner => "miner",
             CreepRole::Hauler => "hauler",
             CreepRole::Scout => "scout",
+        }
+    }
+
+    pub fn from_creep_name_prefix(creep_name_prefix: &str) -> Option<Self> {
+        match creep_name_prefix {
+            "miner" => Some(CreepRole::Miner),
+            "hauler" => Some(CreepRole::Hauler),
+            "scout" => Some(CreepRole::Scout),
+            _ => None
         }
     }
 }
@@ -75,10 +92,16 @@ impl Creep {
             .unwrap_or(0)
     }
 
-    pub fn withdraw<T>(self, target: &T, resource_type: ResourceType, amount: Option<u32>) -> ReturnCode
-    where
-        T: Withdrawable,
+    pub fn withdraw<T>(&self, target: &T, resource_type: ResourceType, amount: Option<u32>) -> ReturnCode
+        where
+            T: Withdrawable,
     {
         u!(self.screeps_obj()).withdraw(target, resource_type, amount)
+    }
+
+    // Statistics
+
+    pub fn energy_harvest_power(&self) -> u32 {
+        u!(self.screeps_obj()).body().iter().filter_map(|body_part| (body_part.part() == Work).then_some(HARVEST_POWER)).sum()
     }
 }

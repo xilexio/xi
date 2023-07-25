@@ -55,7 +55,11 @@ fn serialize_global_state() -> Result<String, serde_json::Error> {
 
 /// Loads and deserializes the global state from Memory.
 pub fn load_global_state() {
+    #[cfg(feature = "memory_wipe")]
+    let raw_memory_str = "{}";
+    #[cfg(not(feature = "memory_wipe"))]
     let raw_memory_str = u!(raw_memory::get().as_string());
+    
     match deserialize_global_state(&raw_memory_str) {
         Ok(()) => {
             trace!("Deserialized the global state.");

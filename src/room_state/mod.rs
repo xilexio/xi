@@ -2,7 +2,7 @@ use derive_more::Constructor;
 use crate::room_state::packed_terrain::PackedTerrain;
 use js_sys::{Object, Reflect};
 use log::info;
-use screeps::{game, Mineral, ObjectId, ResourceType, RoomName, RoomXY, Source, StructureController, StructureSpawn, StructureType};
+use screeps::{game, Mineral, ObjectId, ResourceType, RoomName, RoomXY, Source, StructureContainer, StructureController, StructureExtension, StructureLink, StructureSpawn, StructureType};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -16,7 +16,7 @@ pub mod room_states;
 pub mod scan_room;
 pub mod scan_rooms;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct RoomState {
     pub room_name: RoomName,
     pub owner: String,
@@ -43,7 +43,9 @@ pub struct RoomState {
     // Information about extensions outside of fast filler, ordered by the distance to the storage.
     // pub outer_extensions: Option<Vec<Extension>>,
     #[serde(skip)]
-    pub spawns: Vec<SpawnData>,
+    pub spawns: Vec<StructureData<StructureSpawn>>,
+    #[serde(skip)]
+    pub extensions: Vec<StructureData<StructureExtension>>,
     /// Broadcast signalled each time the set of structures in the room changes.
     #[serde(skip)]
     pub structures_broadcast: Broadcast<()>,
@@ -72,7 +74,9 @@ pub struct SourceData {
     pub id: ObjectId<Source>,
     pub xy: RoomXY,
     pub work_xy: Option<RoomXY>,
+    pub container_id: Option<ObjectId<StructureContainer>>,
     pub link_xy: Option<RoomXY>,
+    pub link_id: Option<ObjectId<StructureLink>>,
 }
 
 #[derive(Deserialize, Serialize, Copy, Clone, Debug, Constructor)]
@@ -83,8 +87,8 @@ pub struct MineralData {
 }
 
 #[derive(Debug, Clone, Constructor)]
-pub struct SpawnData {
-    pub id: ObjectId<StructureSpawn>,
+pub struct StructureData<T> {
+    pub id: ObjectId<T>,
     pub xy: RoomXY,
 }
 
@@ -129,6 +133,7 @@ impl RoomState {
             plan: None,
             planner: None,
             spawns: Vec::new(),
+            extensions: Vec::new(),
             structures_broadcast: Broadcast::default(),
         }
     }

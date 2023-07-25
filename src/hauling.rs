@@ -13,10 +13,11 @@ use crate::u;
 use rustc_hash::FxHashMap;
 use screeps::Part::{Carry, Move};
 use screeps::StructureType::Storage;
-use screeps::{Position, RoomName};
+use screeps::{ObjectId, Position, RawObjectId, Resource, RoomName, Transferable, Withdrawable};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::iter::repeat;
+use crate::utils::map_utils::MultiMapUtils;
 
 thread_local! {
     static HAUL_SCHEDULES: RefCell<FxHashMap<RoomName, RoomHaulSchedule>> = RefCell::new(FxHashMap::default());
@@ -38,8 +39,12 @@ where
 
 #[derive(Default)]
 struct RoomHaulSchedule {
-    /// Vector of respective haulers' data.
+    /// Vector of respective haulers' creep data, schedules and current tasks.
     hauler_data: Vec<HaulerData>,
+    withdraw_requests: BTreeMap<u32, Vec<RawWithdrawRequest>>,
+    store_requests: BTreeMap<u32, Vec<RawStoreRequest>>,
+    /// Map from ticks to all unassigned hauling tasks.
+    events: BTreeMap<u32, HaulEvent>,
 }
 
 struct HaulerData {
@@ -86,20 +91,119 @@ pub struct HaulRequest {
     pub preferred_tick: (u32, u32),
 }
 
-pub fn schedule_haul(room_name: RoomName, request: HaulRequest) {}
+pub struct WithdrawRequest<T> {
+    /// Room name of the room responsible for providing the hauler.
+    pub room_name: RoomName,
+    pub target: ObjectId<T>,
+    pub xy: Option<Position>,
+    pub amount: u32,
+    pub amount_per_tick: u32,
+    pub max_amount: u32,
+    pub priority: Priority,
+    pub preferred_tick: (u32, u32),
+}
 
-// TODO also cross-room version
-/// Execute hauling of resources within a room.
+struct RawWithdrawRequest {
+    target: RawObjectId,
+    pickupable: bool,
+    xy: Option<Position>,
+    amount: u32,
+    amount_per_tick: u32,
+    max_amount: u32,
+    priority: Priority,
+    preferred_tick: (u32, u32),
+    request_tick: u32,
+}
+
+pub struct StoreRequest<T>
+where
+    T: Transferable,
+{
+    pub room_name: RoomName,
+    pub target: ObjectId<T>,
+    pub xy: Option<Position>,
+    pub amount: u32,
+    pub priority: Priority,
+    pub preferred_tick: (u32, u32),
+}
+
+pub struct RawStoreRequest {
+    pub target: RawObjectId,
+    pub xy: Option<Position>,
+    pub amount: u32,
+    pub priority: Priority,
+    pub preferred_tick: (u32, u32),
+}
+
+pub fn schedule_withdraw<T>(withdraw_request: WithdrawRequest<T>)
+    where
+        T: Withdrawable,
+{
+    let raw_withdraw_request = RawWithdrawRequest {
+        target: withdraw_request.target.into(),
+        pickupable: false,
+        xy: withdraw_request.xy,
+        amount: withdraw_request.amount,
+        amount_per_tick: withdraw_request.amount_per_tick,
+        max_amount: withdraw_request.max_amount,
+        priority: withdraw_request.priority,
+        preferred_tick: withdraw_request.preferred_tick,
+        request_tick: game_tick(),
+    };
+    with_hauling_schedule(withdraw_request.room_name, |schedule| {
+        schedule.withdraw_requests.push_or_insert(withdraw_request.preferred_tick.0, raw_withdraw_request);
+    });
+}
+
+pub fn schedule_pickup(withdraw_request: WithdrawRequest<Resource>) {
+    let raw_withdraw_request = RawWithdrawRequest {
+        target: withdraw_request.target.into(),
+        pickupable: true,
+        xy: withdraw_request.xy,
+        amount: withdraw_request.amount,
+        amount_per_tick: withdraw_request.amount_per_tick,
+        max_amount: withdraw_request.max_amount,
+        priority: withdraw_request.priority,
+        preferred_tick: withdraw_request.preferred_tick,
+        request_tick: game_tick(),
+    };
+    with_hauling_schedule(withdraw_request.room_name, |schedule| {
+        schedule.withdraw_requests.push_or_insert(withdraw_request.preferred_tick.0, raw_withdraw_request);
+    });
+}
+
+pub fn schedule_store<T>(store_request: StoreRequest<T>)
+where
+    T: Transferable,
+{
+    let raw_store_request = RawStoreRequest {
+        target: store_request.target.into(),
+        xy: store_request.xy,
+        amount: store_request.amount,
+        priority: store_request.priority,
+        preferred_tick: store_request.preferred_tick,
+    };
+    with_hauling_schedule(store_request.room_name, |schedule| {
+        schedule.store_requests.push_or_insert(store_request.preferred_tick.0, raw_store_request);
+    });
+}
+
+/// Execute hauling of resources of haulers assigned to given room.
+/// Withdraw and store requests are registered in the system and the system assigns them to free haulers.
+/// One or more withdraw event is paired with one or more store events. There are special withdraw and store events
+/// for the storage which may not be paired with one another.
+// TODO
 pub fn haul_resources(room_name: RoomName) {
     with_hauling_schedule(room_name, |schedule| {
         while schedule.hauler_data.len() < 3 {
             let spawn_request = hauler_spawn_request(room_name);
-            if let Some(scheduled_creep) = schedule_creep(room_name, spawn_request) {
-                schedule.hauler_data.push(HaulerData {
-                    hauler: MaybeSpawned::Spawning(scheduled_creep),
-                    schedule: Default::default(),
-                    current: None,
-                });
+            // If the spawning immediately fails, it will be retried in subsequent ticks.
+            if let Some(scheduled_hauler) = schedule_creep(room_name, spawn_request) {
+                // schedule.hauler_data.push(HaulerData {
+                //     hauler: Spawning(scheduled_hauler),
+                //     schedule: Default::default(),
+                //     current: None,
+                // });
             }
         }
 
@@ -131,16 +235,31 @@ pub fn haul_resources(room_name: RoomName) {
                 }
             };
 
-            if hauler_data.current.is_none() {
-                if let Some(event) = hauler_data.schedule.first_entry() {
-                    if *event.key() >= game_tick() {
-                        // Assigning the haul event to the hauler.
-                        hauler_data.current = Some(event.remove());
+            if let Some(creep_ref) = maybe_creep_ref {
+                // Hauling.
+                if hauler_data.current.is_none() {
+                    // TODO Maybe have one common queue plus queues for each hauler, but only lasting til the end of its lifetime?
+                    if let Some(event) = hauler_data.schedule.first_entry() {
+                        // TODO check for a good time to take it.
+                        if *event.key() >= game_tick() {
+                            // Assigning the haul event to the hauler.
+                            hauler_data.current = Some(event.remove());
+                        }
                     }
                 }
-            }
 
-            if let Some(event) = hauler_data.current.as_ref() {}
+                if let Some(event) = hauler_data.current.as_ref() {
+                    // Spawning a separate process for the event.
+                    // TODO move to source, withdraw source, move to target, store in target
+                }
+            } else {
+                // Spawning a hauler.
+                let spawn_request = hauler_spawn_request(room_name);
+                // If the spawning immediately fails, it will be retried in subsequent ticks.
+                if let Some(scheduled_hauler) = schedule_creep(room_name, spawn_request) {
+                    // hauler_data.hauler = Spawning(scheduled_hauler);
+                }
+            }
         }
     });
 }

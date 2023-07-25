@@ -946,9 +946,11 @@ impl RoomPlanner {
                 let near_tile = self.planned_tiles.get(xy);
                 // Keeping tile position and whether it is an empty tile.
                 if near_tile.structures().main() == MainStructureType::Empty {
+                    // debug!(" ++ {}: {} {} / {}", tile_cost.get(xy), xy, true, self.planned_tiles.get(xy));
                     priority_queue.insert((tile_cost.get(xy), i), (xy, true));
                 } else {
                     let removal_score = avg_around_score(&self.planned_tiles, xy).saturating_sub(tile_cost.get(xy));
+                    // debug!(" ++ {}: {} {} / {}", removal_score, xy, false, self.planned_tiles.get(xy));
                     priority_queue.insert((removal_score, i), (xy, false));
                 }
 
@@ -967,53 +969,61 @@ impl RoomPlanner {
 
         while !remaining_structures.is_empty() && !priority_queue.is_empty() {
             let ((xy_score, _), (xy, placement)) = priority_queue.pop_first().unwrap();
-            // debug!("[{}] {}: {}, {}", remaining_extensions, xy_score, xy, placement);
             if placement {
-                let current_structure_type = u!(remaining_structures.pop());
-
-                self.planned_tiles
-                    .replace_structure(xy, current_structure_type, BasePart::Interior, true);
-                let current_score = tile_cost.get(xy);
-
-                let removal_score = avg_around_score(&self.planned_tiles, xy).saturating_sub(current_score);
-
-                if removal_score < obstacle_cost() {
-                    priority_queue.insert((removal_score, i), (xy, false));
-                    i += 1;
-                    // debug!("  + {}: {}, {}", removal_score, xy, false);
-                }
-            } else {
-                let current_score = tile_cost.get(xy);
-                let removal_score = avg_around_score(&self.planned_tiles, xy).saturating_sub(current_score);
-
-                if removal_score != xy_score {
-                    // If the score changed as a result of, e.g., removing some empty tiles around, we re-queue the
-                    // tile.
-                    priority_queue.insert((removal_score, i), (xy, false));
-                    i += 1;
-                    // debug!(" => {}: {}, {}", removal_score, xy, false);
-                } else {
-                    let current_structure_type = self.planned_tiles.get(xy).structures().main();
+                // Placing a structure only if there is no road or another main structure there.
+                let xy_tile = self.planned_tiles.get(xy);
+                if !xy_tile.structures().road() && xy_tile.structures().main() == MainStructureType::Empty {
+                    let current_structure_type = u!(remaining_structures.pop());
 
                     self.planned_tiles
-                        .replace_structure(xy, Road, BasePart::Interior, false);
+                        .replace_structure(xy, current_structure_type, BasePart::Interior, true);
+                    let current_score = tile_cost.get(xy);
 
-                    for near in xy.around() {
-                        if tile_cost.get(near) != OBSTACLE_COST && self.planned_tiles.get(near).is_empty() {
-                            let score = tile_cost.get(near);
-                            priority_queue.insert((score, i), (near, true));
-                            // debug!("  + {}: {}, {}", score, near, true);
-                            i += 1;
-                        }
+                    let removal_score = avg_around_score(&self.planned_tiles, xy).saturating_sub(current_score);
+
+                    // Queueing up option to remove the structure if the cost isn't too high.
+                    if removal_score < obstacle_cost() {
+                        priority_queue.insert((removal_score, i), (xy, false));
+                        i += 1;
+                        // debug!("  + {}: {}, {} / {}", removal_score, xy, false, self.planned_tiles.get(xy));
                     }
+                }
+            } else {
+                // Removing any structures and placing down a road. Not doing anything if there is already a road.
+                if !self.planned_tiles.get(xy).structures().road() {
+                    let current_score = tile_cost.get(xy);
+                    let removal_score = avg_around_score(&self.planned_tiles, xy).saturating_sub(current_score);
 
-                    // TODO xi::unwrap: Unwrapping failed on Result::Err at src\room_planner.rs:943,47 in xi::room_planner: Err(InvalidMainStructureType).
-                    debug_assert!(current_structure_type != MainStructureType::Empty);
-                    remaining_structures.push(u!(current_structure_type.try_into()));
+                    if removal_score != xy_score {
+                        // If the score changed as a result of, e.g., removing some empty tiles around, we re-queue the
+                        // tile.
+                        priority_queue.insert((removal_score, i), (xy, false));
+                        i += 1;
+                        // debug!(" => {}: {}, {} / {}", removal_score, xy, false, self.planned_tiles.get(xy));
+                    } else {
+                        let current_structure_type = self.planned_tiles.get(xy).structures().main();
+
+                        self.planned_tiles
+                            .replace_structure(xy, Road, BasePart::Interior, false);
+
+                        for near in xy.around() {
+                            if tile_cost.get(near) != OBSTACLE_COST && self.planned_tiles.get(near).is_empty() {
+                                let score = tile_cost.get(near);
+                                priority_queue.insert((score, i), (near, true));
+                                // debug!("  + {}: {}, {} / {}", score, near, true, self.planned_tiles.get(near));
+                                i += 1;
+                            }
+                        }
+
+                        debug_assert!(current_structure_type != MainStructureType::Empty);
+                        // debug!("{} {:?} -> Road", xy, current_structure_type);
+                        remaining_structures.push(u!(current_structure_type.try_into()));
+                    }
                 }
             }
         }
 
+        // TODO Do something when remaining_structures is empty.
         // TODO place extension when there is a close place
         // if there are at least 3 extensions to reach with a single road, place it, replacing an extension
         // !! keep number of surrounding extensions per tile
@@ -1075,22 +1085,24 @@ impl RoomPlanner {
                 .copied()
                 .filter_map(|xy| {
                     if xy.y <= rect_center.y {
-                        // TODO Unwrapping failed on Result::Err at src\room_planner.rs:1098,41 in xi::room_planner: Err(OutOfBoundsError(52)).
-                        let mirror_xy = u!(rect.mirror_xy(xy));
-                        if valid_tiles_matrix.get(mirror_xy) {
-                            // It is better if the towers are not close to the border, as it decreases the average strength.
-                            let near_rect_count = [xy, mirror_xy]
-                                .into_iter()
-                                .filter(|&xy| rect.boundary_dist(xy) < TOWER_OPTIMAL_RANGE as u8)
-                                .count();
-                            // It is better if the towers are not near the ramparts since it requires an extra rampart on them.
-                            let near_rampart_count = [xy, mirror_xy]
-                                .into_iter()
-                                .filter(|&xy| main_ramparts_dt.get(xy) <= CREEP_RANGED_ACTION_RANGE)
-                                .count();
-                            // It is better if the towers are near for ease of filling.
-                            let storage_dist = storage_dm.get(xy).saturating_add(storage_dm.get(mirror_xy));
-                            return Some((xy, mirror_xy, near_rect_count, near_rampart_count, storage_dist));
+                        // Mirroring can fail if the rampart bounding rectangle is small, e.g., due to not having ramparts on 2-3 sides due
+                        // to favorable terrain.
+                        if let Ok(mirror_xy) = rect.mirror_xy(xy) {
+                            if valid_tiles_matrix.get(mirror_xy) {
+                                // It is better if the towers are not close to the border, as it decreases the average strength.
+                                let near_rect_count = [xy, mirror_xy]
+                                    .into_iter()
+                                    .filter(|&xy| rect.boundary_dist(xy) < TOWER_OPTIMAL_RANGE as u8)
+                                    .count();
+                                // It is better if the towers are not near the ramparts since it requires an extra rampart on them.
+                                let near_rampart_count = [xy, mirror_xy]
+                                    .into_iter()
+                                    .filter(|&xy| main_ramparts_dt.get(xy) <= CREEP_RANGED_ACTION_RANGE)
+                                    .count();
+                                // It is better if the towers are near for ease of filling.
+                                let storage_dist = storage_dm.get(xy).saturating_add(storage_dm.get(mirror_xy));
+                                return Some((xy, mirror_xy, near_rect_count, near_rampart_count, storage_dist));
+                            }
                         }
                     }
 
@@ -1872,8 +1884,11 @@ impl RoomPlanner {
 
             for work_xy in source_and_controller_work_xys {
                 let path = shortest_path_by_distance_matrix(&storage_road_dm, work_xy, 1);
-                a!(path.len() >= 2);
-                self.planned_tiles.set_min_rcl(path[1], MIN_MIN_ROAD_RCL);
+                // TODO it may happen that work_xy is on, e.g., the road around the core, blocking access.
+                if path.len() >= 2 {
+                    // TODO Shouldn't this be done for the whole path?
+                    self.planned_tiles.set_min_rcl(path[1], MIN_MIN_ROAD_RCL);
+                }
             }
 
             let road_xys = self.planned_tiles.find_structure_xys(Road);
@@ -2008,7 +2023,17 @@ mod tests {
 
 impl Debug for RoomPlanner {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "   ")?;
+        for x in 0..ROOM_SIZE {
+            write!(f, "{:>size$}", x, size = 2)?;
+            if x != ROOM_SIZE - 1 {
+                write!(f, "  ")?;
+            }
+        }
+        writeln!(f)?;
         for y in 0..ROOM_SIZE {
+            write!(f, "{:>size$} ", y, size = 2)?;
+
             for x in 0..ROOM_SIZE {
                 unsafe {
                     let tile = self.planned_tiles.get_xy(x, y);

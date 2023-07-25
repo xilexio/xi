@@ -33,7 +33,8 @@ thiserror = "1.0.40"
 derive_more = "0.99.17"
 modular-bitfield = "0.11.2"
 futures = "0.3"
-parking_lot = "0.12"
+parking_lot = "0.12.3"
+regex = "1.10.6"
 
 [dev-dependencies]
 rand = "0.8"
@@ -56,3 +57,4 @@ wasm-opt = ["-O4", "--disable-sign-ext"]
 [features]
 default = []
 mmo = []
+memory_wipe = []

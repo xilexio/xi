@@ -3,13 +3,14 @@ use crate::construction::construct_structures;
 use crate::game_time::{first_tick, game_tick};
 use crate::global_state::{load_global_state, save_global_state};
 use crate::maintenance::maintain_rooms;
-use crate::priorities::{CONSTRUCTING_STRUCTURES_PRIORITY, MOVE_CREEPS_PRIORITY, ROOM_MAINTENANCE_PRIORITY, ROOM_PLANNING_PRIORITY, ROOM_SCANNING_PRIORITY, VISUALIZATIONS_PRIORITY};
+use crate::priorities::{CLEANUP_CREEPS_PRIORITY, CONSTRUCTING_STRUCTURES_PRIORITY, MOVE_CREEPS_PRIORITY, ROOM_MAINTENANCE_PRIORITY, ROOM_PLANNING_PRIORITY, ROOM_SCANNING_PRIORITY, VISUALIZATIONS_PRIORITY};
 use crate::room_planner::plan_rooms::plan_rooms;
 use crate::room_state::scan_rooms::scan_rooms;
 use crate::visualization::show_visualizations::show_visualizations;
 use log::info;
 use screeps::game;
 use crate::{kernel, logging};
+use crate::creeps::cleanup_creeps;
 use crate::travel::move_creeps;
 
 pub fn setup() {
@@ -19,6 +20,12 @@ pub fn setup() {
 
     drop(kernel::schedule("scan_rooms", ROOM_SCANNING_PRIORITY, scan_rooms()));
     drop(kernel::schedule("plan_rooms", ROOM_PLANNING_PRIORITY, plan_rooms()));
+    drop(kernel::schedule("cleanup_creeps", CLEANUP_CREEPS_PRIORITY, cleanup_creeps()));
+    drop(kernel::schedule(
+        "construct_structures",
+        CONSTRUCTING_STRUCTURES_PRIORITY,
+        construct_structures(),
+    ));
     drop(kernel::schedule(
         "construct_structures",
         CONSTRUCTING_STRUCTURES_PRIORITY,
