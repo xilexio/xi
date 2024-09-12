@@ -5,10 +5,10 @@ use screeps::{game, ReturnCode, RoomName, RoomXY};
 use std::cell::RefCell;
 use std::ops::DerefMut;
 use std::rc::Rc;
-use log::warn;
+use log::{info, warn};
 use regex::Regex;
 use crate::kernel::sleep::sleep;
-use crate::spawning::CreepBody;
+use crate::creep::CreepBody;
 use crate::travel::TravelState;
 use crate::u;
 
@@ -42,6 +42,8 @@ pub async fn cleanup_creeps() {
     with_creeps(|creeps| {
         for creep_name in game::creeps().keys() {
             if let Some((role, number)) = parse_creep_name(&creep_name) {
+                info!("Found existing unregistered {:?} creep {}. Registering it.", role, creep_name);
+                
                 let creep = Creep {
                     name: creep_name,
                     role,
@@ -50,7 +52,7 @@ pub async fn cleanup_creeps() {
                 };
 
                 let creep_ref = Rc::new(RefCell::new(creep));
-
+                
                 creeps
                     .entry(role)
                     .or_insert_with(FxHashMap::default)
@@ -111,7 +113,11 @@ pub fn register_creep(role: CreepRole) -> CreepRef {
 /// Finds a creep free to be assigned to any task.
 pub fn find_idle_creep(room_name: RoomName, role: CreepRole, body: &CreepBody, preferred_xy: Option<RoomXY>) -> Option<CreepRef> {
     // TODO
-    None
+    with_creeps(|creeps| {
+        let role_creeps = creeps.get_mut(&role)?;
+        let creep_number = role_creeps.values().find(|&creep_ref| creep_ref.borrow().body() == *body)?.borrow().number;
+        role_creeps.remove(&creep_number)
+    })
 }
 
 pub fn for_each_creep<F>(mut f: F)

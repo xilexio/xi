@@ -1,8 +1,9 @@
 use std::fmt::{Display, Formatter};
 use crate::travel::TravelState;
 use crate::u;
-use screeps::{game, HARVEST_POWER, Position, ResourceType, ReturnCode, SharedCreepProperties, Source, Withdrawable};
-use screeps::Part::Work;
+use screeps::{game, Part, BodyPart, Position, ResourceType, ReturnCode, SharedCreepProperties, Source, Withdrawable, CREEP_CLAIM_LIFE_TIME, CREEP_LIFE_TIME, CREEP_SPAWN_TIME, HARVEST_POWER};
+use screeps::Part::{Claim, Work};
+use derive_more::Constructor;
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub enum CreepRole {
@@ -61,6 +62,10 @@ impl Creep {
     }
 
     // API wrappers
+    
+    pub fn body(&self) -> CreepBody {
+        u!(self.screeps_obj()).body().into()
+    }
 
     pub fn harvest(&self, source: &Source) -> ReturnCode {
         u!(self.screeps_obj()).harvest(source)
@@ -103,5 +108,34 @@ impl Creep {
 
     pub fn energy_harvest_power(&self) -> u32 {
         u!(self.screeps_obj()).body().iter().filter_map(|body_part| (body_part.part() == Work).then_some(HARVEST_POWER)).sum()
+    }
+}
+
+#[derive(Debug, Clone, Constructor, Eq, PartialEq)]
+pub struct CreepBody {
+    pub parts: Vec<Part>,
+}
+
+impl CreepBody {
+    pub(crate) fn lifetime(&self) -> u32 {
+        if self.parts.contains(&Claim) {
+            CREEP_CLAIM_LIFE_TIME
+        } else {
+            CREEP_LIFE_TIME
+        }
+    }
+}
+
+impl CreepBody {
+    pub fn spawn_duration(&self) -> u32 {
+        self.parts.len() as u32 * CREEP_SPAWN_TIME
+    }
+}
+
+impl From<Vec<BodyPart>> for CreepBody {
+    fn from(value: Vec<BodyPart>) -> Self {
+        CreepBody {
+            parts: value.into_iter().map(|part| part.part()).collect()
+        }
     }
 }

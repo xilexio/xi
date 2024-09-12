@@ -1,3 +1,4 @@
+use log::debug;
 use crate::room_state::room_states::replace_room_state;
 use crate::room_state::{ControllerData, MineralData, RoomDesignation, RoomState, SourceData, StructureData};
 use crate::u;
@@ -110,12 +111,19 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
         }
     }
     if structures_changed {
+        // TODO Definitely not changed but this branch is taken.
+        // TODO "New spawn" is being registered as many ticks as there was in the game.
+        debug!("Structures in room {room_name} changed.");
+        state.spawns.clear();
+        state.extensions.clear();
+        
         // Updating sorted lists of structures.
         for structure in room.find(find::STRUCTURES, None) {
             let structure_type = structure.as_structure().structure_type();
             let xy = structure.pos().xy();
             if state.designation == RoomDesignation::Owned {
                 if structure_type == Spawn {
+                    // TODO Something is wrong as it ends up being 17 same spawns.
                     state
                         .spawns
                         .push(StructureData::new(structure.as_structure().id().into_type(), xy));

@@ -1,4 +1,4 @@
-use crate::creep::CreepRole;
+use crate::creep::{CreepBody, CreepRole};
 use crate::creeps::CreepRef;
 use crate::game_time::game_tick;
 use crate::geometry::room_xy::RoomXYUtils;
@@ -8,7 +8,7 @@ use crate::kernel::process::Priority;
 use crate::priorities::HAULER_SPAWN_PRIORITY;
 use crate::resources::room_resources;
 use crate::room_state::room_states::with_room_state;
-use crate::spawning::{schedule_creep, CreepBody, PreferredSpawn, SpawnRequest};
+use crate::spawning::{schedule_creep, PreferredSpawn, SpawnRequest};
 use crate::u;
 use rustc_hash::FxHashMap;
 use screeps::Part::{Carry, Move};

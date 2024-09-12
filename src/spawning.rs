@@ -1,4 +1,4 @@
-use crate::creep::CreepRole;
+use crate::creep::{CreepBody, CreepRole};
 use crate::creeps::{register_creep, CreepRef};
 use crate::game_time::game_tick;
 use crate::kernel::schedule;
@@ -29,7 +29,8 @@ fn with_spawn_schedule<F, R>(room_name: RoomName, f: F) -> R
 where
     F: FnOnce(&mut RoomSpawnSchedule) -> R,
 {
-    // TODO need scan data to create the schedule
+    // TODO A way to react to changes in structures in a room by cancelling or modifying promises.
+    // TODO Helper functions in another module to find closest spawn and direction.
     SPAWN_SCHEDULES.with(|states| {
         let mut borrowed_states = states.borrow_mut();
         let room_spawn_schedule = borrowed_states
@@ -43,14 +44,12 @@ where
 struct RoomSpawnSchedule {
     /// Map from ticks to spawn events in that tick.
     scheduled_spawns: FxHashMap<ObjectId<StructureSpawn>, BTreeMap<u32, SpawnEvent>>,
-    // /// Map of spawn schedules for each creep role.
-    // schedules: FxHashMap<CreepRole, SpawnSchedule>,
 }
 
 /// A scheduled spawn.
 struct SpawnEvent {
     request: SpawnRequest,
-    promise: WrappedSpawnPromise,
+    promise: RRSpawnPromise,
 }
 
 pub struct SpawnPromise {
@@ -61,7 +60,7 @@ pub struct SpawnPromise {
     pub creep: Option<CreepRef>,
 }
 
-pub type WrappedSpawnPromise = Rc<RefCell<SpawnPromise>>;
+pub type RRSpawnPromise = Rc<RefCell<SpawnPromise>>;
 
 /// A request with information needed to spawn the creep.
 #[derive(Debug, Clone)]
@@ -75,27 +74,6 @@ pub struct SpawnRequest {
     // limit_tick: (u32, u32),
 }
 
-#[derive(Debug, Clone, Constructor)]
-pub struct CreepBody {
-    parts: Vec<Part>,
-}
-
-impl CreepBody {
-    pub(crate) fn lifetime(&self) -> u32 {
-        if self.parts.contains(&Claim) {
-            CREEP_CLAIM_LIFE_TIME
-        } else {
-            CREEP_LIFE_TIME
-        }
-    }
-}
-
-impl CreepBody {
-    fn spawn_duration(&self) -> u32 {
-        self.parts.len() as u32 * CREEP_SPAWN_TIME
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct PreferredSpawn {
     /// ID of the spawn to spawn from.
@@ -107,14 +85,14 @@ pub struct PreferredSpawn {
 }
 
 /// Schedule a creep to be spawned within given tick and resource constraints.
-pub fn schedule_creep(room_name: RoomName, request: SpawnRequest) -> Option<WrappedSpawnPromise> {
+pub fn schedule_creep(room_name: RoomName, request: SpawnRequest) -> Option<RRSpawnPromise> {
     with_spawn_schedule(room_name, move |room_spawn_schedule| {
         let mut selected_spawn_data = None;
 
         for preferred_spawn in request.preferred_spawns.iter() {
             if let Some(spawn_schedule) = room_spawn_schedule.scheduled_spawns.get(&preferred_spawn.id) {
-                if let Some(spawn_tick) = find_spawn_tick(preferred_spawn.id, &request, spawn_schedule) {
-                    selected_spawn_data = Some((preferred_spawn.id, spawn_tick));
+                if let Some(spawn_promise) = create_spawn_promise_from_schedule(preferred_spawn.id, &request, spawn_schedule) {
+                    selected_spawn_data = Some((preferred_spawn.id, spawn_promise));
                     break;
                 }
             } else {
@@ -124,17 +102,17 @@ pub fn schedule_creep(room_name: RoomName, request: SpawnRequest) -> Option<Wrap
 
         if let Some((spawn_id, spawn_promise)) = selected_spawn_data {
             let spawn_start_tick = spawn_promise.spawn_start_tick;
-            let wrapped_spawn_promise = Rc::new(RefCell::new(spawn_promise));
+            let rr_spawn_promise = Rc::new(RefCell::new(spawn_promise));
 
             let spawn_event = SpawnEvent {
                 request,
-                promise: wrapped_spawn_promise.clone(),
+                promise: rr_spawn_promise.clone(),
             };
 
             // We already checked the spawn exists above.
             u!(room_spawn_schedule.scheduled_spawns.get_mut(&spawn_id)).insert(spawn_start_tick, spawn_event);
 
-            Some(wrapped_spawn_promise)
+            Some(rr_spawn_promise)
         } else {
             debug!(
                 "Failed to spawn {:?} in {} because no spawn is free between ticks {} and {}.",
@@ -145,7 +123,7 @@ pub fn schedule_creep(room_name: RoomName, request: SpawnRequest) -> Option<Wrap
     })
 }
 
-fn find_spawn_tick(
+fn create_spawn_promise_from_schedule(
     spawn_id: ObjectId<StructureSpawn>,
     request: &SpawnRequest,
     schedule: &BTreeMap<u32, SpawnEvent>,
@@ -188,7 +166,7 @@ fn find_spawn_tick(
 
 /// Cancels scheduled creep. Requires iterating over each scheduled spawn in a room. Does not cancel creeps that are
 /// already spawning.
-pub fn cancel_scheduled_creep(room_name: RoomName, spawn_promise: WrappedSpawnPromise) {
+pub fn cancel_scheduled_creep(room_name: RoomName, spawn_promise: RRSpawnPromise) {
     let mut spawn_promise = spawn_promise.borrow_mut();
 
     spawn_promise.cancelled = true;
@@ -205,6 +183,10 @@ pub fn cancel_scheduled_creep(room_name: RoomName, spawn_promise: WrappedSpawnPr
 /// Issue the intents to spawn creeps in given room according to the schedule.
 pub fn spawn_room_creeps(room_name: RoomName) {
     // let resources = room_resources(room_name);
+    
+    // TODO update spawn_start_tick as now+1 when there is not enough energy
+    
+    debug!("spawn_room_creeps{room_name}");
 
     with_spawn_schedule(room_name, |room_spawn_schedule| {
         for (&spawn_id, spawn_schedule) in room_spawn_schedule.scheduled_spawns.iter_mut() {
@@ -242,6 +224,8 @@ pub fn spawn_room_creeps(room_name: RoomName) {
                                             "Failed to spawn {:?} in spawn {} in {}.",
                                             event.request.role, spawn_id, room_name
                                         );
+                                        // Informing processes that the spawning failed.
+                                        event.promise.borrow_mut().cancelled = true;
                                         // TODO Reschedule if possible.
                                     }
                                 },
@@ -251,13 +235,15 @@ pub fn spawn_room_creeps(room_name: RoomName) {
                                 "Failed to spawn {:?} in spawn {} in {}.",
                                 event.request.role, spawn_id, room_name
                             );
-                            // TODO Reschedule if possible.
                             // Informing processes that the spawning failed.
+                            // TODO Reschedule if possible.
+                            event.promise.borrow_mut().cancelled = true;
                         }
                     } else {
                         warn!("Failed to find spawn {} in {}.", spawn_id, room_name);
-                        // TODO Reschedule on another spawn if possible.
                         // Informing processes that the spawning failed.
+                        event.promise.borrow_mut().cancelled = true;
+                        // TODO Reschedule on another spawn if possible.
                     }
                 }
             }

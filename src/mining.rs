@@ -5,12 +5,12 @@ use crate::priorities::MINER_SPAWN_PRIORITY;
 use crate::resources::room_resources;
 use crate::room_state::room_states::with_room_state;
 use crate::spawn_pool::SpawnPool;
-use crate::spawning::CreepBody;
+use crate::creep::CreepBody;
 use crate::spawning::{PreferredSpawn, SpawnRequest};
 use crate::travel::{predicted_travel_ticks, travel, TravelSpec};
 use crate::u;
 use crate::utils::return_code_utils::ReturnCodeUtils;
-use log::{debug, warn};
+use log::warn;
 use screeps::game::get_object_by_id_typed;
 use screeps::look::ENERGY;
 use screeps::Part::{Move, Work};
@@ -21,13 +21,13 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
     let mut structures_broadcast = u!(with_room_state(room_name, |room_state| {
         room_state.structures_broadcast.clone()
     }));
-    
+
     loop {
         // Computing a schema for spawn request that will later have its tick intervals modified.
         // Also computing travel time for prespawning.
         let (base_spawn_request, source_data, travel_ticks, work_pos) = u!(with_room_state(room_name, |room_state| {
             let source_data = room_state.sources[source_ix];
-            
+
             let work_xy = u!(source_data.work_xy);
             let work_pos = Position::new(work_xy.x, work_xy.y, room_name);
             // TODO container id in source_data
