@@ -1,3 +1,4 @@
+use js_sys::Date;
 use crate::config::{FIRST_MEMORY_SAVE_TICK, LOG_LEVEL, MEMORY_SAVE_INTERVAL};
 use crate::construction::construct_structures;
 use crate::game_time::{first_tick, game_tick};
@@ -17,7 +18,8 @@ pub fn setup() {
     logging::init_logging(LOG_LEVEL);
 
     info!(
-        "[ξ] Initializing at tick {} -- CPU: {}/{}",
+        "[ξ] Initializing version compiled at {} at tick {} -- CPU: {}/{}",
+        compile_time::datetime_str!(),
         game::time(),
         game::cpu::tick_limit(),
         game::cpu::bucket()
@@ -60,12 +62,19 @@ pub fn setup() {
 pub fn game_loop() {
     let ticks_since_restart = game_tick() - first_tick();
 
+    let seconds_since_compilation = (Date::now() / 1000.0) as u64 - compile_time::unix!();
+
     info!(
-        "[ξ] Tick: {} / {} -- CPU: {}/{}",
+        "[ξ] Tick: {} / {} -- CPU: {}/{} -- Compiled: {} ({}d {:02}h {:02}m {:02}s ago)",
         ticks_since_restart,
         game::time(),
         game::cpu::tick_limit(),
-        game::cpu::bucket()
+        game::cpu::bucket(),
+        compile_time::datetime_str!(),
+        seconds_since_compilation / (24 * 3600),
+        seconds_since_compilation % (24 * 3600) / 3600,
+        seconds_since_compilation % 3600 / 60,
+        seconds_since_compilation % 60,
     );
 
     if ticks_since_restart == 0 {

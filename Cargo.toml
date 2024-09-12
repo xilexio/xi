@@ -35,6 +35,7 @@ modular-bitfield = "0.11.2"
 futures = "0.3"
 parking_lot = "0.12.3"
 regex = "1.10.6"
+compile-time = "0.2.0"
 
 [dev-dependencies]
 rand = "0.8"
