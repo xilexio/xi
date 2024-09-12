@@ -5,6 +5,7 @@
 #![feature(btree_cursors)]
 #![feature(local_key_cell_methods)]
 
+use js_sys::JsString;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 mod algorithms;
@@ -51,4 +52,9 @@ pub fn setup() {
 #[wasm_bindgen(js_name = loop)]
 pub fn game_loop() {
     game_loop::game_loop();
+}
+
+#[wasm_bindgen(js_name = take_log)]
+pub fn take_log() -> JsString {
+    logging::take_log().join("\n").into()
 }

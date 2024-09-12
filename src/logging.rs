@@ -1,5 +1,16 @@
+use std::cell::RefCell;
 use log::LevelFilter::*;
 use crate::game_time::game_tick;
+
+thread_local! {
+    static LOG: RefCell<Vec<String>> = RefCell::new(Vec::new());
+}
+
+pub fn take_log() -> Vec<String> {
+    LOG.with(|log| {
+        log.replace(Vec::new())
+    })
+}
 
 struct JsLog;
 struct JsNotify;
@@ -11,7 +22,9 @@ impl log::Log for JsLog {
 
     fn log(&self, record: &log::Record<'_>) {
         #[cfg(not(test))]
-        web_sys::console::log_1(&js_sys::JsString::from(format!("{}", record.args())));
+        LOG.with(|log| {
+            log.borrow_mut().push(format!("{}", record.args()));
+        });
         #[cfg(test)]
         println!("{}", record.args());
     }

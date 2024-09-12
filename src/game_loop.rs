@@ -16,6 +16,13 @@ use crate::travel::move_creeps;
 pub fn setup() {
     logging::init_logging(LOG_LEVEL);
 
+    info!(
+        "[ξ] Initializing at tick {} -- CPU: {}/{}",
+        game::time(),
+        game::cpu::tick_limit(),
+        game::cpu::bucket()
+    );
+
     load_global_state();
 
     drop(kernel::schedule("scan_rooms", ROOM_SCANNING_PRIORITY, scan_rooms()));

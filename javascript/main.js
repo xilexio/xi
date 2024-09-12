@@ -29,13 +29,18 @@ function wrap(f) {
     }
 }
 
-function run_loop(wasm_module) {
+function runLoop(wasm_module) {
     // The deserialized Memory object is replaced with a fresh object that will be forgotten after the loop.
     // The RawMemory object is not touched here.
     delete global.Memory;
     global.Memory = {};
-    // Running the actual game loop.
-    wasm_module.loop();
+    try {
+        // Running the actual game loop.
+        wasm_module.loop();
+    } finally {
+        // Showing the log in one message.
+        console.log(wasm_module.take_log());
+    }
 }
 
 global.set_room_blueprint = wrap(function(roomName, blueprintJSON) {
@@ -49,7 +54,7 @@ module.exports.loop = function () {
 
     try {
         if (wasmModule && wasmModule.__wasm && initialized) {
-            run_loop(wasmModule);
+            runLoop(wasmModule);
         } else {
             // Attempt to load the wasm only if there's enough bucket to do a bunch of work this tick.
             if (Game.cpu.bucket < 500) {
@@ -65,7 +70,7 @@ module.exports.loop = function () {
             // Running the exported setup function once.
             wasmModule.setup();
             // Running the exported loop function this tick and then later each new tick.
-            run_loop(wasmModule);
+            runLoop(wasmModule);
             // Marking the bot as initialized.
             initialized = true;
         }
