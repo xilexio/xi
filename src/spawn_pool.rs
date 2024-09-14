@@ -10,28 +10,20 @@ use screeps::RoomName;
 use std::cell::RefCell;
 use std::future::Future;
 use std::rc::Rc;
+use crate::reserved_creep::ReservedCreep;
 
 // TODO Cancel spawns on drop.
 pub struct SpawnPool {
     base_spawn_request: SpawnRequest,
-    current_creep_and_process: Option<(CreepRef, ProcessHandle<()>)>,
+    current_creep_and_process: Option<(ReservedCreep, ProcessHandle<()>)>,
     prespawned_creep: Option<MaybeSpawned>,
     room_name: RoomName,
     travel_spec: Option<TravelSpec>,
 }
 
 pub enum MaybeSpawned {
-    Spawned(CreepRef),
+    Spawned(ReservedCreep),
     Spawning(Rc<RefCell<SpawnPromise>>),
-}
-
-impl MaybeSpawned {
-    pub fn as_ref(&self) -> Option<&CreepRef> {
-        match self {
-            Self::Spawned(creep_ref) => Some(creep_ref),
-            Self::Spawning(_) => None,
-        }
-    }
 }
 
 impl Drop for SpawnPool {
@@ -95,7 +87,7 @@ impl SpawnPool {
                     }
                 }
                 MaybeSpawned::Spawning(spawn_promise) => {
-                    let mut borrowed_spawn_promise = spawn_promise.borrow_mut();
+                    let mut borrowed_spawn_promise  = spawn_promise.borrow_mut();
                     if borrowed_spawn_promise.cancelled {
                         // The spawn request was cancelled (externally).
                         drop(borrowed_spawn_promise);
@@ -113,7 +105,7 @@ impl SpawnPool {
                         if let Some(travel_spec) = self.travel_spec.as_ref() {
                             travel(&creep_ref, travel_spec.clone());
                         }
-                        self.prespawned_creep = Some(MaybeSpawned::Spawned(creep_ref));
+                        self.prespawned_creep = Some(MaybeSpawned::Spawned(ReservedCreep::new(creep_ref)));
                         trace!(
                             "A prespawned {:?} creep from the spawn pool has spawned.",
                             self.base_spawn_request.role
@@ -132,8 +124,6 @@ impl SpawnPool {
                     // This is the case after a reset or after it was impossible to spawn a creep
                     // for a long time. Trying to get an existing creep before spawning a new one.
                     // If that fails, a new one will be scheduled.
-                    // TODO Actually implement `find_idle_creep` and add a way to inform of minimum acceptable time to live.
-                    // TODO Also try to find an already spawning creep, but only if it is less than 50*3 ticks since restart.
                     find_idle_creep(
                         self.room_name,
                         self.base_spawn_request.role,
@@ -161,18 +151,18 @@ impl SpawnPool {
                 }
             };
 
-            if let Some(creep_ref) = existing_creep {
+            if let Some(reserved_creep) = existing_creep {
                 // Replacing the current creep with the one found above. 
                 // Running the user code on the current creep by constructing the future and
                 // scheduling it.
-                let future = creep_future_constructor(creep_ref.clone());
+                let future = creep_future_constructor(reserved_creep.as_ref());
                 let wrapper_priority = current_process_wrapped_meta().borrow().priority;
                 let current_process = schedule(
                     "spawn_pool_creep_process",
                     wrapper_priority.saturating_sub(1),
                     future,
                 );
-                self.current_creep_and_process = Some((creep_ref, current_process));
+                self.current_creep_and_process = Some((reserved_creep, current_process));
             }
         }
         
@@ -206,6 +196,7 @@ impl SpawnPool {
             
             // Scheduling the creep.
             if let Some(spawn_promise) = schedule_creep(self.room_name, spawn_request) {
+                // TODO Some other process may reserve this creep using find_idle_creeps immediately, need to prevent that.
                 self.prespawned_creep = Some(MaybeSpawned::Spawning(spawn_promise));
                 debug!(
                     "Scheduled a spawn of {:?} creep from the spawn pool.",

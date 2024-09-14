@@ -83,19 +83,30 @@ pub async fn construct_structures() {
                         let structure_xys = room_state
                             .structures
                             .get(&structure_type)
-                            .map(|xys| xys.clone())
-                            .unwrap_or_else(|| FxHashSet::default());
+                            .cloned()
+                            .unwrap_or_default();
                         let structure_current_rcl_xys = current_rcl_structures
                             .get(&structure_type)
-                            .map(|xys| xys.clone())
-                            .unwrap_or_else(|| FxHashSet::default());
+                            .cloned()
+                            .unwrap_or_default();
+
+                        let mut has_incorrect_last_spawn = false;
 
                         // Removing extra structures.
                         for &xy in structure_xys.iter() {
                             if !structure_current_rcl_xys.contains(&xy) {
                                 // There is an extra structure in the room. It might happen upon claiming
                                 // a room with structures present or when the room was downgraded.
-                                if structure_type != Spawn || structure_xys.len() > 1 {
+                                if structure_type == Spawn {
+                                    has_incorrect_last_spawn = true;
+                                }
+                                
+                                if structure_type == Spawn && structure_xys.len() == 1 {
+                                    warn!(
+                                        "The only {:?} in {} at {} is in an incorrect place. Not removing it.",
+                                        structure_type, room_name, xy,
+                                    );
+                                } else {
                                     // Destroying the structure.
                                     if let Some(structure_obj) = get_structure(room_name, xy, structure_type) {
                                         // TODO Do not destroy the structure if it is owned and supposed
@@ -122,6 +133,14 @@ pub async fn construct_structures() {
                             if let Some(room) = rooms().get(room_name) {
                                 for xy in structure_current_rcl_xys.iter() {
                                     if !structure_xys.contains(xy) && !existing_construction_sites_xys.contains(xy) {
+                                        if structure_type == Spawn && has_incorrect_last_spawn && structure_current_rcl_xys.len() == 1 {
+                                            warn!(
+                                                "Not placing construction site for {:?} in {} at {} since there exists only one, though in an incorrect place.",
+                                                structure_type, room_name, xy,
+                                            );
+                                            continue;
+                                        }
+
                                         debug!(
                                             "Placing a new construction site for {:?} at {} in {}.",
                                             structure_type, xy, room_name

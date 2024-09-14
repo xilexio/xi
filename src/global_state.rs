@@ -9,6 +9,7 @@ use serde_with::{serde_as, FromInto, PickFirst};
 /// References to parts of the global state to avoid copying them.
 #[derive(Serialize)]
 struct GlobalStateSer<'a> {
+    #[serde(default)]
     room_states: &'a RoomStates,
 }
 
@@ -23,6 +24,7 @@ type OldRoomStates = RoomStates;
 #[derive(Deserialize)]
 struct GlobalStateDe {
     #[serde_as(as = "PickFirst<(_, FromInto<OldRoomStates>)>")]
+    #[serde(default)]
     room_states: RoomStates,
 }
 

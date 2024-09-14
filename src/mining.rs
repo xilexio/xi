@@ -10,7 +10,7 @@ use crate::spawning::{PreferredSpawn, SpawnRequest};
 use crate::travel::{predicted_travel_ticks, travel, TravelSpec};
 use crate::u;
 use crate::utils::return_code_utils::ReturnCodeUtils;
-use log::warn;
+use log::{debug, warn};
 use screeps::game::get_object_by_id_typed;
 use screeps::look::ENERGY;
 use screeps::Part::{Move, Work};
@@ -73,7 +73,8 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
 
         loop {
             // When structures change, resetting everything.
-            if structures_broadcast.check().is_none() {
+            if structures_broadcast.check().is_some() {
+                debug!("Structures changed. Resetting mine_source.");
                 break;
             }
 
@@ -111,6 +112,7 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                             sleep(1).await;
                         } else if miner.borrow().ticks_to_live() < source.ticks_to_regeneration() {
                             // If the miner does not exist by the time source regenerates, kill it.
+                            debug!("Miner {} has insufficient ticks to live. Killing it.", miner.borrow().name);
                             miner.borrow().suicide();
                             // TODO Store the energy first.
                             break;

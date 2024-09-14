@@ -7,12 +7,10 @@ use crate::priorities::CREEP_REGISTRATION_PRIORITY;
 use crate::room_state::room_states::with_room_state;
 use crate::utils::return_code_utils::ReturnCodeUtils;
 use crate::{a, u};
-use derive_more::Constructor;
 use log::{debug, trace, warn};
 use rustc_hash::FxHashMap;
-use screeps::Part::Claim;
 use screeps::{
-    game, Direction, ObjectId, Part, RoomName, SpawnOptions, StructureSpawn, CREEP_CLAIM_LIFE_TIME, CREEP_LIFE_TIME,
+    game, Direction, ObjectId, RoomName, SpawnOptions, StructureSpawn, CREEP_CLAIM_LIFE_TIME, CREEP_LIFE_TIME,
     CREEP_SPAWN_TIME,
 };
 use std::cell::RefCell;
@@ -186,8 +184,6 @@ pub fn spawn_room_creeps(room_name: RoomName) {
     
     // TODO update spawn_start_tick as now+1 when there is not enough energy
     
-    debug!("spawn_room_creeps{room_name}");
-
     with_spawn_schedule(room_name, |room_spawn_schedule| {
         for (&spawn_id, spawn_schedule) in room_spawn_schedule.scheduled_spawns.iter_mut() {
             if let Some(entry) = spawn_schedule.first_entry() {

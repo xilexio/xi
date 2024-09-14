@@ -114,9 +114,10 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
         // TODO Definitely not changed but this branch is taken.
         // TODO "New spawn" is being registered as many ticks as there was in the game.
         debug!("Structures in room {room_name} changed.");
+        state.structures = structures;
         state.spawns.clear();
         state.extensions.clear();
-        
+
         // Updating sorted lists of structures.
         for structure in room.find(find::STRUCTURES, None) {
             let structure_type = structure.as_structure().structure_type();
