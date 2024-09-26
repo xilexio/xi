@@ -1,4 +1,4 @@
-use crate::creep::{CreepBody, CreepRole};
+use crate::creeps::creep::{CreepBody, CreepRole};
 use crate::creeps::{register_creep, CreepRef};
 use crate::game_time::game_tick;
 use crate::kernel::schedule;
@@ -10,8 +10,12 @@ use crate::{a, u};
 use log::{debug, trace, warn};
 use rustc_hash::FxHashMap;
 use screeps::{
-    game, Direction, ObjectId, RoomName, SpawnOptions, StructureSpawn, CREEP_CLAIM_LIFE_TIME, CREEP_LIFE_TIME,
-    CREEP_SPAWN_TIME,
+    game,
+    Direction,
+    ObjectId,
+    RoomName,
+    SpawnOptions,
+    StructureSpawn,
 };
 use std::cell::RefCell;
 use std::cmp::max;

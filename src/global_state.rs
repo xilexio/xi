@@ -1,5 +1,4 @@
 use crate::room_state::room_states::{with_room_states, RoomStates};
-use crate::u;
 use js_sys::JsString;
 use log::{error, trace};
 use screeps::{raw_memory, MEMORY_SIZE_LIMIT};
@@ -60,7 +59,7 @@ pub fn load_global_state() {
     #[cfg(feature = "memory_wipe")]
     let raw_memory_str = "{}";
     #[cfg(not(feature = "memory_wipe"))]
-    let raw_memory_str = u!(raw_memory::get().as_string());
+    let raw_memory_str = raw_memory::get().as_string().unwrap();
     
     match deserialize_global_state(&raw_memory_str) {
         Ok(()) => {

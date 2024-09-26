@@ -4,4 +4,8 @@ use thiserror::Error;
 pub enum CreepError {
     #[error("creep died before its task was completed")]
     CreepDead,
+    #[error("creep failed to pickup a resource")]
+    CreepPickupFailed,
+    #[error("creep failed to store a resource")]
+    CreepTransferFailed,
 }

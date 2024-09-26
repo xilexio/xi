@@ -1,9 +1,27 @@
 use std::fmt::{Display, Formatter};
 use crate::travel::TravelState;
 use crate::u;
-use screeps::{game, Part, BodyPart, Position, ResourceType, ReturnCode, SharedCreepProperties, Source, Withdrawable, CREEP_CLAIM_LIFE_TIME, CREEP_LIFE_TIME, CREEP_SPAWN_TIME, HARVEST_POWER};
+use screeps::{
+    game,
+    Part,
+    BodyPart,
+    Position,
+    ResourceType,
+    ReturnCode,
+    SharedCreepProperties,
+    Source,
+    Withdrawable,
+    Resource,
+    Transferable,
+    RoomObject,
+    CREEP_CLAIM_LIFE_TIME,
+    CREEP_LIFE_TIME,
+    CREEP_SPAWN_TIME,
+    HARVEST_POWER,
+};
 use screeps::Part::{Claim, Work};
 use derive_more::Constructor;
+use crate::unchecked_transferable::UncheckedTransferable;
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub enum CreepRole {
@@ -98,10 +116,26 @@ impl Creep {
     }
 
     pub fn withdraw<T>(&self, target: &T, resource_type: ResourceType, amount: Option<u32>) -> ReturnCode
-        where
-            T: Withdrawable,
+    where
+        T: Withdrawable,
     {
         u!(self.screeps_obj()).withdraw(target, resource_type, amount)
+    }
+
+    pub fn pickup(&self, target: &Resource) -> ReturnCode {
+        u!(self.screeps_obj()).pickup(target)
+    }
+
+    pub fn transfer<T>(&self, target: &T, resource_type: ResourceType, amount: Option<u32>) -> ReturnCode
+    where
+        T: Transferable
+    {
+        u!(self.screeps_obj()).transfer(target, resource_type, amount)
+    }
+    
+    pub fn unchecked_transfer(&self, target: &RoomObject, resource_type: ResourceType, amount: Option<u32>) -> ReturnCode {
+        let transferable_target = UncheckedTransferable(target);
+        self.transfer(&transferable_target, resource_type, amount)
     }
 
     // Statistics

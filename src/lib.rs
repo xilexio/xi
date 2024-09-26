@@ -14,8 +14,6 @@ mod config;
 mod construction;
 mod consts;
 mod cost_approximation;
-mod creep;
-mod creeps;
 mod fresh_number;
 mod game_loop;
 mod game_time;
@@ -42,6 +40,8 @@ mod hauling;
 mod spawn_pool;
 mod filling_spawns;
 mod reserved_creep;
+mod unchecked_transferable;
+mod creeps;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]

@@ -108,6 +108,14 @@ where
         self.value.replace(Some((value, game_tick())));
         signal_condition(self.cid);
     }
+    
+    pub fn clone_inactive(&self) -> Self {
+        Broadcast {
+            cid: self.cid,
+            value: self.value.clone(),
+            last_try_tick: game_tick(),
+        }
+    }
 
     pub fn reset(&self) {
         self.value.replace(None);

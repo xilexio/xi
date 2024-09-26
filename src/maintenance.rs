@@ -1,7 +1,7 @@
 use crate::kernel::sleep::sleep;
 use crate::kernel::{kill_tree, schedule};
 use crate::mining::mine_source;
-use crate::priorities::{MINING_PRIORITY, ROOM_MAINTENANCE_PRIORITY, SPAWNING_CREEPS_PRIORITY};
+use crate::priorities::{HAULING_PRIORITY, MINING_PRIORITY, ROOM_MAINTENANCE_PRIORITY, SPAWNING_CREEPS_PRIORITY};
 use crate::room_state::room_states::with_room_state;
 use crate::spawning::{spawn_room_creeps, update_spawn_list};
 use crate::u;
@@ -10,6 +10,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::{game, RoomName};
 use std::iter::once;
 use crate::filling_spawns::fill_spawns;
+use crate::hauling::haul_resources;
 
 pub async fn maintain_rooms() {
     let mut room_processes = FxHashMap::default();
@@ -83,13 +84,13 @@ async fn maintain_room(room_name: RoomName) {
 
     with_room_state(room_name, |room_state| {
         // TODO schedule hauling
-        // Scheduling filling the spawns and extensions.
+        // Schedule filling the spawns and extensions.
         drop(schedule(
             &format!("fill_spawns_{}", room_name),
             MINING_PRIORITY - 1, // TODO
             fill_spawns(room_name)
         ));
-        // Scheduling mining sources inside the room.
+        // Schedule mining sources inside the room.
         for (source_ix, source_data) in room_state.sources.iter().enumerate() {
             debug!("Setting up mining of {} in {}.", source_data.xy, room_name);
             drop(schedule(
@@ -98,6 +99,12 @@ async fn maintain_room(room_name: RoomName) {
                 mine_source(room_name, source_ix),
             ));
         }
+        // Schedule hauling resources.
+        drop(schedule(
+            &format!("haul_resources_{}", room_name),
+            HAULING_PRIORITY - 1, // TODO
+            haul_resources(room_name)
+        ));
     });
 
     drop(schedule(

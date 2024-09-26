@@ -27,7 +27,7 @@ use crate::room_planner::RoomPlannerError::{
 use crate::room_state::packed_terrain::PackedTerrain;
 use crate::room_state::RoomState;
 use crate::towers::tower_attack_power;
-use crate::{a, u};
+use crate::u;
 use derive_more::Constructor;
 use log::{debug, error};
 use rustc_hash::{FxHashMap, FxHashSet};

@@ -1,19 +1,18 @@
 use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
 use log::debug;
-use rustc_hash::{FxHashMap, FxHashSet};
-use crate::creep::{Creep, CreepRole};
+use rustc_hash::FxHashSet;
+use crate::creeps::creep::{Creep, CreepRole};
 use crate::creeps::CreepRef;
-use crate::{a, u};
+use crate::a;
 
 thread_local! {
-    // TODO Why not make this number globally unique?
-    static RESERVED_CREEPS: RefCell<FxHashMap<CreepRole, FxHashSet<u32>>> = RefCell::new(FxHashMap::default());
+    static RESERVED_CREEPS: RefCell<FxHashSet<(CreepRole, u32)>> = RefCell::new(FxHashSet::default());
 }
 
 fn with_reserved_creeps<F, R>(f: F) -> R
 where
-    F: FnOnce(&mut FxHashMap<CreepRole, FxHashSet<u32>>) -> R,
+    F: FnOnce(&mut FxHashSet<(CreepRole, u32)>) -> R,
 {
     RESERVED_CREEPS.with(|reserved_creeps| {
         let mut borrowed_reserved_creeps = reserved_creeps.borrow_mut();
@@ -25,6 +24,8 @@ pub trait MaybeReservedCreep {
     fn is_reserved(&self) -> bool;
 }
 
+/// Structure that is a wrapper around CreepRef that reserves the creep upon creation and
+/// releases it to the pool of not reserved creeps when dropped.
 #[derive(Debug)]
 pub struct ReservedCreep {
     creep_ref: CreepRef,
@@ -35,9 +36,9 @@ impl ReservedCreep {
         with_reserved_creeps(|reserved_creeps| {
             let creep = creep_ref.borrow();
             debug!("Reserving creep {}.", creep.name);
-            let entry = reserved_creeps.entry(creep.role).or_default();
-            a!(!entry.contains(&creep.number));
-            entry.insert(creep.number);
+            // TODO This assertion has failed after spawning a creep.
+            a!(!reserved_creeps.contains(&(creep.role, creep.number)));
+            reserved_creeps.insert((creep.role, creep.number));
         });
 
         ReservedCreep {
@@ -61,11 +62,7 @@ impl Deref for ReservedCreep {
 impl MaybeReservedCreep for Creep {
     fn is_reserved(&self) -> bool {
         with_reserved_creeps(|reserved_creeps| {
-            if let Some(role_creeps) = reserved_creeps.get(&self.role) {
-                role_creeps.contains(&self.number)
-            } else {
-                false
-            }
+            reserved_creeps.contains(&(self.role, self.number))
         })
     }
 }
@@ -75,7 +72,7 @@ impl Drop for ReservedCreep {
         with_reserved_creeps(|reserved_creeps| {
             let creep = self.creep_ref.borrow();
             debug!("Dropping reservation for creep {}.", creep.name);
-            a!(u!(reserved_creeps.get_mut(&creep.role)).remove(&creep.number));
+            a!(reserved_creeps.remove(&(creep.role, creep.number)));
         })
     }
 }

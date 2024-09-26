@@ -1,4 +1,3 @@
-use crate::creep::{Creep, CreepRole};
 use crate::fresh_number::fresh_number_if_some;
 use rustc_hash::FxHashMap;
 use screeps::{game, ReturnCode, RoomName, RoomXY};
@@ -8,10 +7,14 @@ use std::rc::Rc;
 use log::{info, warn};
 use regex::Regex;
 use crate::kernel::sleep::sleep;
-use crate::creep::CreepBody;
+use creep::CreepBody;
+use crate::creeps::creep::{Creep, CreepRole};
 use crate::travel::TravelState;
 use crate::u;
 use crate::reserved_creep::{MaybeReservedCreep, ReservedCreep};
+
+pub mod creep;
+mod actions;
 
 pub type CreepRef = Rc<RefCell<Creep>>;
 
@@ -33,7 +36,7 @@ pub async fn cleanup_creeps() {
     let creep_name_regex = u!(Regex::new(r"^([a-z]+)([1-9][0-9]*)$"));
 
     let parse_creep_name = |creep_name: &str| -> Option<(CreepRole, u32)> {
-        let caps = creep_name_regex.captures(&creep_name)?;
+        let caps = creep_name_regex.captures(creep_name)?;
         let role = CreepRole::from_creep_name_prefix(&caps[1])?;
         let number = caps[2].parse::<u32>().ok()?;
         Some((role, number))
@@ -43,7 +46,7 @@ pub async fn cleanup_creeps() {
     with_creeps(|creeps| {
         for creep_name in game::creeps().keys() {
             if let Some((role, number)) = parse_creep_name(&creep_name) {
-                info!("Found existing unregistered {:?} creep {}. Registering it.", role, creep_name);
+                info!("Found existing unregistered {} creep {}. Registering it.", role, creep_name);
 
                 let creep = Creep {
                     name: creep_name,
@@ -118,7 +121,8 @@ pub fn find_idle_creep(room_name: RoomName, role: CreepRole, body: &CreepBody, p
         let role_creeps = creeps.get_mut(&role)?;
         let creep_number = role_creeps.values().find(|&creep_ref| {
             let creep = creep_ref.borrow();
-            !creep.is_reserved() && creep.body().eq(body)
+            // TODO Reserving the creep when still spawning and then remove the existence check.
+            creep.exists() && !creep.is_reserved() && creep.body().eq(body)
         })?.borrow().number;
         role_creeps.get(&creep_number).cloned().map(ReservedCreep::new)
     })

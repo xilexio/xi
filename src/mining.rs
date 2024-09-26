@@ -1,11 +1,11 @@
-use crate::creep::CreepRole;
+use crate::creeps::creep::CreepRole;
 use crate::hauling::{schedule_pickup, WithdrawRequest};
 use crate::kernel::sleep::sleep;
 use crate::priorities::MINER_SPAWN_PRIORITY;
 use crate::resources::room_resources;
 use crate::room_state::room_states::with_room_state;
-use crate::spawn_pool::SpawnPool;
-use crate::creep::CreepBody;
+use crate::spawn_pool::{SpawnPool, SpawnPoolOptions};
+use crate::creeps::creep::CreepBody;
 use crate::spawning::{PreferredSpawn, SpawnRequest};
 use crate::travel::{predicted_travel_ticks, travel, TravelSpec};
 use crate::u;
@@ -15,13 +15,9 @@ use screeps::game::get_object_by_id_typed;
 use screeps::look::ENERGY;
 use screeps::Part::{Move, Work};
 use screeps::{HasTypedId, Position, RoomName};
-use std::cmp::min;
+use crate::room_state::utils::loop_until_structures_change;
 
 pub async fn mine_source(room_name: RoomName, source_ix: usize) {
-    let mut structures_broadcast = u!(with_room_state(room_name, |room_state| {
-        room_state.structures_broadcast.clone()
-    }));
-
     loop {
         // Computing a schema for spawn request that will later have its tick intervals modified.
         // Also computing travel time for prespawning.
@@ -69,15 +65,11 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
             range: 0,
         };
 
-        let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, Some(travel_spec.clone()));
+        let spawn_pool_options = SpawnPoolOptions::default().travel_spec(Some(travel_spec.clone()));
+        let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, spawn_pool_options);
 
-        loop {
-            // When structures change, resetting everything.
-            if structures_broadcast.check().is_some() {
-                debug!("Structures changed. Resetting mine_source.");
-                break;
-            }
-
+        // TODO This ends up being an infinite loop sometimes.
+        loop_until_structures_change(room_name, 1, || {
             // TODO Body should depend on max extension fill and also on current resources. Later, also on statistics
             //      about energy income, but this applies mostly before the storage is online.
             // Keeping a miner spawned and mining with it.
@@ -91,7 +83,7 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                     let miner = creep_ref.as_ref();
                     let ticks_to_live = miner.borrow().ticks_to_live();
                     let energy_per_tick = miner.borrow().energy_harvest_power();
-
+                    
                     // Moving towards the location.
                     if let Err(err) = travel(&creep_ref, travel_spec.clone()).await {
                         warn!("Miner could not reach its destination: {err}");
@@ -99,7 +91,7 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                         sleep(1).await;
                     }
 
-                    let mut withdraw_request = None;
+                    let mut pickup_id = None;
 
                     // Mining. We do not have to check that the miner exists, since it is done in with_spawned_creep.
                     loop {
@@ -131,27 +123,26 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                         } else {
                             // Drop mining.
                             if let Some(dropped_energy) = work_pos.look_for(ENERGY).first() {
-                                withdraw_request = Some(WithdrawRequest {
+                                let withdraw_request = WithdrawRequest {
                                     room_name,
                                     target: dropped_energy.id(),
                                     xy: Some(work_pos),
                                     amount: dropped_energy.amount(),
-                                    amount_per_tick: energy_per_tick,
-                                    max_amount: min(1000, source.energy() + dropped_energy.amount()),
+                                    // amount_per_tick: energy_per_tick,
+                                    // max_amount: min(1000, source.energy() + dropped_energy.amount()),
                                     priority: 100,
-                                    preferred_tick: (0, 0),
-                                });
-                                // Ordering a hauler to get dropped energy.
-                                let id = schedule_pickup(u!(withdraw_request));
-                                // TODO updating it
+                                    // preferred_tick: (0, 0),
+                                };
+                                // Ordering a hauler to get dropped energy, updating the existing request.
+                                pickup_id = Some(schedule_pickup(withdraw_request, pickup_id.take()));
                             }
                         }
                     }
                 }
             });
-
-            sleep(1).await;
-        }
+            
+            true
+        }).await;
     }
 }
 

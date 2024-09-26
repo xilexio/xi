@@ -1,53 +1,58 @@
-use crate::consts::FAR_FUTURE;
-use crate::game_time::game_tick;
-use crate::hauling::{schedule_store, StoreRequest};
-use crate::kernel::sleep::sleep;
+use log::debug;
+use rustc_hash::FxHashMap;
+use crate::hauling::{schedule_store, StoreRequest, StoreRequestId};
 use crate::room_state::room_states::with_room_state;
 use crate::u;
-use screeps::game::{get_object_by_id_typed, rooms};
+use screeps::game::get_object_by_id_typed;
 use screeps::ResourceType::Energy;
 use screeps::{HasPosition, HasStore, HasTypedId, ObjectId, RoomName, Transferable};
 use wasm_bindgen::JsValue;
+use crate::room_state::utils::loop_until_structures_change;
 
 /// Keeps spawns filled by requesting haulers to fill them.
 pub async fn fill_spawns(room_name: RoomName) {
-    let mut structures_broadcast = u!(with_room_state(room_name, |room_state| {
-        room_state.structures_broadcast.clone()
-    }));
-
     loop {
-        while structures_broadcast.check().is_none() {
+        // TODO Maybe do not drop all store requests, just the ones that changed?
+        let mut spawn_store_request_ids = FxHashMap::default();
+        let mut extension_store_request_ids = FxHashMap::default();
+
+        loop_until_structures_change(room_name, 4, || {
             with_room_state(room_name, |room_state| {
-                let room = u!(rooms().get(room_name));
-                if room.energy_available() < room.energy_capacity_available() {
-                    for spawn_data in room_state.spawns.iter() {
-                        schedule_missing_energy_store(room_name, spawn_data.id);
+                for spawn_data in room_state.spawns.iter() {
+                    if let Some(request_id) = schedule_missing_energy_store(room_name, spawn_data.id) {
+                        spawn_store_request_ids.insert(spawn_data.id, request_id);
                     }
-                    for extension_data in room_state.extensions.iter() {
-                        schedule_missing_energy_store(room_name, extension_data.id);
+                }
+                for extension_data in room_state.extensions.iter() {
+                    if let Some(request_id) = schedule_missing_energy_store(room_name, extension_data.id) {
+                        extension_store_request_ids.insert(extension_data.id, request_id);
                     }
                 }
             });
-            sleep(4).await;
-        }
+
+            true
+        }).await;
     }
 }
 
-pub fn schedule_missing_energy_store<T>(room_name: RoomName, id: ObjectId<T>)
+pub fn schedule_missing_energy_store<T>(room_name: RoomName, id: ObjectId<T>) -> Option<StoreRequestId>
 where
     T: HasStore + HasTypedId<T> + Transferable + From<JsValue>,
 {
     let spawn = u!(get_object_by_id_typed(&id));
-    let missing_energy = spawn.store().get_free_capacity(Some(Energy));
+    let missing_energy = spawn.store().get_free_capacity(Some(Energy)) as u32;
     if missing_energy > 0 {
+        debug!("Scheduling haul of missing {missing_energy} energy for {id} in {room_name}.");
         // The previous store request is replaced by this one.
-        schedule_store(StoreRequest {
+        Some(schedule_store(StoreRequest {
             room_name,
             target: spawn.id(),
             xy: Some(spawn.pos()),
-            amount: missing_energy as u32,
+            amount: missing_energy,
             priority: 0, // TODO far away extensions less important
-            preferred_tick: (game_tick(), FAR_FUTURE),
-        });
+            // preferred_tick: (game_tick(), FAR_FUTURE),
+        }, None))
+    } else {
+        None
     }
 }

@@ -12,6 +12,20 @@ use std::future::Future;
 use std::rc::Rc;
 use crate::reserved_creep::ReservedCreep;
 
+#[derive(Debug, Clone, Default)]
+pub struct SpawnPoolOptions {
+    travel_spec: Option<TravelSpec>,
+}
+
+impl SpawnPoolOptions {
+    pub fn travel_spec(self, value: Option<TravelSpec>) -> Self {
+        Self {
+            travel_spec: value,
+            // ..self
+        }
+    }
+}
+
 // TODO Cancel spawns on drop.
 pub struct SpawnPool {
     base_spawn_request: SpawnRequest,
@@ -38,13 +52,13 @@ impl Drop for SpawnPool {
 }
 
 impl SpawnPool {
-    pub fn new(room_name: RoomName, base_spawn_request: SpawnRequest, travel_spec: Option<TravelSpec>) -> Self {
+    pub fn new(room_name: RoomName, base_spawn_request: SpawnRequest, options: SpawnPoolOptions) -> Self {
         Self {
             base_spawn_request,
             current_creep_and_process: None,
             prespawned_creep: None,
             room_name,
-            travel_spec,
+            travel_spec: options.travel_spec,
         }
     }
 
@@ -81,7 +95,7 @@ impl SpawnPool {
                     if !creep_ref.borrow().exists() {
                         self.prespawned_creep = None;
                         debug!(
-                            "A prespawned {:?} creep from the spawn pool died.",
+                            "A prespawned {} creep from the spawn pool died.",
                             self.base_spawn_request.role
                         );
                     }
@@ -93,7 +107,7 @@ impl SpawnPool {
                         drop(borrowed_spawn_promise);
                         self.prespawned_creep = None;
                         debug!(
-                            "Spawn request of {:?} creep from the spawn pool was cancelled.",
+                            "Spawn request of {} creep from the spawn pool was cancelled.",
                             self.base_spawn_request.role
                         );
                     } else if let Some(creep_ref) = borrowed_spawn_promise.creep.take() {
@@ -107,7 +121,7 @@ impl SpawnPool {
                         }
                         self.prespawned_creep = Some(MaybeSpawned::Spawned(ReservedCreep::new(creep_ref)));
                         trace!(
-                            "A prespawned {:?} creep from the spawn pool has spawned.",
+                            "A prespawned {} creep from the spawn pool has spawned.",
                             self.base_spawn_request.role
                         );
                     }
@@ -130,7 +144,7 @@ impl SpawnPool {
                         &self.base_spawn_request.body,
                         self.travel_spec.as_ref().map(|travel_spec| travel_spec.target.xy()),
                     ).map(|creep| {
-                        debug!("Found idle {:?} creep.", self.base_spawn_request.role);
+                        debug!("Found idle {} creep.", self.base_spawn_request.role);
                         creep
                     })
                 }

@@ -4,10 +4,10 @@ use crate::kernel::sleep::sleep;
 use crate::u;
 use crate::utils::return_code_utils::ReturnCodeUtils;
 use screeps::Position;
-use crate::creep::Creep;
+use crate::creeps::creep::Creep;
 use crate::creep_error::CreepError;
 use crate::creep_error::CreepError::CreepDead;
-use crate::creep::CreepBody;
+use crate::creeps::creep::CreepBody;
 
 #[derive(Debug)]
 pub struct TravelState {
