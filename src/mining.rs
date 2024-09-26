@@ -1,5 +1,5 @@
 use crate::creeps::creep::CreepRole;
-use crate::hauling::{schedule_pickup, WithdrawRequest};
+use crate::hauling::schedule_pickup;
 use crate::kernel::sleep::sleep;
 use crate::priorities::MINER_SPAWN_PRIORITY;
 use crate::resources::room_resources;
@@ -15,6 +15,7 @@ use screeps::game::get_object_by_id_typed;
 use screeps::look::ENERGY;
 use screeps::Part::{Move, Work};
 use screeps::{HasTypedId, Position, RoomName};
+use crate::hauling::requests::WithdrawRequest;
 use crate::room_state::utils::loop_until_structures_change;
 
 pub async fn mine_source(room_name: RoomName, source_ix: usize) {

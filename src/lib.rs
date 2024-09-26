@@ -34,7 +34,7 @@ mod towers;
 mod utils;
 mod visualization;
 mod travel;
-mod creep_error;
+mod errors;
 mod mining;
 mod hauling;
 mod spawn_pool;

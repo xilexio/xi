@@ -10,7 +10,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::{game, RoomName};
 use std::iter::once;
 use crate::filling_spawns::fill_spawns;
-use crate::hauling::haul_resources;
+use crate::hauling::haul_resources::haul_resources;
 
 pub async fn maintain_rooms() {
     let mut room_processes = FxHashMap::default();

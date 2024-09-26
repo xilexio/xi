@@ -5,6 +5,9 @@ use log::trace;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use crate::local_trace;
+
+const DEBUG: bool = false;
 
 #[derive(Debug, Constructor)]
 pub struct Sleep {
@@ -16,14 +19,14 @@ impl Future for Sleep {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         if game_tick() >= self.wake_up_tick {
-            trace!(
+            local_trace!(
                 "Sleep ready because game_time {} >= {} wake_up_tick.",
                 game_tick(),
                 self.wake_up_tick
             );
             Poll::Ready(())
         } else {
-            trace!(
+            local_trace!(
                 "Sleep pending because game_time {} < {} wake_up_tick.",
                 game_tick(),
                 self.wake_up_tick

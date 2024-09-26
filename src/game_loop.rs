@@ -12,18 +12,43 @@ use log::info;
 use screeps::game;
 use crate::{kernel, logging};
 use crate::creeps::cleanup_creeps;
+use crate::kernel::sleep::sleep;
 use crate::travel::move_creeps;
 
 pub fn setup() {
     logging::init_logging(LOG_LEVEL);
 
     info!(
-        "[ξ] Initializing version compiled at {} at tick {} -- CPU: {}/{}",
+        "[ξ] Initializing version compiled at {} at tick {} -- CPU: {:.1}/{:.1}",
         compile_time::datetime_str!(),
         game::time(),
         game::cpu::tick_limit(),
         game::cpu::bucket()
     );
+
+    drop(kernel::schedule("tick_end", 0, async {
+        loop {
+            let ticks_since_restart = game_tick() - first_tick();
+
+            let seconds_since_compilation = (Date::now() / 1000.0) as u64 - compile_time::unix!();
+
+            info!(
+                "[ξ] End of tick: {} / {} -- Used CPU: {:.1}/{:.1} -- Bucket: {:.1} -- Compiled: {} ({}d {:02}h {:02}m {:02}s ago)",
+                ticks_since_restart,
+                game::time(),
+                game::cpu::get_used(),
+                game::cpu::tick_limit(),
+                game::cpu::bucket(),
+                compile_time::datetime_str!(),
+                seconds_since_compilation / (24 * 3600),
+                seconds_since_compilation % (24 * 3600) / 3600,
+                seconds_since_compilation % 3600 / 60,
+                seconds_since_compilation % 60,
+            );
+            
+            sleep(1).await;
+        }
+    }));
 
     load_global_state();
 
@@ -65,7 +90,7 @@ pub fn game_loop() {
     let seconds_since_compilation = (Date::now() / 1000.0) as u64 - compile_time::unix!();
 
     info!(
-        "[ξ] Tick: {} / {} -- CPU: {}/{} -- Compiled: {} ({}d {:02}h {:02}m {:02}s ago)",
+        "[ξ] Tick: {} / {} -- CPU: {:.1}/{:.1} -- Compiled: {} ({}d {:02}h {:02}m {:02}s ago)",
         ticks_since_restart,
         game::time(),
         game::cpu::tick_limit(),

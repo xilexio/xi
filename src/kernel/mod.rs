@@ -6,7 +6,7 @@ use crate::kernel::process_handle::ProcessHandle;
 use crate::kernel::runnable::Runnable;
 use crate::utils::cold::cold;
 use crate::utils::map_utils::{MultiMapUtils, OrderedMultiMapUtils};
-use crate::{a, u};
+use crate::{a, local_trace, u};
 use log::{error, trace};
 use parking_lot::lock_api::MappedMutexGuard;
 use parking_lot::{Mutex, MutexGuard, RawMutex};
@@ -21,6 +21,8 @@ pub mod process;
 pub mod process_handle;
 pub mod runnable;
 pub mod sleep;
+
+const DEBUG: bool = false;
 
 /// A singleton executor and reactor. To work correctly, only one Kernel may be used at a time and it must be used
 /// from one thread.
@@ -205,15 +207,15 @@ pub fn run_processes() {
 
                 if let Some(awaited_process_pid) = meta.awaited_pid {
                     drop(meta);
-                    trace!("{} waiting for P{}.", process, awaited_process_pid);
+                    local_trace!("{} waiting for P{}.", process, awaited_process_pid);
                     kern.awaiting_processes.push_or_insert(awaited_process_pid, process);
                 } else if let Some(wake_up_tick) = meta.wake_up_tick {
                     drop(meta);
-                    trace!("{} sleeping until {}.", process, wake_up_tick);
+                    local_trace!("{} sleeping until {}.", process, wake_up_tick);
                     kern.sleeping_processes.push_or_insert(wake_up_tick, process);
                 } else if let Some(awaited_cid) = meta.awaited_cid {
                     drop(meta);
-                    trace!("{} waiting for C{}.", process, awaited_cid);
+                    local_trace!("{} waiting for C{}.", process, awaited_cid);
                     kern.condition_processes.push_or_insert(awaited_cid, process);
                 } else {
                     error!("{} is pending but not waiting for anything.", process)

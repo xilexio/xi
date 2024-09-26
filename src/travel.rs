@@ -5,8 +5,8 @@ use crate::u;
 use crate::utils::return_code_utils::ReturnCodeUtils;
 use screeps::Position;
 use crate::creeps::creep::Creep;
-use crate::creep_error::CreepError;
-use crate::creep_error::CreepError::CreepDead;
+use crate::errors::XiError;
+use crate::errors::XiError::CreepDead;
 use crate::creeps::creep::CreepBody;
 
 #[derive(Debug)]
@@ -16,7 +16,7 @@ pub struct TravelState {
     /// Cached information whether the creep arrived at its destination and does not need to move.
     arrived: bool,
     /// Broadcast that the creep arrived at travel spec location.
-    pub arrival_broadcast: Broadcast<Result<Position, CreepError>>,
+    pub arrival_broadcast: Broadcast<Result<Position, XiError>>,
 }
 
 impl Default for TravelState {
@@ -35,7 +35,7 @@ pub struct TravelSpec {
     pub range: u8,
 }
 
-pub fn travel(creep_ref: &CreepRef, travel_spec: TravelSpec) -> Broadcast<Result<Position, CreepError>> {
+pub fn travel(creep_ref: &CreepRef, travel_spec: TravelSpec) -> Broadcast<Result<Position, XiError>> {
     let mut creep = creep_ref.borrow_mut();
     creep.travel_state.spec = Some(travel_spec);
     if has_creep_arrived(&creep) {
