@@ -1,5 +1,5 @@
 use crate::fresh_number::fresh_number;
-use crate::game_time::game_tick;
+use crate::game_tick::game_tick;
 use crate::kernel::condition::Cid;
 use crate::kernel::process::{Pid, Priority, Process, WrappedProcessMeta};
 use crate::kernel::process_handle::ProcessHandle;
@@ -362,7 +362,7 @@ fn kernel() -> MappedMutexGuard<'static, RawMutex, Kernel> {
 
 #[cfg(test)]
 mod tests {
-    use crate::game_time::GAME_TIME;
+    use crate::game_tick::GAME_TIME;
     use crate::kernel::condition::Condition;
     use crate::kernel::sleep::sleep;
     use crate::kernel::{kill, run_processes, schedule, wake_up_sleeping_processes, Kernel, KERNEL};

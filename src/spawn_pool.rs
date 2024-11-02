@@ -1,5 +1,5 @@
 use crate::creeps::{find_idle_creep, CreepRef};
-use crate::game_time::game_tick;
+use crate::game_tick::game_tick;
 use crate::kernel::process_handle::ProcessHandle;
 use crate::kernel::{current_process_wrapped_meta, kill, schedule};
 use crate::spawning::{cancel_scheduled_creep, schedule_creep, SpawnPromise, SpawnRequest};
@@ -12,16 +12,33 @@ use std::future::Future;
 use std::rc::Rc;
 use crate::reserved_creep::ReservedCreep;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct SpawnPoolOptions {
     travel_spec: Option<TravelSpec>,
+    kill_process_on_creep_death: bool,
+}
+
+impl Default for SpawnPoolOptions {
+    fn default() -> Self {
+        Self {
+            travel_spec: None,
+            kill_process_on_creep_death: true,
+        }
+    }
 }
 
 impl SpawnPoolOptions {
     pub fn travel_spec(self, value: Option<TravelSpec>) -> Self {
         Self {
             travel_spec: value,
-            // ..self
+            ..self
+        }
+    }
+    
+    pub fn kill_process_on_creep_death(self, value: bool) -> Self {
+        Self {
+            kill_process_on_creep_death: value,
+            ..self
         }
     }
 }
@@ -33,6 +50,7 @@ pub struct SpawnPool {
     prespawned_creep: Option<MaybeSpawned>,
     room_name: RoomName,
     travel_spec: Option<TravelSpec>,
+    kill_process_on_creep_death: bool,
 }
 
 pub enum MaybeSpawned {
@@ -59,6 +77,7 @@ impl SpawnPool {
             prespawned_creep: None,
             room_name,
             travel_spec: options.travel_spec,
+            kill_process_on_creep_death: options.kill_process_on_creep_death,
         }
     }
 
@@ -74,12 +93,15 @@ impl SpawnPool {
     {
         // If the current creep is dead, killing its process and discarding its information.
         if let Some((current_creep, current_process)) = self.current_creep_and_process.as_ref() {
-            if !current_creep.borrow().exists() {
+            if current_creep.borrow().dead {
                 trace!(
                     "A current {:?} creep from the spawn pool died.",
                     self.base_spawn_request.role
                 );
-                kill(u!(self.current_creep_and_process.take()).1, ());
+                let current_creep_and_process = self.current_creep_and_process.take();
+                if self.kill_process_on_creep_death {
+                    kill(u!(current_creep_and_process).1, ());
+                }
             }
         }
 
@@ -92,7 +114,7 @@ impl SpawnPool {
                     // If the creep is spawned, it should be travelling to its target (if needed)
                     // and there is nothing to do with it aside from checking whether it is still
                     // alive.
-                    if !creep_ref.borrow().exists() {
+                    if creep_ref.borrow().dead {
                         self.prespawned_creep = None;
                         debug!(
                             "A prespawned {} creep from the spawn pool died.",
@@ -187,7 +209,7 @@ impl SpawnPool {
             let mut spawn_request = self.base_spawn_request.clone();
             if let Some((current_creep, current_process)) = self.current_creep_and_process.as_ref() {
                 // The prespawning case.
-                let creep_death_tick = game_tick() + current_creep.borrow().ticks_to_live();
+                let creep_death_tick = game_tick() + current_creep.borrow_mut().ticks_to_live();
                 // TODO Cache this, maybe just by moving out of the scope of the loop.
                 let creep_travel_ticks = self
                     .travel_spec

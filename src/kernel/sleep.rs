@@ -1,4 +1,4 @@
-use crate::game_time::game_tick;
+use crate::game_tick::game_tick;
 use crate::kernel::move_current_process_to_sleeping;
 use derive_more::Constructor;
 use log::trace;

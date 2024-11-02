@@ -1,11 +1,11 @@
 use crate::creeps::creep::{CreepBody, CreepRole};
 use crate::creeps::{register_creep, CreepRef};
-use crate::game_time::game_tick;
+use crate::game_tick::game_tick;
 use crate::kernel::schedule;
 use crate::kernel::sleep::sleep;
 use crate::priorities::CREEP_REGISTRATION_PRIORITY;
 use crate::room_state::room_states::with_room_state;
-use crate::utils::return_code_utils::ReturnCodeUtils;
+use crate::utils::result_utils::ResultUtils;
 use crate::{a, u};
 use log::{debug, trace, warn};
 use rustc_hash::FxHashMap;
@@ -37,21 +37,26 @@ where
         let mut borrowed_states = states.borrow_mut();
         let room_spawn_schedule = borrowed_states
             .entry(room_name)
-            .or_insert_with(RoomSpawnSchedule::default);
+            .or_default();
         f(room_spawn_schedule)
     })
 }
 
 #[derive(Default)]
 struct RoomSpawnSchedule {
-    /// Map from ticks to spawn events in that tick.
+    /// Map from ticks to future spawn events in that tick.
     scheduled_spawns: FxHashMap<ObjectId<StructureSpawn>, BTreeMap<u32, SpawnEvent>>,
+    /// Map from ticks to current spawn events. It should be empty unless there are insufficient
+    /// resources.
+    current_spawns: BTreeMap<u32, SpawnEvent>
 }
 
 /// A scheduled spawn.
 struct SpawnEvent {
     request: SpawnRequest,
-    promise: RRSpawnPromise,
+    promise: SpawnPromiseRef,
+    spawn_id: ObjectId<StructureSpawn>,
+    energy_cost: u32,
 }
 
 pub struct SpawnPromise {
@@ -62,7 +67,7 @@ pub struct SpawnPromise {
     pub creep: Option<CreepRef>,
 }
 
-pub type RRSpawnPromise = Rc<RefCell<SpawnPromise>>;
+pub type SpawnPromiseRef = Rc<RefCell<SpawnPromise>>;
 
 /// A request with information needed to spawn the creep.
 #[derive(Debug, Clone)]
@@ -87,7 +92,7 @@ pub struct PreferredSpawn {
 }
 
 /// Schedule a creep to be spawned within given tick and resource constraints.
-pub fn schedule_creep(room_name: RoomName, request: SpawnRequest) -> Option<RRSpawnPromise> {
+pub fn schedule_creep(room_name: RoomName, request: SpawnRequest) -> Option<SpawnPromiseRef> {
     with_spawn_schedule(room_name, move |room_spawn_schedule| {
         let mut selected_spawn_data = None;
 
@@ -104,17 +109,20 @@ pub fn schedule_creep(room_name: RoomName, request: SpawnRequest) -> Option<RRSp
 
         if let Some((spawn_id, spawn_promise)) = selected_spawn_data {
             let spawn_start_tick = spawn_promise.spawn_start_tick;
-            let rr_spawn_promise = Rc::new(RefCell::new(spawn_promise));
-
+            let spawn_promise_ref = Rc::new(RefCell::new(spawn_promise));
+            let energy_cost = request.body.energy_cost();
+            
             let spawn_event = SpawnEvent {
                 request,
-                promise: rr_spawn_promise.clone(),
+                promise: spawn_promise_ref.clone(),
+                spawn_id,
+                energy_cost,
             };
 
             // We already checked the spawn exists above.
             u!(room_spawn_schedule.scheduled_spawns.get_mut(&spawn_id)).insert(spawn_start_tick, spawn_event);
 
-            Some(rr_spawn_promise)
+            Some(spawn_promise_ref)
         } else {
             debug!(
                 "Failed to spawn {:?} in {} because no spawn is free between ticks {} and {}.",
@@ -138,7 +146,7 @@ fn create_spawn_promise_from_schedule(
     let mut spawn_tick = min_spawn_tick;
     let mut cursor = schedule.lower_bound(Included(&request.preferred_tick.0));
     loop {
-        if let Some((other_spawn_tick, other_spawn_event)) = cursor.key_value() {
+        if let Some((other_spawn_tick, other_spawn_event)) = cursor.next() {
             if spawn_tick + spawn_duration < *other_spawn_tick {
                 return Some(SpawnPromise {
                     spawn_id,
@@ -152,7 +160,6 @@ fn create_spawn_promise_from_schedule(
                 if spawn_tick > max_spawn_tick {
                     return None;
                 }
-                cursor.move_next();
             }
         } else {
             return Some(SpawnPromise {
@@ -168,7 +175,7 @@ fn create_spawn_promise_from_schedule(
 
 /// Cancels scheduled creep. Requires iterating over each scheduled spawn in a room. Does not cancel creeps that are
 /// already spawning.
-pub fn cancel_scheduled_creep(room_name: RoomName, spawn_promise: RRSpawnPromise) {
+pub fn cancel_scheduled_creep(room_name: RoomName, spawn_promise: SpawnPromiseRef) {
     let mut spawn_promise = spawn_promise.borrow_mut();
 
     spawn_promise.cancelled = true;
@@ -189,10 +196,18 @@ pub fn spawn_room_creeps(room_name: RoomName) {
     // TODO update spawn_start_tick as now+1 when there is not enough energy
     
     with_spawn_schedule(room_name, |room_spawn_schedule| {
+        let spawn_energy = u!(with_room_state(room_name, |room_state| {
+            room_state.resources.spawn_energy
+        }));
+        
         for (&spawn_id, spawn_schedule) in room_spawn_schedule.scheduled_spawns.iter_mut() {
             if let Some(entry) = spawn_schedule.first_entry() {
                 if *entry.key() <= game_tick() {
                     let event = entry.remove();
+                    
+                    if event.energy_cost > spawn_energy {
+                        debug!("not enough energy? {} / {}", event.energy_cost, spawn_energy);
+                    }
 
                     debug!("Attempting to spawn {:?} in {}.", event.request.role, room_name);
 
@@ -202,26 +217,25 @@ pub fn spawn_room_creeps(room_name: RoomName) {
                         let creep = register_creep(event.request.role);
 
                         let spawn_options = SpawnOptions::default();
-                        if spawn
-                            .spawn_creep_with_options(&event.request.body.parts, &creep.borrow().name, &spawn_options)
-                            .to_bool_and_warn(&format!(
-                                "Failed to spawn {:?} in spawn {} in {}",
-                                event.request.role, spawn_id, room_name
-                            ))
-                        {
-                            trace!("Spawning creep {:?} in {}.", event.request.role, room_name);
+                        let spawn_result = spawn.spawn_creep_with_options(&event.request.body.parts, &creep.borrow().name, &spawn_options);
+                        spawn_result.warn_if_err(&format!(
+                            "Failed to spawn {} in spawn {} in {}",
+                            event.request.role, spawn_id, room_name
+                        ));
+                        if spawn_result.is_ok() {
+                            trace!("Spawning creep {} in {}.", event.request.role, room_name);
                             drop(schedule(
                                 "creep_registration",
                                 CREEP_REGISTRATION_PRIORITY,
                                 async move {
                                     sleep(event.request.body.spawn_duration()).await;
-                                    if creep.borrow().exists() {
+                                    if !creep.borrow().dead {
                                         // Assigning the creep to the promise.
                                         event.promise.borrow_mut().creep = Some(creep);
                                     } else {
                                         // If the spawning does not succeed, logging it.
                                         warn!(
-                                            "Failed to spawn {:?} in spawn {} in {}.",
+                                            "Failed to spawn {} in spawn {} in {}.",
                                             event.request.role, spawn_id, room_name
                                         );
                                         // Informing processes that the spawning failed.
@@ -232,7 +246,7 @@ pub fn spawn_room_creeps(room_name: RoomName) {
                             ));
                         } else {
                             warn!(
-                                "Failed to spawn {:?} in spawn {} in {}.",
+                                "Failed to spawn {} in spawn {} in {}.",
                                 event.request.role, spawn_id, room_name
                             );
                             // Informing processes that the spawning failed.
@@ -306,7 +320,7 @@ pub fn update_spawn_list(room_name: RoomName) {
                 debug!("Unregistering a spawn in {}.", room_name);
                 for (_, event) in spawn_schedule {
                     warn!(
-                        "Failed to spawn {:?} in {} due to lost spawn.",
+                        "Failed to spawn {} in {} due to lost spawn.",
                         event.request.role, room_name
                     );
                     // TODO Reschedule on another spawn if possible.

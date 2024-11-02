@@ -2,24 +2,27 @@ use crate::creeps::creep::CreepRole;
 use crate::hauling::schedule_pickup;
 use crate::kernel::sleep::sleep;
 use crate::priorities::MINER_SPAWN_PRIORITY;
-use crate::resources::room_resources;
 use crate::room_state::room_states::with_room_state;
 use crate::spawn_pool::{SpawnPool, SpawnPoolOptions};
 use crate::creeps::creep::CreepBody;
 use crate::spawning::{PreferredSpawn, SpawnRequest};
 use crate::travel::{predicted_travel_ticks, travel, TravelSpec};
 use crate::u;
-use crate::utils::return_code_utils::ReturnCodeUtils;
+use crate::utils::result_utils::ResultUtils;
 use log::{debug, warn};
 use screeps::game::get_object_by_id_typed;
 use screeps::look::ENERGY;
 use screeps::Part::{Move, Work};
-use screeps::{HasTypedId, Position, RoomName};
+use screeps::{HasId, Position, ResourceType, RoomName};
+use crate::consts::FAR_FUTURE;
 use crate::hauling::requests::WithdrawRequest;
 use crate::room_state::utils::loop_until_structures_change;
 
 pub async fn mine_source(room_name: RoomName, source_ix: usize) {
     loop {
+        // TODO This function should take room_state instead of room_name to prevent double borrow.
+        let body = miner_body(room_name);
+        
         // Computing a schema for spawn request that will later have its tick intervals modified.
         // Also computing travel time for prespawning.
         let (base_spawn_request, source_data, travel_ticks, work_pos) = u!(with_room_state(room_name, |room_state| {
@@ -29,8 +32,6 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
             let work_pos = Position::new(work_xy.x, work_xy.y, room_name);
             // TODO container id in source_data
             // TODO link id in source_data (not necessarily xy)
-
-            let body = miner_body(room_name);
 
             // TODO
             let preferred_spawns = room_state
@@ -82,8 +83,8 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                     // TODO Make it so that this async will run as long as the creep exists and be killed when it does not.
 
                     let miner = creep_ref.as_ref();
-                    let ticks_to_live = miner.borrow().ticks_to_live();
-                    let energy_per_tick = miner.borrow().energy_harvest_power();
+                    let ticks_to_live = creep_ref.borrow_mut().ticks_to_live();
+                    let energy_per_tick = creep_ref.borrow_mut().energy_harvest_power();
                     
                     // Moving towards the location.
                     if let Err(err) = travel(&creep_ref, travel_spec.clone()).await {
@@ -98,20 +99,19 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                     loop {
                         let source = u!(get_object_by_id_typed(&source_data.id));
                         if source.energy() > 0 {
-                            miner
-                                .borrow()
+                            creep_ref.borrow_mut()
                                 .harvest(&source)
-                                .to_bool_and_warn("Failed to mine the source");
+                                .warn_if_err("Failed to mine the source");
                             sleep(1).await;
-                        } else if miner.borrow().ticks_to_live() < source.ticks_to_regeneration() {
+                        } else if creep_ref.borrow_mut().ticks_to_live() < source.ticks_to_regeneration().unwrap_or(FAR_FUTURE) {
                             // If the miner does not exist by the time source regenerates, kill it.
                             debug!("Miner {} has insufficient ticks to live. Killing it.", miner.borrow().name);
-                            miner.borrow().suicide();
+                            creep_ref.borrow_mut().suicide().warn_if_err("Failed to kill the miner.");
                             // TODO Store the energy first.
                             break;
                         } else {
                             // The source is exhausted for now, so sleeping until it is regenerated.
-                            sleep(source.ticks_to_regeneration()).await;
+                            sleep(source.ticks_to_regeneration().unwrap_or(1)).await;
                         }
 
                         // Transporting the energy in a way depending on room plan.
@@ -123,12 +123,13 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                             // Ordering a hauler to get energy from the container.
                         } else {
                             // Drop mining.
-                            if let Some(dropped_energy) = work_pos.look_for(ENERGY).first() {
+                            if let Some(dropped_energy) = u!(work_pos.look_for(ENERGY)).first() {
                                 let withdraw_request = WithdrawRequest {
                                     room_name,
                                     target: dropped_energy.id(),
                                     xy: Some(work_pos),
-                                    amount: dropped_energy.amount(),
+                                    resource_type: ResourceType::Energy,
+                                    amount: None,
                                     // amount_per_tick: energy_per_tick,
                                     // max_amount: min(1000, source.energy() + dropped_energy.amount()),
                                     priority: 100,
@@ -148,9 +149,11 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
 }
 
 fn miner_body(room_name: RoomName) -> CreepBody {
-    let resources = room_resources(room_name);
+    let spawn_energy = u!(with_room_state(room_name, |state| {
+        state.resources.spawn_energy
+    }));
 
-    let parts = if resources.spawn_energy >= 550 {
+    let parts = if spawn_energy >= 550 {
         vec![Work, Work, Work, Work, Work, Move]
     } else {
         vec![Work, Work, Move, Move]

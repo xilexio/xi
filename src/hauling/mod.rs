@@ -3,6 +3,7 @@ use crate::hauling::requests::{with_haul_requests, RawStoreRequest, RawWithdrawR
 
 pub mod haul_resources;
 pub mod requests;
+mod store_anywhere_or_drop;
 
 pub fn schedule_withdraw<T>(withdraw_request: &WithdrawRequest<T>, replaced_request_id: Option<WithdrawRequestId>) -> WithdrawRequestId
     where
@@ -12,6 +13,7 @@ pub fn schedule_withdraw<T>(withdraw_request: &WithdrawRequest<T>, replaced_requ
         target: withdraw_request.target.into(),
         pickupable: false,
         xy: withdraw_request.xy,
+        resource_type: withdraw_request.resource_type,
         amount: withdraw_request.amount,
         // amount_per_tick: withdraw_request.amount_per_tick,
         // max_amount: withdraw_request.max_amount,
@@ -27,6 +29,7 @@ pub fn schedule_pickup(withdraw_request: WithdrawRequest<Resource>, replaced_req
         target: withdraw_request.target.into(),
         pickupable: true,
         xy: withdraw_request.xy,
+        resource_type: withdraw_request.resource_type,
         amount: withdraw_request.amount,
         // amount_per_tick: withdraw_request.amount_per_tick,
         // max_amount: withdraw_request.max_amount,
@@ -49,6 +52,7 @@ where
     let raw_store_request = RawStoreRequest {
         target: store_request.target.into(),
         xy: store_request.xy,
+        resource_type: store_request.resource_type,
         amount: store_request.amount,
         priority: store_request.priority,
         // preferred_tick: store_request.preferred_tick,
@@ -65,16 +69,16 @@ where
     })
 }
 
-fn schedule_raw_withdraw_request(room_name: RoomName, request: crate::hauling::requests::RawWithdrawRequest, mut replaced_request_id: Option<crate::hauling::requests::WithdrawRequestId>) -> crate::hauling::requests::WithdrawRequestId {
+fn schedule_raw_withdraw_request(room_name: RoomName, request: RawWithdrawRequest, mut replaced_request_id: Option<WithdrawRequestId>) -> WithdrawRequestId {
     if let Some(mut existing_replaced_request_id) = replaced_request_id.take() {
         existing_replaced_request_id.droppable = false;
     }
 
-    crate::hauling::requests::with_haul_requests(room_name, |schedule| {
+    with_haul_requests(room_name, |schedule| {
         let id = schedule.next_id;
         schedule.next_id += 1;
         schedule.withdraw_requests.insert(id, request);
-        crate::hauling::requests::WithdrawRequestId {
+        WithdrawRequestId {
             room_name,
             id,
             droppable: true,

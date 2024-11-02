@@ -1,10 +1,10 @@
-use crate::game_time::first_tick;
+use crate::game_tick::first_tick;
 use crate::kernel::sleep::{sleep, sleep_until};
 use crate::room_state::room_states::for_each_owned_room;
 use crate::u;
 use crate::utils::find::get_structure;
 use crate::utils::map_utils::MultiMapUtils;
-use crate::utils::return_code_utils::ReturnCodeUtils;
+use crate::utils::result_utils::ResultUtils;
 use derive_more::Constructor;
 use js_sys::JsString;
 use log::{debug, error, trace, warn};
@@ -14,10 +14,7 @@ use screeps::StructureType::{
     Container, Extension, Extractor, Factory, Lab, Link, Nuker, Observer, PowerSpawn, Rampart, Road, Spawn, Storage,
     Terminal, Tower, Wall,
 };
-use screeps::{
-    game, ConstructionSite, MaybeHasTypedId, ObjectId, Position, RoomName, RoomXY, StructureType,
-    MAX_CONSTRUCTION_SITES,
-};
+use screeps::{game, ConstructionSite, HasPosition, MaybeHasId, ObjectId, Position, RoomName, RoomXY, StructureType, MAX_CONSTRUCTION_SITES};
 
 const MAX_CONSTRUCTION_SITES_PER_ROOM: u32 = 10;
 
@@ -72,7 +69,7 @@ pub async fn construct_structures() {
                             // TODO Remove them only if they are not present in the RCL8 plan, otherwise just ignore
                             //      until required RCL.
                             let construction_site = u!(game::get_object_by_id_typed(&construction_site_data.id));
-                            construction_site.remove().to_bool_and_warn(&format!(
+                            construction_site.remove().warn_if_err(&format!(
                                 "Failed to remove a construction site of {:?} in {} at {}",
                                 construction_site_data.structure_type, room_name, construction_site_data.xy
                             ));
@@ -113,10 +110,12 @@ pub async fn construct_structures() {
                                         //      to be built at RCL8 in that location unless it being
                                         //      inactive breaks something (e.g., remote links being
                                         //      active while the fast filler link is not).
-                                        structure_obj.as_structure().destroy().to_bool_and_warn(&format!(
-                                            "Failed to remove a structure {:?} in {} at {}",
-                                            structure_type, room_name, xy
-                                        ));
+                                        if structure_obj.as_structure().destroy() != 0 {
+                                            warn!(
+                                                "Failed to remove a structure {:?} in {} at {}",
+                                                structure_type, room_name, xy
+                                            );
+                                        }
                                     } else {
                                         warn!("Failed to find the structure {:?} in {} at {} that was about to be removed", structure_type, room_name, xy);
                                     }
@@ -148,18 +147,19 @@ pub async fn construct_structures() {
 
                                         // There is a structure yet to be built. Placing the construction site.
                                         let js_name = structure_js_name(structure_type, room_name, *xy);
-                                        if room
+                                        let creation_result = room
                                             .create_construction_site(
                                                 xy.x.u8(),
                                                 xy.y.u8(),
                                                 structure_type,
                                                 js_name.as_ref(),
-                                            )
-                                            .to_bool_and_warn(&format!(
-                                                "Failed to create the construction site of {:?} in {} at {}",
-                                                structure_type, room_name, xy
-                                            ))
-                                        {
+                                            );
+                                        creation_result.warn_if_err(&format!(
+                                            "Failed to create the construction site of {:?} in {} at {}",
+                                            structure_type, room_name, xy
+                                        ));
+                                        
+                                        if creation_result.is_ok() {
                                             room_construction_sites_count += 1;
                                             total_construction_sites_count += 1;
 

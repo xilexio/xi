@@ -16,7 +16,8 @@ crate-type = ["cdylib", "rlib"]
 js-sys = "0.3"
 log = "0.4"
 fern = "0.6"
-screeps-game-api = { git = "https://github.com/xilexio/screeps-game-api.git" }
+# screeps-game-api = { git = "https://github.com/xilexio/screeps-game-api.git" }
+screeps-game-api = "0.22.0"
 wasm-bindgen = "0.2"
 web-sys = { version = "0.3", features = ["console"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -24,8 +25,9 @@ serde-wasm-bindgen = "0.5.0"
 serde_json = "1.0"
 serde_with = "2"
 num-traits = "0.2"
-room_visual_ext = { git = "https://github.com/xilexio/room_visual_ext.git" }
-enum-iterator = "1.4.0"
+# room_visual_ext = { git = "https://github.com/xilexio/room_visual_ext.git", branch = "dev-screeps-game-api" }
+room_visual_ext = "0.1.1"
+enum-iterator = "2.1.0"
 petgraph = "0.6.3"
 more-asserts = "0.3.1"
 rustc-hash = "1.1.0"
@@ -53,7 +55,8 @@ debug = true
 # automatically, but must be installed separately on some operating systems
 # Removing the `"-g"` will further decrease the size of the binary at but removes function names,
 # making stack traces upon panic less useful
-wasm-opt = ["-O4", "--disable-sign-ext", "-g"]
+#wasm-opt = ["-O4", "--disable-sign-ext", "-g"]
+wasm-opt = ["-O2", "--disable-sign-ext", "-g"]
 
 [features]
 default = []

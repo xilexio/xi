@@ -1,9 +1,6 @@
 #![allow(incomplete_features)]
-#![feature(return_position_impl_trait_in_trait)]
 #![feature(async_closure)]
-#![feature(core_intrinsics)]
 #![feature(btree_cursors)]
-#![feature(local_key_cell_methods)]
 
 use js_sys::JsString;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -16,7 +13,7 @@ mod consts;
 mod cost_approximation;
 mod fresh_number;
 mod game_loop;
-mod game_time;
+mod game_tick;
 mod geometry;
 mod global_state;
 mod kernel;
@@ -25,7 +22,6 @@ mod maintenance;
 mod priorities;
 mod profiler;
 mod random;
-mod resources;
 mod role;
 mod room_planner;
 mod room_state;
@@ -40,7 +36,6 @@ mod hauling;
 mod spawn_pool;
 mod filling_spawns;
 mod reserved_creep;
-mod unchecked_transferable;
 mod creeps;
 
 // `wasm_bindgen` to expose the function to JS.

@@ -2,7 +2,7 @@ use crate::creeps::{for_each_creep, CreepRef};
 use crate::kernel::condition::Broadcast;
 use crate::kernel::sleep::sleep;
 use crate::u;
-use crate::utils::return_code_utils::ReturnCodeUtils;
+use crate::utils::result_utils::ResultUtils;
 use screeps::Position;
 use crate::creeps::creep::Creep;
 use crate::errors::XiError;
@@ -38,9 +38,9 @@ pub struct TravelSpec {
 pub fn travel(creep_ref: &CreepRef, travel_spec: TravelSpec) -> Broadcast<Result<Position, XiError>> {
     let mut creep = creep_ref.borrow_mut();
     creep.travel_state.spec = Some(travel_spec);
-    if has_creep_arrived(&creep) {
+    if let Some(creep_pos) = creep_arrival_pos(&mut creep) {
         creep.travel_state.arrived = true;
-        creep.travel_state.arrival_broadcast.broadcast(Ok(creep.pos()));
+        creep.travel_state.arrival_broadcast.broadcast(Ok(creep_pos));
         creep.travel_state.arrival_broadcast.clone()
     } else {
         creep.travel_state.arrived = false;
@@ -59,17 +59,15 @@ pub async fn move_creeps() {
         for_each_creep(|creep_ref| {
             let mut creep = creep_ref.borrow_mut();
             if !creep.travel_state.arrived {
-                if !creep.exists() {
+                if creep.dead {
                     creep.travel_state.arrival_broadcast.broadcast(Err(CreepDead));
-                } else if has_creep_arrived(&creep) {
-                    let creep_pos = creep.pos();
+                } else if let Some(creep_pos) = creep_arrival_pos(&mut creep) {
                     creep.travel_state.arrived = true;
                     creep.travel_state.arrival_broadcast.broadcast(Ok(creep_pos));
                 } else {
                     let target = u!(creep.travel_state.spec.as_ref()).target;
-                    creep
-                        .move_to(target)
-                        .to_bool_and_warn(&format!("Could not move creep {} towards {}", creep.name, target));
+                    creep.move_to(target)
+                        .warn_if_err(&format!("Could not move creep {} towards {}", creep.name, target));
                 }
             }
         });
@@ -79,9 +77,14 @@ pub async fn move_creeps() {
 }
 
 /// Checks whether the creep is at the location specified by the travel spec.
-/// The travel spec may not be `None`.
-fn has_creep_arrived(creep: &Creep) -> bool {
-    let creep_pos = creep.pos();
+/// If so, returns its position.
+/// The creep must be alive. The travel spec may not be `None`.
+fn creep_arrival_pos(creep: &mut Creep) -> Option<Position> {
+    let creep_pos = u!(creep.pos());
     let travel_spec = u!(creep.travel_state.spec.as_ref());
-    creep_pos.get_range_to(travel_spec.target) <= travel_spec.range as u32
+    if creep_pos.get_range_to(travel_spec.target) <= travel_spec.range as u32 {
+        Some(creep_pos)
+    } else {
+        None
+    }
 }

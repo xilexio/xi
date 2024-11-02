@@ -1,6 +1,6 @@
 use crate::kernel::process::Priority;
 use rustc_hash::FxHashMap;
-use screeps::{ObjectId, Position, RawObjectId, RoomName, Transferable};
+use screeps::{ObjectId, Position, RawObjectId, ResourceType, RoomName, Transferable};
 use std::cell::RefCell;
 use log::debug;
 
@@ -40,7 +40,9 @@ pub struct WithdrawRequest<T> {
     pub room_name: RoomName,
     pub target: ObjectId<T>,
     pub xy: Option<Position>,
-    pub amount: u32,
+    pub resource_type: ResourceType,
+    /// Amount of the resource to withdraw or all that is possible.
+    pub amount: Option<u32>,
     // pub amount_per_tick: u32,
     // pub max_amount: u32,
     pub priority: Priority,
@@ -52,7 +54,8 @@ pub(super) struct RawWithdrawRequest {
     pub target: RawObjectId,
     pub pickupable: bool,
     pub xy: Option<Position>,
-    pub amount: u32,
+    pub resource_type: ResourceType,
+    pub amount: Option<u32>,
     // amount_per_tick: u32,
     // max_amount: u32,
     pub priority: Priority,
@@ -67,8 +70,10 @@ where
 {
     pub room_name: RoomName,
     pub target: ObjectId<T>,
+    pub resource_type: ResourceType,
     pub xy: Option<Position>,
-    pub amount: u32,
+    /// Amount of resource to store or all that is possible.
+    pub amount: Option<u32>,
     pub priority: Priority,
     // pub preferred_tick: (u32, u32),
 }
@@ -77,7 +82,8 @@ where
 pub struct RawStoreRequest {
     pub target: RawObjectId,
     pub xy: Option<Position>,
-    pub amount: u32,
+    pub resource_type: ResourceType,
+    pub amount: Option<u32>,
     pub priority: Priority,
     // pub preferred_tick: (u32, u32),
 }

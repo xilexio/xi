@@ -8,6 +8,8 @@ use crate::algorithms::grid_min_cut::GridGraphDirection::*;
 use crate::algorithms::grid_min_cut::TileVertexKind::*;
 use enum_iterator::{Sequence, all};
 
+const DEBUG: bool = false;
+
 /// Computes a minimum vertex separator (i.e., min-cut, but for vertices) of a movement graph in
 /// a room with source in start and sink in the exits and the tiles (vertices) that surround it.
 ///
@@ -68,8 +70,7 @@ pub fn grid_min_cut(costs: &RoomMatrix<u8>) -> Vec<RoomXY> {
         }
     }
 
-    #[cfg(feature = "debug_grid_min_cut")]
-    {
+    if DEBUG {
         eprintln!(
             "Initial nodes: {:?}.",
             initial_nodes.iter().map(|node| format!("{}", *node)).collect::<Vec<String>>().join(", ")
@@ -109,8 +110,7 @@ pub fn grid_min_cut(costs: &RoomMatrix<u8>) -> Vec<RoomXY> {
             layer = next_layer;
         }
 
-        #[cfg(feature = "debug_grid_min_cut")]
-        {
+        if DEBUG {
             for y in 0..ROOM_SIZE {
                 for x in 0..ROOM_SIZE {
                     let dist = bfs_distances[grid_node(x, y, Input).usize()];
@@ -120,9 +120,9 @@ pub fn grid_min_cut(costs: &RoomMatrix<u8>) -> Vec<RoomXY> {
                         eprint!("{:2} ", dist);
                     }
                 }
-                eprintln!();
+                println!();
             }
-            eprintln!();
+            println!();
         }
 
         if !exit_reached {
@@ -143,11 +143,12 @@ pub fn grid_min_cut(costs: &RoomMatrix<u8>) -> Vec<RoomXY> {
             path.push(dfs_stack[dfs_stack.len() - 1]);
             let xy = grid_node_to_xy(node);
             if xy.exit_distance() == 0 {
-                #[cfg(feature = "debug_grid_min_cut")]
-                eprintln!(
-                    "Found exit with path {:?}.",
-                    path.iter().map(|(node, _)| format!("{}", *node)).collect::<Vec<String>>().join(", ")
-                );
+                if DEBUG {
+                    eprintln!(
+                        "Found exit with path {:?}.",
+                        path.iter().map(|(node, _)| format!("{}", *node)).collect::<Vec<String>>().join(", ")
+                    );
+                }
 
                 // We reached the exit - adding the flow through the edges we have followed.
                 let mut flow = 255;
@@ -178,8 +179,7 @@ pub fn grid_min_cut(costs: &RoomMatrix<u8>) -> Vec<RoomXY> {
                 }
                 path.pop();
 
-                #[cfg(feature = "debug_grid_min_cut")]
-                {
+                if DEBUG {
                     eprintln!("Flow was: {}.", flow);
                     eprintln!("Still valid path length: {}.", still_valid_path_length);
                     eprintln!(
@@ -198,8 +198,7 @@ pub fn grid_min_cut(costs: &RoomMatrix<u8>) -> Vec<RoomXY> {
                     }
                 });
                 if dead_end {
-                    #[cfg(feature = "debug_grid_min_cut")]
-                    {
+                    if DEBUG {
                         eprintln!(
                             "Dead end at {}.",
                             path.iter().map(|(node, _)| format!("{}", *node)).collect::<Vec<String>>().join(", ")
@@ -225,16 +224,16 @@ pub fn grid_min_cut(costs: &RoomMatrix<u8>) -> Vec<RoomXY> {
                         path.pop();
                     }
 
-                    #[cfg(feature = "debug_grid_min_cut")]
-                    if !dfs_stack.is_empty() {
-                        eprintln!("Resuming from {}.", dfs_stack.last().unwrap().0);
+                    if DEBUG {
+                        if !dfs_stack.is_empty() {
+                            eprintln!("Resuming from {}.", dfs_stack.last().unwrap().0);
+                        }
                     }
                 }
             }
         }
 
-        #[cfg(feature = "debug_grid_min_cut")]
-        {
+        if DEBUG {
             for y in 15..37 {
                 for x in 15..49 {
                     let residual_cap = capacity[grid_node(x, y, Input).usize()];
@@ -247,8 +246,7 @@ pub fn grid_min_cut(costs: &RoomMatrix<u8>) -> Vec<RoomXY> {
         }
     }
 
-    #[cfg(feature = "debug_grid_min_cut")]
-    {
+    if DEBUG {
         for y in 15..37 {
             for x in 15..49 {
                 let residual_cap = capacity[grid_node(x, y, Input).usize()];
@@ -314,8 +312,7 @@ pub fn grid_min_cut(costs: &RoomMatrix<u8>) -> Vec<RoomXY> {
     //     debug!("{}", line);
     // }
 
-    #[cfg(feature = "debug_grid_min_cut")]
-    {
+    if DEBUG {
         for y in 0..ROOM_SIZE {
             for x in 0..ROOM_SIZE {
                 let cost = unsafe { costs.get_xy(x, y) };

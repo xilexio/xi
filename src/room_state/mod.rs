@@ -7,9 +7,10 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
-use crate::kernel::condition::{Broadcast};
+use crate::kernel::condition::Broadcast;
 use crate::room_planner::plan::Plan;
 use crate::room_planner::RoomPlanner;
+use crate::u;
 
 pub mod packed_terrain;
 pub mod room_states;
@@ -50,6 +51,8 @@ pub struct RoomState {
     /// Broadcast signalled each time the set of structures in the room changes.
     #[serde(skip)]
     pub structures_broadcast: Broadcast<()>,
+    #[serde(skip)]
+    pub resources: RoomResources,
 }
 
 #[derive(Deserialize, Serialize, Copy, Clone, Eq, PartialEq, Debug)]
@@ -95,6 +98,13 @@ pub struct StructureData<T> {
 
 pub type StructuresMap = FxHashMap<StructureType, FxHashSet<RoomXY>>;
 
+#[derive(Default, Clone, Debug)]
+pub struct RoomResources {
+    pub spawn_energy: u32,
+    pub spawn_energy_capacity: u32,
+    pub storage_energy: u32,
+}
+
 #[wasm_bindgen]
 pub fn set_room_blueprint(room_name: String, blueprint: JsValue) {
     info!("Room name: {}", room_name);
@@ -136,10 +146,11 @@ impl RoomState {
             spawns: Vec::new(),
             extensions: Vec::new(),
             structures_broadcast: Broadcast::default(),
+            resources: RoomResources::default(),
         }
     }
 }
 
 fn packed_terrain(room_state: &RoomState) -> PackedTerrain {
-    game::map::get_room_terrain(room_state.room_name).into()
+    u!(game::map::get_room_terrain(room_state.room_name)).into()
 }

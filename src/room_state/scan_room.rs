@@ -1,13 +1,11 @@
 use log::debug;
 use crate::room_state::room_states::replace_room_state;
-use crate::room_state::{ControllerData, MineralData, RoomDesignation, RoomState, SourceData, StructureData};
+use crate::room_state::{ControllerData, MineralData, RoomDesignation, RoomResources, RoomState, SourceData, StructureData};
 use crate::u;
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::StructureType::{Extension, Spawn};
-use screeps::{
-    find, game, HasPosition, HasTypedId, Mineral, ObjectId, OwnedStructureProperties, Position, ResourceType, RoomName,
-    Source, StructureController,
-};
+use screeps::{find, game, HasId, HasPosition, Mineral, ObjectId, OwnedStructureProperties, Position, ResourceType, RoomName, Source, StructureController};
+use screeps::ResourceType::Energy;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -78,7 +76,7 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
         });
     }
     // TODO Only needed the first time.
-    state.terrain = game::map::get_room_terrain(room_name).into();
+    state.terrain = u!(game::map::get_room_terrain(room_name)).into();
     let mut structures = FxHashMap::default();
     let mut structures_changed = false;
     for structure in room.find(find::STRUCTURES, None) {
@@ -111,8 +109,6 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
         }
     }
     if structures_changed {
-        // TODO Definitely not changed but this branch is taken.
-        // TODO "New spawn" is being registered as many ticks as there was in the game.
         debug!("Structures in room {room_name} changed.");
         state.structures = structures;
         state.spawns.clear();
@@ -142,5 +138,14 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
         // Informing waiting processes that the structure changed.
         state.structures_broadcast.broadcast(());
     }
+    
+    if state.designation == RoomDesignation::Owned {
+        state.resources = RoomResources {
+            spawn_energy: room.energy_available(),
+            spawn_energy_capacity: room.energy_capacity_available(),
+            storage_energy: room.storage().map_or(0, |storage| storage.store().get(Energy).unwrap_or(0))
+        }
+    }
+    
     Ok(())
 }

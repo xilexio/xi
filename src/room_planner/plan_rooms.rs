@@ -1,5 +1,5 @@
 use crate::algorithms::matrix_common::MatrixCommon;
-use crate::game_time::first_tick;
+use crate::game_tick::first_tick;
 use crate::kernel::should_finish;
 use crate::kernel::sleep::{sleep, sleep_until};
 use crate::room_planner::{RoomPlanner, MIN_RAMPART_RCL};

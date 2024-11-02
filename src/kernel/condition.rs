@@ -1,4 +1,4 @@
-use crate::game_time::game_tick;
+use crate::game_tick::game_tick;
 use crate::kernel::{move_current_process_to_waiting_for_condition, signal_condition};
 use log::trace;
 use std::cell::RefCell;
@@ -109,6 +109,7 @@ where
         signal_condition(self.cid);
     }
     
+    /// Clone with manual check ignoring anything happening this or previous ticks.
     pub fn clone_inactive(&self) -> Self {
         Broadcast {
             cid: self.cid,

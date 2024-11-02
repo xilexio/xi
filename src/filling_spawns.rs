@@ -5,8 +5,8 @@ use crate::room_state::room_states::with_room_state;
 use crate::u;
 use screeps::game::get_object_by_id_typed;
 use screeps::ResourceType::Energy;
-use screeps::{HasPosition, HasStore, HasTypedId, ObjectId, RoomName, Transferable};
-use wasm_bindgen::JsValue;
+use screeps::{HasId, HasPosition, HasStore, ObjectId, RoomName, Transferable};
+use wasm_bindgen::{JsCast, JsValue};
 use crate::hauling::requests::{StoreRequest, StoreRequestId};
 use crate::room_state::utils::loop_until_structures_change;
 
@@ -38,7 +38,7 @@ pub async fn fill_spawns(room_name: RoomName) {
 
 pub fn schedule_missing_energy_store<T>(room_name: RoomName, id: ObjectId<T>) -> Option<StoreRequestId>
 where
-    T: HasStore + HasTypedId<T> + Transferable + From<JsValue>,
+    T: HasStore + HasId + Transferable + From<JsValue> + JsCast,
 {
     let spawn = u!(get_object_by_id_typed(&id));
     let missing_energy = spawn.store().get_free_capacity(Some(Energy)) as u32;
@@ -49,7 +49,8 @@ where
             room_name,
             target: spawn.id(),
             xy: Some(spawn.pos()),
-            amount: missing_energy,
+            resource_type: Energy,
+            amount: Some(missing_energy),
             priority: 0, // TODO far away extensions less important
             // preferred_tick: (game_tick(), FAR_FUTURE),
         }, None))

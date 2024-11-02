@@ -1,33 +1,26 @@
 use std::fmt::{Display, Formatter};
 use crate::travel::TravelState;
 use crate::u;
-use screeps::{
-    game,
-    Part,
-    BodyPart,
-    Position,
-    ResourceType,
-    ReturnCode,
-    SharedCreepProperties,
-    Source,
-    Withdrawable,
-    Resource,
-    Transferable,
-    RoomObject,
-    CREEP_CLAIM_LIFE_TIME,
-    CREEP_LIFE_TIME,
-    CREEP_SPAWN_TIME,
-    HARVEST_POWER,
-};
+use screeps::{game, Part, BodyPart, Position, ResourceType, SharedCreepProperties, Source, Withdrawable, Resource, Transferable, RoomObject, Store, CREEP_CLAIM_LIFE_TIME, CREEP_LIFE_TIME, CREEP_SPAWN_TIME, HARVEST_POWER, HasPosition};
 use screeps::Part::{Claim, Work};
 use derive_more::Constructor;
-use crate::unchecked_transferable::UncheckedTransferable;
+use crate::errors::XiError;
+use crate::errors::XiError::*;
+use crate::utils::single_tick_cache::SingleTickCache;
+use crate::utils::unchecked_transferable::UncheckedTransferable;
+use crate::utils::unchecked_withdrawable::UncheckedWithdrawable;
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub enum CreepRole {
+    Scout,
     Miner,
     Hauler,
-    Scout,
+}
+
+impl Default for CreepRole {
+    fn default() -> Self {
+        CreepRole::Scout
+    }
 }
 
 impl Display for CreepRole {
@@ -55,7 +48,7 @@ impl CreepRole {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Creep {
     /// Globally unique creep name.
     pub name: String,
@@ -66,81 +59,95 @@ pub struct Creep {
     /// State of travel of the creep with information about location where it is supposed to be
     /// and temporary state to be managed by the travel module.
     pub travel_state: TravelState,
+    pub last_transfer_tick: u32,
+    pub dead: bool,
+    pub cached_creep: SingleTickCache<screeps::Creep>,
 }
 
 impl Creep {
     // Utility
 
-    pub fn exists(&self) -> bool {
-        self.screeps_obj().is_some()
-    }
-
-    fn screeps_obj(&self) -> Option<screeps::Creep> {
-        game::creeps().get(self.name.clone())
+    pub fn screeps_obj(&mut self) -> Result<&mut screeps::Creep, XiError> {
+        if !self.dead {
+            Ok(self.cached_creep.get_or_insert_with(|| u!(game::creeps().get(self.name.clone()))))
+        } else {
+            Err(CreepDead)
+        }
     }
 
     // API wrappers
     
-    pub fn body(&self) -> CreepBody {
-        u!(self.screeps_obj()).body().into()
+    pub fn body(&mut self) -> Result<CreepBody, XiError> {
+        Ok(self.screeps_obj()?.body().into())
     }
 
-    pub fn harvest(&self, source: &Source) -> ReturnCode {
-        u!(self.screeps_obj()).harvest(source)
+    pub fn harvest(&mut self, source: &Source) -> Result<(), XiError> {
+        self.screeps_obj()?.harvest(source).or(Err(CreepHarvestFailed))
     }
 
-    pub fn move_to(&self, pos: Position) -> ReturnCode {
-        u!(self.screeps_obj()).move_to(pos)
+    pub fn move_to(&mut self, pos: Position) -> Result<(), XiError> {
+        self.screeps_obj()?.move_to(pos).or(Err(CreepMoveToFailed))
     }
 
-    pub fn pos(&self) -> Position {
-        u!(self.screeps_obj()).pos().into()
+    pub fn pos(&mut self) -> Result<Position, XiError> {
+        Ok(self.screeps_obj()?.pos().into())
     }
 
-    pub fn public_say(&self, message: &str) {
-        // Ignoring any error from this function.
-        u!(self.screeps_obj()).say(message, true);
+    pub fn public_say(&mut self, message: &str) -> Result<(), XiError> {
+        self.screeps_obj()?.say(message, true).or(Err(CreepSayFailed))
     }
 
-    pub fn suicide(&self) -> ReturnCode {
-        self.screeps_obj()
-            .map(|creep| creep.suicide())
-            .unwrap_or(ReturnCode::Ok)
+    pub fn suicide(&mut self) -> Result<(), XiError> {
+        self.screeps_obj()?.suicide().or(Err(CreepSuicideFailed))
     }
 
     /// Zero indicates a dead creep.
-    pub fn ticks_to_live(&self) -> u32 {
-        self.screeps_obj()
-            .and_then(|creep| creep.ticks_to_live())
-            .unwrap_or(0)
+    pub fn ticks_to_live(&mut self) -> u32 {
+        match self.screeps_obj() {
+            Ok(creep) => creep.ticks_to_live().unwrap_or(0),
+            Err(_) => 0,
+        }
     }
 
-    pub fn withdraw<T>(&self, target: &T, resource_type: ResourceType, amount: Option<u32>) -> ReturnCode
+    pub fn withdraw<T>(&mut self, target: &T, resource_type: ResourceType, amount: Option<u32>) -> Result<(), XiError>
     where
         T: Withdrawable,
     {
-        u!(self.screeps_obj()).withdraw(target, resource_type, amount)
+        self.screeps_obj()?.withdraw(target, resource_type, amount).or(Err(CreepWithdrawFailed))
     }
 
-    pub fn pickup(&self, target: &Resource) -> ReturnCode {
-        u!(self.screeps_obj()).pickup(target)
+    pub fn unchecked_withdraw(&mut self, target: &RoomObject, resource_type: ResourceType, amount: Option<u32>) -> Result<(), XiError> {
+        let unchecked_target = UncheckedWithdrawable(target);
+        self.withdraw(&unchecked_target, resource_type, amount)
     }
 
-    pub fn transfer<T>(&self, target: &T, resource_type: ResourceType, amount: Option<u32>) -> ReturnCode
+    pub fn pickup(&mut self, target: &Resource) -> Result<(), XiError> {
+        self.screeps_obj()?.pickup(target).or(Err(CreepPickupFailed))
+    }
+
+    pub fn transfer<T>(&mut self, target: &T, resource_type: ResourceType, amount: Option<u32>) -> Result<(), XiError>
     where
         T: Transferable
     {
-        u!(self.screeps_obj()).transfer(target, resource_type, amount)
+        self.screeps_obj()?.transfer(target, resource_type, amount).or(Err(CreepTransferFailed))
     }
-    
-    pub fn unchecked_transfer(&self, target: &RoomObject, resource_type: ResourceType, amount: Option<u32>) -> ReturnCode {
-        let transferable_target = UncheckedTransferable(target);
-        self.transfer(&transferable_target, resource_type, amount)
+
+    pub fn unchecked_transfer(&mut self, target: &RoomObject, resource_type: ResourceType, amount: Option<u32>) -> Result<(), XiError> {
+        let unchecked_target = UncheckedTransferable(target);
+        self.transfer(&unchecked_target, resource_type, amount)
+    }
+
+    pub fn drop(&mut self, resource_type: ResourceType, amount: Option<u32>) -> Result<(), XiError> {
+        self.screeps_obj()?.drop(resource_type, amount).or(Err(CreepDropFailed))
+    }
+
+    pub fn store(&mut self) -> Result<Store, XiError> {
+        Ok(self.screeps_obj()?.store())
     }
 
     // Statistics
 
-    pub fn energy_harvest_power(&self) -> u32 {
+    pub fn energy_harvest_power(&mut self) -> u32 {
         u!(self.screeps_obj()).body().iter().filter_map(|body_part| (body_part.part() == Work).then_some(HARVEST_POWER)).sum()
     }
 }
@@ -163,6 +170,10 @@ impl CreepBody {
 impl CreepBody {
     pub fn spawn_duration(&self) -> u32 {
         self.parts.len() as u32 * CREEP_SPAWN_TIME
+    }
+
+    pub fn energy_cost(&self) -> u32 {
+        self.parts.iter().map(|part| part.cost()).sum()
     }
 }
 
