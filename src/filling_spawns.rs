@@ -9,6 +9,7 @@ use screeps::{HasId, HasPosition, HasStore, ObjectId, RoomName, Transferable};
 use wasm_bindgen::{JsCast, JsValue};
 use crate::hauling::requests::{StoreRequest, StoreRequestId};
 use crate::room_state::utils::loop_until_structures_change;
+use crate::utils::priority::Priority;
 
 /// Keeps spawns filled by requesting haulers to fill them.
 pub async fn fill_spawns(room_name: RoomName) {
@@ -51,7 +52,7 @@ where
             xy: Some(spawn.pos()),
             resource_type: Energy,
             amount: Some(missing_energy),
-            priority: 0, // TODO far away extensions less important
+            priority: Priority(1), // TODO far away extensions less important
             // preferred_tick: (game_tick(), FAR_FUTURE),
         }, None))
     } else {

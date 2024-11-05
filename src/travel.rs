@@ -1,5 +1,5 @@
 use crate::creeps::{for_each_creep, CreepRef};
-use crate::kernel::condition::Broadcast;
+use crate::kernel::broadcast::Broadcast;
 use crate::kernel::sleep::sleep;
 use crate::u;
 use crate::utils::result_utils::ResultUtils;
@@ -41,11 +41,11 @@ pub fn travel(creep_ref: &CreepRef, travel_spec: TravelSpec) -> Broadcast<Result
     if let Some(creep_pos) = creep_arrival_pos(&mut creep) {
         creep.travel_state.arrived = true;
         creep.travel_state.arrival_broadcast.broadcast(Ok(creep_pos));
-        creep.travel_state.arrival_broadcast.clone()
+        creep.travel_state.arrival_broadcast.clone_not_primed()
     } else {
         creep.travel_state.arrived = false;
         creep.travel_state.arrival_broadcast.reset();
-        creep.travel_state.arrival_broadcast.clone()
+        creep.travel_state.arrival_broadcast.clone_not_primed()
     }
 }
 

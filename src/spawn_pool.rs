@@ -220,31 +220,24 @@ impl SpawnPool {
                     .unwrap_or(0);
 
                 let min_preferred_tick = creep_death_tick - creep_travel_ticks;
-                let max_preferred_tick = min_preferred_tick + self.base_spawn_request.preferred_tick.1
-                    - self.base_spawn_request.preferred_tick.0;
-                spawn_request.preferred_tick = (min_preferred_tick, max_preferred_tick);
+                let max_preferred_tick = min_preferred_tick + self.base_spawn_request.tick.1
+                    - self.base_spawn_request.tick.0;
+                spawn_request.tick = (min_preferred_tick, max_preferred_tick);
             } else {
                 // The case with spawning as fast as possible.
                 let min_preferred_tick = game_tick();
-                let max_preferred_tick = min_preferred_tick;
-                spawn_request.preferred_tick = (min_preferred_tick, max_preferred_tick);
+                let max_preferred_tick = min_preferred_tick + 200;
+                spawn_request.tick = (min_preferred_tick, max_preferred_tick);
             }
             
             // Scheduling the creep.
-            if let Some(spawn_promise) = schedule_creep(self.room_name, spawn_request) {
-                // TODO Some other process may reserve this creep using find_idle_creeps immediately, need to prevent that.
-                self.prespawned_creep = Some(MaybeSpawned::Spawning(spawn_promise));
-                debug!(
-                    "Scheduled a spawn of {:?} creep from the spawn pool.",
-                    self.base_spawn_request.role
-                );
-            } else {
-                // Scheduling failed. Attempting it next time.
-                debug!(
-                    "Failed to schedule the spawning of {:?} creep from the spawn pool.",
-                    self.base_spawn_request.role
-                );
-            }
+            let spawn_promise = u!(schedule_creep(self.room_name, spawn_request));
+            // TODO Some other process may reserve this creep using find_idle_creeps immediately, need to prevent that.
+            self.prespawned_creep = Some(MaybeSpawned::Spawning(spawn_promise));
+            debug!(
+                "Scheduled a spawn of {:?} creep from the spawn pool.",
+                self.base_spawn_request.role
+            );
         }
     }
 }

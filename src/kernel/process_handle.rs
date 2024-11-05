@@ -1,5 +1,5 @@
 use crate::kernel::move_current_process_to_awaiting;
-use crate::kernel::process::Pid;
+use crate::kernel::process::PId;
 use derive_more::Constructor;
 use std::cell::RefCell;
 use std::future::Future;
@@ -11,7 +11,7 @@ use std::task::{Context, Poll};
 /// It can be awaited and returns the result returned by the process.
 #[derive(Clone, Constructor)]
 pub struct ProcessHandle<T> {
-    pub pid: Pid,
+    pub pid: PId,
     pub(super) result: Rc<RefCell<Option<T>>>,
 }
 

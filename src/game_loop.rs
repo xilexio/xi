@@ -10,13 +10,15 @@ use crate::room_state::scan_rooms::scan_rooms;
 use crate::visualization::show_visualizations::show_visualizations;
 use log::info;
 use screeps::game;
-use crate::{kernel, logging};
 use crate::creeps::cleanup_creeps;
+use crate::kernel::{run_processes, schedule, wake_up_sleeping_processes};
 use crate::kernel::sleep::sleep;
+use crate::logging::init_logging;
 use crate::travel::move_creeps;
+use crate::utils::priority::Priority;
 
 pub fn setup() {
-    logging::init_logging(LOG_LEVEL);
+    init_logging(LOG_LEVEL);
 
     info!(
         "[ξ] Initializing version compiled at {} at tick {} -- CPU: {:.1}/{:.1}",
@@ -26,7 +28,7 @@ pub fn setup() {
         game::cpu::bucket()
     );
 
-    drop(kernel::schedule("tick_end", 0, async {
+    schedule("tick_end", Priority(0), async {
         loop {
             let ticks_since_restart = game_tick() - first_tick();
 
@@ -48,38 +50,38 @@ pub fn setup() {
             
             sleep(1).await;
         }
-    }));
+    });
 
     load_global_state();
 
-    drop(kernel::schedule("scan_rooms", ROOM_SCANNING_PRIORITY, scan_rooms()));
-    drop(kernel::schedule("plan_rooms", ROOM_PLANNING_PRIORITY, plan_rooms()));
-    drop(kernel::schedule("cleanup_creeps", CLEANUP_CREEPS_PRIORITY, cleanup_creeps()));
-    drop(kernel::schedule(
+    schedule("scan_rooms", ROOM_SCANNING_PRIORITY, scan_rooms());
+    schedule("plan_rooms", ROOM_PLANNING_PRIORITY, plan_rooms());
+    schedule("cleanup_creeps", CLEANUP_CREEPS_PRIORITY, cleanup_creeps());
+    schedule(
         "construct_structures",
         CONSTRUCTING_STRUCTURES_PRIORITY,
         construct_structures(),
-    ));
-    drop(kernel::schedule(
+    );
+    schedule(
         "construct_structures",
         CONSTRUCTING_STRUCTURES_PRIORITY,
         construct_structures(),
-    ));
-    drop(kernel::schedule(
+    );
+    schedule(
         "maintain_rooms",
         ROOM_MAINTENANCE_PRIORITY,
         maintain_rooms(),
-    ));
-    drop(kernel::schedule(
+    );
+    schedule(
         "move_creeps",
         MOVE_CREEPS_PRIORITY,
         move_creeps()
-    ));
-    drop(kernel::schedule(
+    );
+    schedule(
         "show_visualizations",
         VISUALIZATIONS_PRIORITY,
         show_visualizations(),
-    ));
+    );
 }
 
 // pub static mut S_PLANNER: Option<RoomPlanner> = None;
@@ -106,8 +108,8 @@ pub fn game_loop() {
         info!("Initialization used {}CPU.", game::cpu::get_used());
     }
 
-    kernel::wake_up_sleeping_processes();
-    kernel::run_processes();
+    wake_up_sleeping_processes();
+    run_processes();
 
     if ticks_since_restart >= FIRST_MEMORY_SAVE_TICK && ticks_since_restart % MEMORY_SAVE_INTERVAL == 0 {
         save_global_state();

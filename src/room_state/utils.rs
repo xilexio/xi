@@ -8,7 +8,7 @@ where
     F: FnMut() -> bool,
 {
     let mut structures_broadcast = u!(with_room_state(room_name, |room_state| {
-        room_state.structures_broadcast.clone_inactive()
+        room_state.structures_broadcast.clone_not_primed()
     }));
 
     // TODO when the check is true, it will always be true this tick.

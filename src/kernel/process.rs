@@ -7,21 +7,32 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::task::{Context, Poll, Wake, Waker};
-use crate::kernel::condition::Cid;
+use crate::kernel::cid::CId;
+use crate::utils::priority::Priority;
 
-pub type Pid = u32;
-pub type Priority = u8;
+pub type PId = u32;
 
 /// Metadata of the process and resources reserved by it.
+#[derive(Debug)]
 pub struct ProcessMeta {
     pub name: String,
-    pub pid: Pid,
-    pub parent_pid: Option<Pid>,
+    pub pid: PId,
+    pub parent_pid: Option<PId>,
     pub priority: Priority,
     pub creeps: Vec<String>,
     pub wake_up_tick: Option<u32>,
-    pub awaited_pid: Option<Pid>,
-    pub awaited_cid: Option<Cid>,
+    pub awaited_pid: Option<PId>,
+    pub awaited_cid: Option<CId>,
+}
+
+impl Display for ProcessMeta {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(parent_pid) = self.parent_pid {
+            write!(f, "P{}-{} ({}/P{})", self.pid, self.name, self.priority, parent_pid)
+        } else {
+            write!(f, "P{}-{} ({})", self.pid, self.name, self.priority)
+        }
+    }
 }
 
 pub type WrappedProcessMeta = Rc<RefCell<ProcessMeta>>;
@@ -35,8 +46,8 @@ pub(super) struct Process<T> {
 impl<T> Process<T> {
     pub(super) fn new<F>(
         name: String,
-        pid: Pid,
-        parent_pid: Option<Pid>,
+        pid: PId,
+        parent_pid: Option<PId>,
         priority: Priority,
         future: F,
     ) -> Self
@@ -68,11 +79,7 @@ impl<T> Process<T> {
 impl<T> Display for Process<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let meta = self.meta.borrow();
-        if let Some(parent_pid) = meta.parent_pid {
-            write!(f, "P{}-{} ({}/P{})", meta.pid, meta.name, meta.priority, parent_pid)
-        } else {
-            write!(f, "P{}-{} ({})", meta.pid, meta.name, meta.priority)
-        }
+        write!(f, "{}", meta)
     }
 }
 
@@ -109,11 +116,3 @@ impl Wake for ProcessWaker {
 
     fn wake_by_ref(self: &Arc<Self>) {}
 }
-
-// TODO
-// - required creeps to perform the task with priorities and parts
-// - ability to schedule creeps ahead of time with given priority to make sure no death spiral occurs,
-//   maybe in the form of "make sure these creeps are always available"
-// - info where the creeps need to be, distance, etc. (TravelSpec)
-// - children processes and ability to wait for them?
-//   or maybe make it more efficient by introducing helper functions like getEnergy(process, creep) that may suspend the process

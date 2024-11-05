@@ -3,7 +3,7 @@ use crate::kernel::sleep::{sleep, sleep_until};
 use crate::room_state::room_states::for_each_owned_room;
 use crate::u;
 use crate::utils::find::get_structure;
-use crate::utils::map_utils::MultiMapUtils;
+use crate::utils::multi_map_utils::MultiMapUtils;
 use crate::utils::result_utils::ResultUtils;
 use derive_more::Constructor;
 use js_sys::JsString;

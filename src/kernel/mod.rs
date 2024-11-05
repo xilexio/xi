@@ -1,11 +1,11 @@
 use crate::fresh_number::fresh_number;
 use crate::game_tick::game_tick;
-use crate::kernel::condition::Cid;
-use crate::kernel::process::{Pid, Priority, Process, WrappedProcessMeta};
+use crate::kernel::cid::CId;
+use crate::kernel::process::{PId, Process, WrappedProcessMeta};
 use crate::kernel::process_handle::ProcessHandle;
 use crate::kernel::runnable::Runnable;
 use crate::utils::cold::cold;
-use crate::utils::map_utils::{MultiMapUtils, OrderedMultiMapUtils};
+use crate::utils::multi_map_utils::{MultiMapUtils, OrderedMultiMapUtils};
 use crate::{a, local_trace, u};
 use log::{error, trace};
 use parking_lot::lock_api::MappedMutexGuard;
@@ -15,28 +15,32 @@ use screeps::game;
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::task::Poll;
+use crate::utils::priority::Priority;
 
+pub mod broadcast;
+pub mod cid;
 pub mod condition;
 pub mod process;
 pub mod process_handle;
 pub mod runnable;
 pub mod sleep;
 
-const DEBUG: bool = false;
+const DEBUG: bool = true;
 
 /// A singleton executor and reactor. To work correctly, only one Kernel may be used at a time and it must be used
 /// from one thread.
+#[derive(Debug)]
 struct Kernel {
     /// Map from priorities to processes.
     active_processes_by_priorities: BTreeMap<Priority, Vec<Box<dyn Runnable>>>,
     /// Processes that are sleeping until the tick in the key.
     sleeping_processes: BTreeMap<u32, Vec<Box<dyn Runnable>>>,
     /// Processes that are awaiting completion of another process with PID in the key.
-    awaiting_processes: FxHashMap<Pid, Vec<Box<dyn Runnable>>>,
+    awaiting_processes: FxHashMap<PId, Vec<Box<dyn Runnable>>>,
     /// Processes that are waiting on a condition with the CID in the key.
-    condition_processes: FxHashMap<Cid, Vec<Box<dyn Runnable>>>,
+    condition_processes: FxHashMap<CId, Vec<Box<dyn Runnable>>>,
     /// Processes by PID.
-    meta_by_pid: FxHashMap<Pid, WrappedProcessMeta>,
+    meta_by_pid: FxHashMap<PId, WrappedProcessMeta>,
 
     current_process_meta: Option<WrappedProcessMeta>,
 }
@@ -64,7 +68,6 @@ impl Kernel {
 /// Schedules a future to run asynchronously. It will not run right away, but instead be enqueued.
 /// Returns `ProcessHandle` which can be awaited and returns the value returned by the scheduled process.
 /// If called outside of a process, the result should be manually dropped using `std::mem::drop`.
-#[must_use]
 pub fn schedule<F, T>(name: &str, priority: Priority, future: F) -> ProcessHandle<T>
 where
     F: Future<Output = T> + 'static,
@@ -90,6 +93,8 @@ where
 /// Kills the process. Can be mildly expensive under some circumstances.
 /// Only a process that has not finished or returned yet may be killed.
 pub fn kill<T>(process_handle: ProcessHandle<T>, result: T) {
+    local_trace!("Killing P{}.", process_handle.pid);
+
     process_handle.result.replace(Some(result));
 
     kill_without_result_or_cleanup(process_handle.pid);
@@ -103,6 +108,8 @@ pub fn kill<T>(process_handle: ProcessHandle<T>, result: T) {
 /// or its children themselves.
 // TODO Processes whose parents are already finished but given process is an ancestors will not be killed.
 pub fn kill_tree<T>(process_handle: ProcessHandle<T>, result: T) {
+    local_trace!("Killing tree of P{}.", process_handle.pid);
+
     let mut killed_pids = FxHashSet::default();
     let mut awaiting_pids = FxHashSet::default();
     {
@@ -118,8 +125,8 @@ pub fn kill_tree<T>(process_handle: ProcessHandle<T>, result: T) {
         let mut queue = processes_children.remove(&process_handle.pid).unwrap_or(Vec::new());
         while let Some(pid) = queue.pop() {
             let children = processes_children.remove(&pid).unwrap_or(Vec::new());
-            killed_pids.extend(children.iter());
-            queue.extend(children.iter());
+            killed_pids.extend(children.iter().cloned());
+            queue.extend(children.into_iter());
             if let Some(awaiting_processes) = kern.awaiting_processes.get(&pid) {
                 awaiting_pids.extend(awaiting_processes.iter().map(|process| process.borrow_meta().pid));
             }
@@ -127,6 +134,7 @@ pub fn kill_tree<T>(process_handle: ProcessHandle<T>, result: T) {
     }
 
     for pid in killed_pids {
+        local_trace!("Killing P{}.", pid);
         awaiting_pids.remove(&pid);
         kill_without_result_or_cleanup(pid);
     }
@@ -139,57 +147,65 @@ pub fn kill_tree<T>(process_handle: ProcessHandle<T>, result: T) {
     kill(process_handle, result);
 }
 
-fn kill_without_result_or_cleanup(pid: Pid) {
+fn kill_without_result_or_cleanup(pid: PId) {
     let mut kern = kernel();
-    // Fail on unwrap indicates the process has finished already.
-    let meta = u!(kern.meta_by_pid.get(&pid)).borrow();
-    let process = if let Some(wake_up_tick) = meta.wake_up_tick {
-        drop(meta);
-        let vec_with_process = u!(kern.sleeping_processes.get_mut(&wake_up_tick));
-        // Not retain to make use of short-circuit and get the process.
-        let index = u!(vec_with_process
-            .iter()
-            .position(|process| process.borrow_meta().pid == pid));
-        let process = vec_with_process.remove(index);
-        if vec_with_process.is_empty() {
-            kern.sleeping_processes.remove(&wake_up_tick);
-        }
-        process
-    } else if let Some(awaited_pid) = meta.awaited_pid {
-        drop(meta);
-        let vec_with_process = u!(kern.awaiting_processes.get_mut(&awaited_pid));
-        // Not retain to make use of short-circuit and get the process.
-        let index = u!(vec_with_process
-            .iter()
-            .position(|process| process.borrow_meta().pid == pid));
-        let process = vec_with_process.remove(index);
-        if vec_with_process.is_empty() {
-            kern.awaiting_processes.remove(&awaited_pid);
-        }
-        process
-    } else {
-        let priority = meta.priority;
-        drop(meta);
-        // Fail on unwrap means that the process was neither awaiting anything nor active.
-        let vec_with_process = u!(kern.active_processes_by_priorities.get_mut(&priority));
-        // Not retain to make use of short-circuit and get the process.
-        let index = u!(vec_with_process
-            .iter()
-            .position(|process| process.borrow_meta().pid == pid));
-        let process = vec_with_process.remove(index);
-        if vec_with_process.is_empty() {
-            kern.active_processes_by_priorities.remove(&priority);
-        }
-        process
-    };
+    // None indicates the process has finished already.
+    if let Some(removed_meta) = kern.meta_by_pid.remove(&pid) {
+        local_trace!("Removing meta of process P{}.", pid);
+        let meta = removed_meta.borrow();
+        let process = if let Some(wake_up_tick) = meta.wake_up_tick {
+            drop(meta);
+            local_trace!("Process P{} was awaiting tick {}.", pid, wake_up_tick);
+            let vec_with_process = u!(kern.sleeping_processes.get_mut(&wake_up_tick));
+            // Not retain to make use of short-circuit and get the process.
+            let index = u!(vec_with_process
+                .iter()
+                .position(|process| process.borrow_meta().pid == pid));
+            let process = vec_with_process.remove(index);
+            if vec_with_process.is_empty() {
+                kern.sleeping_processes.remove(&wake_up_tick);
+            }
+            process
+        } else if let Some(awaited_pid) = meta.awaited_pid {
+            drop(meta);
+            local_trace!("Process P{} was awaiting P{}.", pid, awaited_pid);
+            let vec_with_process = u!(kern.awaiting_processes.get_mut(&awaited_pid));
+            // Not retain to make use of short-circuit and get the process.
+            let index = u!(vec_with_process
+                .iter()
+                .position(|process| process.borrow_meta().pid == pid));
+            let process = vec_with_process.remove(index);
+            if vec_with_process.is_empty() {
+                kern.awaiting_processes.remove(&awaited_pid);
+            }
+            process
+        } else {
+            let priority = meta.priority;
+            drop(meta);
+            local_trace!("Process P{} was not awaiting anything.", pid);
+            // Fail on unwrap means that the process was neither awaiting anything nor active.
+            let vec_with_process = u!(kern.active_processes_by_priorities.get_mut(&priority));
+            // Not retain to make use of short-circuit and get the process.
+            let index = u!(vec_with_process
+                .iter()
+                .position(|process| process.borrow_meta().pid == pid));
+            let process = vec_with_process.remove(index);
+            if vec_with_process.is_empty() {
+                kern.active_processes_by_priorities.remove(&priority);
+            }
+            process
+        };
 
-    trace!("Killed {}.", process);
+        trace!("Killed {}.", process);
+    } else {
+        local_trace!("Meta of process P{} was already removed.", pid);
+    }
 }
 
 /// Runs all processes in the queue. Should be preceded by waking up all sleeping processes that should wake up this
 /// tick and waking up all processes waiting for travel to finish.
 pub fn run_processes() {
-    while let Some((priority, mut process)) = { (|| kernel().active_processes_by_priorities.pop_from_last())() } {
+    while let Some((_, mut process)) = { (|| kernel().active_processes_by_priorities.pop_from_last())() } {
         trace!("Running {}.", process);
 
         let pid = process.borrow_meta().pid;
@@ -215,7 +231,7 @@ pub fn run_processes() {
                     kern.sleeping_processes.push_or_insert(wake_up_tick, process);
                 } else if let Some(awaited_cid) = meta.awaited_cid {
                     drop(meta);
-                    local_trace!("{} waiting for C{}.", process, awaited_cid);
+                    local_trace!("{} waiting for {}.", process, awaited_cid);
                     kern.condition_processes.push_or_insert(awaited_cid, process);
                 } else {
                     error!("{} is pending but not waiting for anything.", process)
@@ -242,7 +258,7 @@ pub fn wake_up_sleeping_processes() {
     }
 }
 
-pub(super) fn move_current_process_to_awaiting(awaited_process_pid: Pid) {
+pub(super) fn move_current_process_to_awaiting(awaited_process_pid: PId) {
     if let Some(meta) = kernel().current_process_meta.as_ref() {
         meta.borrow_mut().awaited_pid = Some(awaited_process_pid);
     } else {
@@ -258,7 +274,7 @@ pub(super) fn move_current_process_to_sleeping(wake_up_tick: u32) {
     }
 }
 
-pub(super) fn signal_condition(cid: Cid) {
+pub(super) fn signal_condition(cid: CId) {
     let mut kern = kernel();
 
     // Ignoring when a condition is not waited on since it is not required and may happen instantly.
@@ -270,7 +286,7 @@ pub(super) fn signal_condition(cid: Cid) {
     }
 }
 
-pub(super) fn move_current_process_to_waiting_for_condition(cid: Cid) {
+pub(super) fn move_current_process_to_waiting_for_condition(cid: CId) {
     if let Some(meta) = kernel().current_process_meta.as_ref() {
         meta.borrow_mut().awaited_cid = Some(cid);
     } else {
@@ -279,7 +295,7 @@ pub(super) fn move_current_process_to_waiting_for_condition(cid: Cid) {
 }
 
 /// Perform actions made after a process has ended and was removed from one of kernel process collections.
-fn cleanup_process(pid: Pid) {
+fn cleanup_process(pid: PId) {
     let mut kern = kernel();
 
     let maybe_awaiting_processes = kern.awaiting_processes.remove(&pid);
@@ -291,7 +307,8 @@ fn cleanup_process(pid: Pid) {
         }
     }
 
-    let meta = u!(kern.meta_by_pid.remove(&pid));
+    // The meta may be not present in `meta_by_pid` anymore if the process was killed.
+    kern.meta_by_pid.remove(&pid);
 
     // TODO Implement in kill somewhere cleanup of conditions no process is awaiting.
     // let meta_ref = meta.borrow();
@@ -327,7 +344,6 @@ pub fn should_finish() -> bool {
     game::cpu::get_used() >= 0.8 * game::cpu::tick_limit()
 }
 
-// TODO remove this altogether and if reprioritization is needed, introduce another function.
 /// Borrows metadata of the currently active process. The borrowed reference must be dropped before the next await.
 /// Preferably it should be not stored in a variable.
 pub fn current_process_wrapped_meta() -> MappedMutexGuard<'static, RawMutex, WrappedProcessMeta> {
@@ -339,6 +355,10 @@ pub fn current_process_wrapped_meta() -> MappedMutexGuard<'static, RawMutex, Wra
         error!("Tried to borrow process meta while there is no current process.");
         unreachable!()
     }
+}
+
+pub fn current_priority() -> Priority {
+    current_process_wrapped_meta().borrow().priority
 }
 
 #[macro_export]
@@ -362,13 +382,17 @@ fn kernel() -> MappedMutexGuard<'static, RawMutex, Kernel> {
 
 #[cfg(test)]
 mod tests {
-    use crate::game_tick::GAME_TIME;
+    use std::cell::Cell;
+    use crate::game_tick::inc_game_time;
     use crate::kernel::condition::Condition;
     use crate::kernel::sleep::sleep;
     use crate::kernel::{kill, run_processes, schedule, wake_up_sleeping_processes, Kernel, KERNEL};
     use crate::logging::init_logging;
     use log::LevelFilter::Trace;
     use std::sync::Mutex;
+    use log::debug;
+    use crate::kernel::broadcast::Broadcast;
+    use crate::utils::priority::Priority;
 
     /// Reinitializes the kernel.
     pub fn reset_kernel() {
@@ -387,210 +411,155 @@ mod tests {
         run_processes();
     }
 
-    static mut TEST_COUNTER: u8 = 0;
+    static TEST_COUNTER: Mutex<Cell<u8>> = Mutex::new(Cell::new(0));
+
+    fn set_test_counter(value: u8) {
+        TEST_COUNTER.lock().unwrap().set(value);
+        debug!("Set test counter to {}.", value);
+    }
+
+    fn add_to_test_counter(value: u8) {
+        let tc = TEST_COUNTER.lock().unwrap();
+        tc.replace(tc.get() + value);
+        debug!("Added {} to test counter, current value is {}.", value, tc.get());
+    }
+
+    fn get_test_counter() -> u8 {
+        TEST_COUNTER.lock().unwrap().get()
+    }
 
     async fn do_stuff() -> u8 {
-        unsafe {
-            TEST_COUNTER += 1;
-            TEST_COUNTER
-        }
+        add_to_test_counter(1);
+        get_test_counter()
     }
 
     #[test]
     fn test_basic_run() {
         let lock = TEST_MUTEX.lock();
 
-        unsafe {
-            TEST_COUNTER = 0;
-        }
+        set_test_counter(0);
         init_logging(Trace);
         reset_kernel();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 0);
-        }
-        drop(schedule("do_stuff", 100, do_stuff()));
-        unsafe {
-            assert_eq!(TEST_COUNTER, 0);
-        }
+        assert_eq!(get_test_counter(), 0);
+        schedule("do_stuff", Priority(100), do_stuff());
+        assert_eq!(get_test_counter(), 0);
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 1);
-        }
+        assert_eq!(get_test_counter(), 1);
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 1);
-        }
+        assert_eq!(get_test_counter(), 1);
     }
 
     async fn await_do_stuff() {
-        unsafe {
-            TEST_COUNTER += 1;
-        }
-        let result = schedule("do_stuff", 100, do_stuff()).await;
-        unsafe {
-            TEST_COUNTER += result;
-        }
+        add_to_test_counter(1);
+        let result = schedule("do_stuff", Priority(100), do_stuff()).await;
+        add_to_test_counter(result);
     }
 
     #[test]
     fn test_awaiting() {
         let lock = TEST_MUTEX.lock();
 
-        unsafe {
-            TEST_COUNTER = 0;
-        }
+        set_test_counter(0);
         init_logging(Trace);
         reset_kernel();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 0);
-        }
-        drop(schedule("await_do_stuff", 100, await_do_stuff()));
-        unsafe {
-            assert_eq!(TEST_COUNTER, 0);
-        }
+        assert_eq!(get_test_counter(), 0);
+        schedule("await_do_stuff", Priority(100), await_do_stuff());
+        assert_eq!(get_test_counter(), 0);
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 4);
-        }
+        assert_eq!(get_test_counter(), 4);
     }
 
     async fn do_stuff_and_sleep_and_stuff() {
-        unsafe {
-            TEST_COUNTER += 1;
-        }
+        add_to_test_counter(1);
         sleep(2).await;
-        unsafe {
-            TEST_COUNTER += 1;
-        }
+        add_to_test_counter(1);
     }
 
     #[test]
     fn test_sleep() {
         let lock = TEST_MUTEX.lock();
 
-        unsafe {
-            TEST_COUNTER = 0;
-        }
+        set_test_counter(0);
         init_logging(Trace);
         reset_kernel();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 0);
-        }
-        drop(schedule(
+        assert_eq!(get_test_counter(), 0);
+        schedule(
             "do_stuff_and_sleep_and_stuff",
-            100,
+            Priority(100),
             do_stuff_and_sleep_and_stuff(),
-        ));
-        unsafe {
-            assert_eq!(TEST_COUNTER, 0);
-        }
+        );
+        assert_eq!(get_test_counter(), 0);
         wake_up_sleeping_processes();
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 1);
-            GAME_TIME += 1;
-        }
+        assert_eq!(get_test_counter(), 1);
+        inc_game_time();
         wake_up_sleeping_processes();
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 1);
-            GAME_TIME += 1;
-        }
+        assert_eq!(get_test_counter(), 1);
+        inc_game_time();
         wake_up_sleeping_processes();
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 2);
-        }
+        assert_eq!(get_test_counter(), 2);
         wake_up_sleeping_processes();
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 2);
-        }
+        assert_eq!(get_test_counter(), 2);
     }
 
     async fn await_sleeping() {
-        unsafe {
-            TEST_COUNTER += 1;
-        }
-        schedule("do_stuff_and_sleep_and_stuff", 100, do_stuff_and_sleep_and_stuff()).await;
-        unsafe {
-            TEST_COUNTER += 1;
-        }
+        add_to_test_counter(1);
+        schedule("do_stuff_and_sleep_and_stuff", Priority(100), do_stuff_and_sleep_and_stuff()).await;
+        add_to_test_counter(1);
     }
 
     #[test]
     fn test_chained_awaiting_and_sleep() {
         let lock = TEST_MUTEX.lock();
 
-        unsafe {
-            TEST_COUNTER = 0;
-        }
+        set_test_counter(0);
         init_logging(Trace);
         reset_kernel();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 0);
-        }
-        drop(schedule("await_sleeping", 50, await_sleeping()));
-        unsafe {
-            assert_eq!(TEST_COUNTER, 0);
-        }
+        assert_eq!(get_test_counter(), 0);
+        schedule("await_sleeping", Priority(50), await_sleeping());
+        assert_eq!(get_test_counter(), 0);
         wake_up_sleeping_processes();
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 2);
-            GAME_TIME += 1;
-        }
+        assert_eq!(get_test_counter(), 2);
+        inc_game_time();
         wake_up_sleeping_processes();
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 2);
-            GAME_TIME += 1;
-        }
+        assert_eq!(get_test_counter(), 2);
+        inc_game_time();
         wake_up_sleeping_processes();
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 4);
-        }
+        assert_eq!(get_test_counter(), 4);
         wake_up_sleeping_processes();
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 4);
-        }
+        assert_eq!(get_test_counter(), 4);
     }
 
     async fn set_one() {
-        unsafe {
-            TEST_COUNTER = 1;
-        }
+        set_test_counter(1);
     }
 
     async fn set_two() {
-        unsafe {
-            TEST_COUNTER = 2;
-        }
+        set_test_counter(2);
     }
 
     #[test]
     fn test_priorities() {
         let lock = TEST_MUTEX.lock();
 
-        unsafe {
-            TEST_COUNTER = 0;
-        }
+        set_test_counter(0);
         init_logging(Trace);
         reset_kernel();
-        drop(schedule("set_one", 50, set_one()));
-        drop(schedule("set_two", 100, set_two()));
+        schedule("set_one", Priority(50), set_one());
+        schedule("set_two", Priority(100), set_two());
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 1);
-        }
-        drop(schedule("set_one", 100, set_one()));
-        drop(schedule("set_two", 50, set_two()));
+        assert_eq!(get_test_counter(), 1);
+        schedule("set_one", Priority(100), set_one());
+        schedule("set_two", Priority(50), set_two());
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 2);
-        }
+        assert_eq!(get_test_counter(), 2);
     }
 
     #[test]
@@ -598,196 +567,296 @@ mod tests {
         let three = 3u8;
 
         let set_three = async move {
-            unsafe {
-                TEST_COUNTER = three;
-            }
+            set_test_counter(three);
         };
 
         let lock = TEST_MUTEX.lock();
 
-        unsafe {
-            TEST_COUNTER = 0;
-        }
+        set_test_counter(0);
         init_logging(Trace);
         reset_kernel();
-        drop(schedule("set_three", 100, set_three));
+        schedule("set_three", Priority(100), set_three);
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 3);
-        }
+        assert_eq!(get_test_counter(), 3);
     }
 
     #[test]
     fn test_changing_priority() {
         let set_four = async move {
-            unsafe {
-                TEST_COUNTER = 4;
-                meta!().priority = 150;
-                sleep(1).await;
-                TEST_COUNTER = 4;
-            }
+            set_test_counter(4);
+            meta!().priority = Priority(150);
+            sleep(1).await;
+            set_test_counter(4);
         };
 
         let set_five = async move {
-            unsafe {
-                TEST_COUNTER = 5;
-                sleep(1).await;
-                TEST_COUNTER = 5;
-            }
+            set_test_counter(5);
+            sleep(1).await;
+            set_test_counter(5);
         };
 
         let lock = TEST_MUTEX.lock();
 
-        unsafe {
-            TEST_COUNTER = 0;
-        }
+        set_test_counter(0);
         init_logging(Trace);
         reset_kernel();
-        drop(schedule("set_four", 50, set_four));
-        drop(schedule("set_five", 100, set_five));
+        schedule("set_four", Priority(50), set_four);
+        schedule("set_five", Priority(100), set_five);
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 4);
-            GAME_TIME += 1;
-        }
+        assert_eq!(get_test_counter(), 4);
+        inc_game_time();
         wake_up_sleeping_processes();
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 5);
-            GAME_TIME += 1;
-        }
+        assert_eq!(get_test_counter(), 5);
+        inc_game_time();
     }
 
     #[test]
     fn test_kill() {
         let spawn_and_kill = async {
-            let process_handle = schedule("increment", 50, async {
+            let process_handle = schedule("increment", Priority(50), async {
                 loop {
-                    unsafe {
-                        TEST_COUNTER += 1;
-                    }
+                    add_to_test_counter(1);
                     sleep(1).await;
                 }
             });
             sleep(1).await;
             let ph = process_handle.clone();
-            drop(schedule("kill", 100, async {
+            schedule("kill", Priority(100), async {
                 kill(ph, 10);
-            }));
+            });
             let result = process_handle.await;
-            unsafe {
-                TEST_COUNTER += result;
-            }
+            add_to_test_counter(result);
         };
 
         let lock = TEST_MUTEX.lock();
 
-        unsafe {
-            TEST_COUNTER = 0;
-        }
+        set_test_counter(0);
         init_logging(Trace);
         reset_kernel();
-        drop(schedule("spawn_and_kill", 100, spawn_and_kill));
+        schedule("spawn_and_kill", Priority(100), spawn_and_kill);
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 1);
-            GAME_TIME += 1;
-        }
+        assert_eq!(get_test_counter(), 1);
+        inc_game_time();
         wake_up_sleeping_processes();
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 11);
-        }
+        assert_eq!(get_test_counter(), 11);
     }
 
     #[test]
     fn test_two_processes_waiting_for_one() {
         let lock = TEST_MUTEX.lock();
 
-        unsafe {
-            TEST_COUNTER = 0;
-        }
+        set_test_counter(0);
         init_logging(Trace);
         reset_kernel();
-        drop(schedule("waiting_outer", 100, async {
-            let waited = schedule("waited", 99, async {
-                unsafe {
-                    TEST_COUNTER += 1;
-                }
+        schedule("waiting_outer", Priority(100), async {
+            let waited = schedule("waited", Priority(99), async {
+                add_to_test_counter(1);
                 sleep(1).await;
-                unsafe {
-                    TEST_COUNTER += 1;
-                }
+                add_to_test_counter(1);
                 42
             });
             let waited_copy = waited.clone();
-            drop(schedule("waiting_inner", 98, async {
+            schedule("waiting_inner", Priority(98), async {
                 sleep(2).await;
                 let value = waited_copy.await;
-                unsafe {
-                    TEST_COUNTER += value;
-                }
-            }));
-            unsafe {
-                TEST_COUNTER += waited.await;
-            }
-        }));
+                add_to_test_counter(value);
+            });
+            add_to_test_counter(waited.await);
+        });
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 1);
-            GAME_TIME += 1;
-        }
+        assert_eq!(get_test_counter(), 1);
+        inc_game_time();
         wake_up_sleeping_processes();
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 44);
-            GAME_TIME += 1;
-        }
+        assert_eq!(get_test_counter(), 44);
+        inc_game_time();
         wake_up_sleeping_processes();
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 86);
-        }
+        assert_eq!(get_test_counter(), 86);
     }
 
     #[test]
     fn test_condition() {
         let lock = TEST_MUTEX.lock();
 
-        unsafe {
-            TEST_COUNTER = 0;
-        }
+        set_test_counter(0);
         init_logging(Trace);
         reset_kernel();
-        drop(schedule("waker", 100, async {
+        schedule("waker", Priority(100), async {
             let cond = Condition::<u8>::default();
             let cond_copy1 = cond.clone();
             let cond_copy2 = cond.clone();
-            drop(schedule("waiter_immediate", 99, async {
+            schedule("waiter_immediate", Priority(99), async {
                 sleep(2).await;
-                unsafe { TEST_COUNTER += cond_copy1.await }
-            }));
-            drop(schedule("waiter", 100, async {
-                unsafe { TEST_COUNTER += cond_copy2.await }
-            }));
+                add_to_test_counter(cond_copy1.await);
+            });
+            schedule("waiter", Priority(99), async {
+                add_to_test_counter(cond_copy2.await);
+            });
             sleep(1).await;
             cond.signal(42);
-        }));
+        });
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 0);
-            GAME_TIME += 1;
-        }
+        assert_eq!(get_test_counter(), 0);
+        inc_game_time();
         wake_up_sleeping_processes();
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 42);
-            GAME_TIME += 1;
-        }
+        assert_eq!(get_test_counter(), 42);
+        inc_game_time();
         wake_up_sleeping_processes();
         run_processes();
-        unsafe {
-            assert_eq!(TEST_COUNTER, 84);
-        }
+        assert_eq!(get_test_counter(), 84);
+    }
+
+    #[test]
+    fn test_broadcast() {
+        let lock = TEST_MUTEX.lock();
+
+        set_test_counter(0);
+        init_logging(Trace);
+        reset_kernel();
+        schedule("waker", Priority(100), async {
+            let cond = Broadcast::<u8>::default();
+            let cond_copy1 = cond.clone_primed();
+            let cond_copy2 = cond.clone_primed();
+            schedule("waiter_immediate", Priority(99), async move {
+                sleep(2).await;
+                add_to_test_counter(cond_copy1.await);
+            });
+            schedule("waiter", Priority(99), async move {
+                add_to_test_counter(cond_copy2.await);
+            });
+            sleep(1).await;
+            cond.broadcast(42);
+        });
+        run_processes();
+        assert_eq!(get_test_counter(), 0);
+        inc_game_time();
+        wake_up_sleeping_processes();
+        run_processes();
+        assert_eq!(get_test_counter(), 42);
+        inc_game_time();
+        wake_up_sleeping_processes();
+        run_processes();
+        assert_eq!(get_test_counter(), 84);
+    }
+
+    #[test]
+    fn test_broadcast_not_primed() {
+        let lock = TEST_MUTEX.lock();
+
+        set_test_counter(0);
+        init_logging(Trace);
+        reset_kernel();
+        schedule("waker", Priority(100), async {
+            let cond = Broadcast::<u8>::default();
+            let cond_copy1 = cond.clone_primed();
+            let cond_copy2 = cond.clone_primed();
+            schedule("waiter1", Priority(99), async move {
+                sleep(2).await;
+                let cond_copy1_copy = cond_copy1.clone_not_primed();
+                add_to_test_counter(cond_copy1_copy.await);
+            });
+            schedule("waiter2", Priority(99), async move {
+                let cond_copy2_copy = cond_copy2.clone_not_primed();
+                add_to_test_counter(cond_copy2_copy.await);
+            });
+            sleep(1).await;
+            cond.broadcast(1);
+            sleep(2).await;
+            cond.broadcast(2);
+        });
+        run_processes();
+        assert_eq!(get_test_counter(), 0);
+        inc_game_time();
+        wake_up_sleeping_processes();
+        run_processes();
+        assert_eq!(get_test_counter(), 1);
+        inc_game_time();
+        wake_up_sleeping_processes();
+        run_processes();
+        assert_eq!(get_test_counter(), 1);
+        inc_game_time();
+        wake_up_sleeping_processes();
+        run_processes();
+        assert_eq!(get_test_counter(), 3);
+    }
+
+    #[test]
+    fn test_broadcast_manual_check() {
+        let lock = TEST_MUTEX.lock();
+
+        set_test_counter(0);
+        init_logging(Trace);
+        reset_kernel();
+        schedule("waker", Priority(100), async {
+            let cond = Broadcast::<u8>::default();
+            let mut cond_copy = cond.clone_primed();
+            schedule("checker", Priority(99), async move {
+                assert_eq!(cond_copy.check(), None);
+                sleep(1).await;
+                assert_eq!(cond_copy.check(), Some(1));
+                assert_eq!(cond_copy.check(), None);
+                sleep(1).await;
+                assert_eq!(cond_copy.check(), None);
+                sleep(1).await;
+                assert_eq!(cond_copy.check(), Some(2));
+                assert_eq!(cond_copy.check(), None);
+            });
+            sleep(1).await;
+            cond.broadcast(1);
+            sleep(2).await;
+            cond.broadcast(2);
+        });
+        run_processes();
+        inc_game_time();
+        wake_up_sleeping_processes();
+        run_processes();
+        inc_game_time();
+        wake_up_sleeping_processes();
+        run_processes();
+        inc_game_time();
+        wake_up_sleeping_processes();
+        run_processes();
+    }
+
+    #[test]
+    fn test_broadcast_in_loop() {
+        let lock = TEST_MUTEX.lock();
+
+        set_test_counter(0);
+        init_logging(Trace);
+        reset_kernel();
+        schedule("waker", Priority(100), async {
+            let cond = Broadcast::<u8>::default();
+            let cond_copy = cond.clone_primed();
+            schedule("loop", Priority(99), async move {
+                for x in 0..3 {
+                    add_to_test_counter(cond_copy.clone_not_primed().await);
+                }
+            });
+            sleep(1).await;
+            cond.broadcast(1);
+            sleep(1).await;
+            cond.broadcast(2);
+            sleep(1).await;
+            cond.broadcast(3);
+        });
+        run_processes();
+        assert_eq!(get_test_counter(), 0);
+        inc_game_time();
+        wake_up_sleeping_processes();
+        run_processes();
+        assert_eq!(get_test_counter(), 1);
+        inc_game_time();
+        wake_up_sleeping_processes();
+        run_processes();
+        assert_eq!(get_test_counter(), 3);
+        inc_game_time();
+        wake_up_sleeping_processes();
+        run_processes();
+        assert_eq!(get_test_counter(), 6);
     }
 }

@@ -4,7 +4,7 @@ use crate::algorithms::room_matrix::RoomMatrix;
 use crate::algorithms::weighted_distance_matrix::{obstacle_cost, unreachable_cost};
 use crate::geometry::rect::ball;
 use crate::geometry::room_xy::RoomXYUtils;
-use crate::utils::map_utils::{MultiMapUtils, OrderedMultiMapUtils};
+use crate::utils::multi_map_utils::{MultiMapUtils, OrderedMultiMapUtils};
 use derive_more::Constructor;
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::RoomXY;

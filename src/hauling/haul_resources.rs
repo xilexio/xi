@@ -44,7 +44,7 @@ pub async fn haul_resources(room_name: RoomName) {
             body,
             priority: HAULER_SPAWN_PRIORITY,
             preferred_spawns,
-            preferred_tick: (0, 0),
+            tick: (0, 0),
         }
     }));
 
@@ -191,7 +191,7 @@ fn hauler_spawn_request(room_name: RoomName) -> SpawnRequest {
         body: hauler_body(room_name),
         priority: HAULER_SPAWN_PRIORITY,
         preferred_spawns,
-        preferred_tick: (min_preferred_tick, max_preferred_tick),
+        tick: (min_preferred_tick, max_preferred_tick),
     }
 }
 

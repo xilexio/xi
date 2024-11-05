@@ -1,29 +1,26 @@
-use log::debug;
-use crate::room_state::room_states::replace_room_state;
+use log::{debug, trace};
+use crate::room_state::room_states::map_and_replace_room_state;
 use crate::room_state::{ControllerData, MineralData, RoomDesignation, RoomResources, RoomState, SourceData, StructureData};
-use crate::u;
+use crate::{local_trace, u};
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::StructureType::{Extension, Spawn};
 use screeps::{find, game, HasId, HasPosition, Mineral, ObjectId, OwnedStructureProperties, Position, ResourceType, RoomName, Source, StructureController};
 use screeps::ResourceType::Energy;
-use thiserror::Error;
+use crate::errors::XiError;
 
-#[derive(Error, Debug)]
-pub enum ScanError {
-    #[error("failed to scan the room due to lack of visibility")]
-    RoomVisibilityError,
-}
+const DEBUG: bool = true;
 
 /// Updates the state of given room, i.e., records the terrain, structures, resources and other data.
 /// Fails if the room is not visible.
-pub fn scan_room(room_name: RoomName) -> Result<(), ScanError> {
-    replace_room_state(room_name, |state| update_room_state_from_scan(room_name, state))
+pub fn scan_room(room_name: RoomName, force_update: bool) -> Result<(), XiError> {
+    map_and_replace_room_state(room_name, |state| update_room_state_from_scan(room_name, force_update, state))
 }
 
-pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -> Result<(), ScanError> {
+pub fn update_room_state_from_scan(room_name: RoomName, force_update: bool, state: &mut RoomState) -> Result<(), XiError> {
+    local_trace!("Scanning room {} with force_update={}.", room_name, force_update);
     let room = match game::rooms().get(room_name) {
         Some(room) => room,
-        None => Err(ScanError::RoomVisibilityError)?,
+        None => Err(XiError::RoomVisibilityError)?,
     };
     if let Some(controller) = room.controller() {
         state.rcl = controller.level();
@@ -44,6 +41,7 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
             }
         }
     };
+    local_trace!("Room designation: {:?}", state.designation);
     state.sources = Vec::new();
     for source in room.find(find::SOURCES, None) {
         let id: ObjectId<Source> = source.id();
@@ -78,7 +76,7 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
     // TODO Only needed the first time.
     state.terrain = u!(game::map::get_room_terrain(room_name)).into();
     let mut structures = FxHashMap::default();
-    let mut structures_changed = false;
+    let mut structures_changed = force_update;
     for structure in room.find(find::STRUCTURES, None) {
         let structure_type = structure.as_structure().structure_type();
         let xy = structure.pos().xy();
@@ -143,7 +141,7 @@ pub fn update_room_state_from_scan(room_name: RoomName, state: &mut RoomState) -
         state.resources = RoomResources {
             spawn_energy: room.energy_available(),
             spawn_energy_capacity: room.energy_capacity_available(),
-            storage_energy: room.storage().map_or(0, |storage| storage.store().get(Energy).unwrap_or(0))
+            storage_energy: room.storage().map_or(0, |storage| storage.store().get(Energy).unwrap_or(0)),
         }
     }
     

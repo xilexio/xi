@@ -3,7 +3,7 @@ use crate::algorithms::room_matrix::RoomMatrix;
 use crate::algorithms::room_matrix_slice::RoomMatrixSlice;
 use crate::room_planner::packed_tile_structures::{MainStructureType, PackedTileStructures, PackedTileStructuresError};
 use crate::room_state::StructuresMap;
-use crate::utils::map_utils::MultiMapUtils;
+use crate::utils::multi_map_utils::MultiMapUtils;
 use log::debug;
 use modular_bitfield::specifiers::B4;
 use modular_bitfield::{bitfield, BitfieldSpecifier};

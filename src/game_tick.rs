@@ -12,6 +12,13 @@ pub fn game_tick() -> u32 {
 pub static mut GAME_TIME: u32 = 1u32;
 
 #[cfg(test)]
+pub fn inc_game_time() {
+    unsafe {
+        GAME_TIME += 1;
+    }
+}
+
+#[cfg(test)]
 pub fn game_tick() -> u32 {
     unsafe { GAME_TIME }
 }

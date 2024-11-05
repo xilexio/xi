@@ -17,7 +17,7 @@ where
     ROOM_STATES.with(|states| states.borrow_mut().get_mut(&room_name).map(f))
 }
 
-pub fn replace_room_state<F, R>(room_name: RoomName, mut f: F) -> R
+pub fn map_and_replace_room_state<F, R>(room_name: RoomName, mut f: F) -> R
 where
     F: FnMut(&mut RoomState) -> R,
 {

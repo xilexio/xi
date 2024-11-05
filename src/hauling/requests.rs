@@ -1,8 +1,8 @@
-use crate::kernel::process::Priority;
 use rustc_hash::FxHashMap;
 use screeps::{ObjectId, Position, RawObjectId, ResourceType, RoomName, Transferable};
 use std::cell::RefCell;
 use log::debug;
+use crate::utils::priority::Priority;
 
 thread_local! {
     static HAUL_REQUESTS: RefCell<FxHashMap<RoomName, RoomHaulRequests >> = RefCell::new(FxHashMap::default());

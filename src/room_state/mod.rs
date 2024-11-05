@@ -7,7 +7,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
-use crate::kernel::condition::Broadcast;
+use crate::kernel::broadcast::Broadcast;
 use crate::room_planner::plan::Plan;
 use crate::room_planner::RoomPlanner;
 use crate::u;

@@ -17,6 +17,7 @@ use screeps::{HasId, Position, ResourceType, RoomName};
 use crate::consts::FAR_FUTURE;
 use crate::hauling::requests::WithdrawRequest;
 use crate::room_state::utils::loop_until_structures_change;
+use crate::utils::priority::Priority;
 
 pub async fn mine_source(room_name: RoomName, source_ix: usize) {
     loop {
@@ -55,7 +56,7 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                 body,
                 priority: MINER_SPAWN_PRIORITY,
                 preferred_spawns,
-                preferred_tick: (0, 0),
+                tick: (0, 0),
             };
 
             (base_spawn_request, source_data, travel_ticks, work_pos)
@@ -132,7 +133,7 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                                     amount: None,
                                     // amount_per_tick: energy_per_tick,
                                     // max_amount: min(1000, source.energy() + dropped_energy.amount()),
-                                    priority: 100,
+                                    priority: Priority(100),
                                     // preferred_tick: (0, 0),
                                 };
                                 // Ordering a hauler to get dropped energy, updating the existing request.

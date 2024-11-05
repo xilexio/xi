@@ -67,24 +67,46 @@ pub fn init_logging(verbosity: log::LevelFilter) {
     fern::Dispatch::new()
         .level(verbosity)
         .format(|out, message, record| {
+            #[cfg(not(test))]
+            let postfix = "</span>";
+            #[cfg(test)]
+            let postfix = "";
             if record.level() >= Trace {
+                #[cfg(not(test))]
+                let prefix = "<span style=\"color: #666\">";
+                #[cfg(test)]
+                let prefix = "[TRACE] ";
                 out.finish(format_args!(
-                    "<span style=\"color: #666\">{}: {}</span>",
+                    "{}{}: {}{}",
+                    prefix,
                     record.target(),
-                    message
+                    message,
+                    postfix
                 ))
             } else if record.level() >= Debug {
+                #[cfg(not(test))]
+                let prefix = "<span style=\"color: #66b\">";
+                #[cfg(test)]
+                let prefix = "[DEBUG] ";
                 out.finish(format_args!(
-                    "<span style=\"color: #66b\">{}: {}</span>",
+                    "{}{}: {}{}",
+                    prefix,
                     record.target(),
-                    message
+                    message,
+                    postfix
                 ))
             } else if record.level() <= Warn {
+                #[cfg(not(test))]
+                let prefix = "<span style=\"color: #f99\">";
+                #[cfg(test)]
+                let prefix = "";
                 out.finish(format_args!(
-                    "<span style=\"color: #f99\">[{}] {}: {}</span>",
+                    "{}[{}] {}: {}{}",
+                    prefix,
                     record.level(),
                     record.target(),
-                    message
+                    message,
+                    postfix
                 ))
             } else {
                 out.finish(format_args!("{}", message))

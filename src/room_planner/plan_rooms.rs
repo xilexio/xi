@@ -5,7 +5,7 @@ use crate::kernel::sleep::{sleep, sleep_until};
 use crate::room_planner::{RoomPlanner, MIN_RAMPART_RCL};
 use crate::room_state::room_states::for_each_owned_room;
 use crate::room_state::{RoomState, StructuresMap};
-use crate::utils::map_utils::MultiMapUtils;
+use crate::utils::multi_map_utils::MultiMapUtils;
 use crate::{a, log_err, u};
 use log::{debug, error, trace};
 use screeps::{game, StructureType};
