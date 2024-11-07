@@ -9,7 +9,7 @@ use std::task::{Context, Poll};
 
 /// A structure containing result of a finished process or None before that.
 /// It can be awaited and returns the result returned by the process.
-#[derive(Clone, Constructor)]
+#[derive(Clone, Debug, Constructor)]
 pub struct ProcessHandle<T> {
     pub pid: PId,
     pub(super) result: Rc<RefCell<Option<T>>>,

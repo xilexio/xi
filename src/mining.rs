@@ -72,6 +72,14 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
         let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, spawn_pool_options);
 
         // TODO This ends up being an infinite loop sometimes.
+        // TODO The infinite loop happened again when mining freshly after spawning in a new room.
+        // xi::spawn_pool: Dropping a spawn pool in W5N8 for Miner.
+        // xi::reserved_creep: Dropping reservation for creep miner1.
+        // xi::reserved_creep: Reserving creep miner1.
+        // xi::spawn_pool: Found idle Miner creep.
+        // xi::kernel: Scheduling P254-spawn_pool_creep_process (197/P12).
+        // xi::spawn_pool: Scheduled a spawn of Miner creep from the spawn pool.
+        // xi::kernel: P12-mine_source_W5N8_X14_Y13 (198/P9) sleeping until 3429977.
         loop_until_structures_change(room_name, 1, || {
             // TODO Body should depend on max extension fill and also on current resources. Later, also on statistics
             //      about energy income, but this applies mostly before the storage is online.

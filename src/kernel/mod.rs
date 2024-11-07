@@ -185,6 +185,13 @@ fn kill_without_result_or_cleanup(pid: PId) {
             local_trace!("Process P{} was not awaiting anything.", pid);
             // Fail on unwrap means that the process was neither awaiting anything nor active.
             let vec_with_process = u!(kern.active_processes_by_priorities.get_mut(&priority));
+            // TODO The below failed when a process was killed.
+            // xi::kernel: Running P14-haul_resources_W5N8 (198/P9).
+            // xi::spawn_pool: A current Hauler creep from the spawn pool died.
+            // xi::kernel: Killing P18.
+            // xi::kernel: Removing meta of process P18.
+            // xi::kernel: Process P18 was not awaiting anything.
+            // xi::utils::unwrap: Unwrapping failed on Option::None at src\kernel\mod.rs:189,25 in xi::kernel.
             // Not retain to make use of short-circuit and get the process.
             let index = u!(vec_with_process
                 .iter()

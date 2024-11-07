@@ -2,11 +2,12 @@ use derive_more::Constructor;
 use crate::room_state::packed_terrain::PackedTerrain;
 use js_sys::{Object, Reflect};
 use log::info;
-use screeps::{game, Mineral, ObjectId, ResourceType, RoomName, RoomXY, Source, StructureContainer, StructureController, StructureExtension, StructureLink, StructureSpawn, StructureType};
+use screeps::{game, ConstructionSite, Mineral, ObjectId, ResourceType, RoomName, RoomXY, Source, StructureContainer, StructureController, StructureExtension, StructureLink, StructureSpawn, StructureType};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
+use crate::creeps::CreepRef;
 use crate::kernel::broadcast::Broadcast;
 use crate::room_planner::plan::Plan;
 use crate::room_planner::RoomPlanner;
@@ -24,7 +25,6 @@ pub struct RoomState {
     pub owner: String,
     pub designation: RoomDesignation,
     pub rcl: u8,
-    // TODO should not really be skipped
     #[serde(skip)]
     pub terrain: PackedTerrain,
     pub controller: Option<ControllerData>,
@@ -40,6 +40,8 @@ pub struct RoomState {
     pub current_rcl_structures: Option<StructuresMap>,
     /// Indicator whether all structures required in the current RCL are built. Used to trigger construction.
     pub current_rcl_structures_built: bool,
+    #[serde(skip)]
+    pub construction_site_queue: Vec<ConstructionSiteData>,
     // Information about fast filler and its extensions.
     // pub fast_filler: Option<FastFiller>,
     // Information about extensions outside of fast filler, ordered by the distance to the storage.
@@ -53,6 +55,8 @@ pub struct RoomState {
     pub structures_broadcast: Broadcast<()>,
     #[serde(skip)]
     pub resources: RoomResources,
+    #[serde(skip)]
+    pub essential_creeps: EssentialCreeps,
 }
 
 #[derive(Deserialize, Serialize, Copy, Clone, Eq, PartialEq, Debug)]
@@ -63,6 +67,13 @@ pub enum RoomDesignation {
     Invader,
     Portal,
     Highway
+}
+
+#[derive(Clone, Debug)]
+pub struct ConstructionSiteData {
+    pub id: ObjectId<ConstructionSite>,
+    pub structure_type: StructureType,
+    pub xy: RoomXY,
 }
 
 #[derive(Deserialize, Serialize, Copy, Clone, Debug, Constructor)]
@@ -105,6 +116,16 @@ pub struct RoomResources {
     pub storage_energy: u32,
 }
 
+/// List of creeps essential for the continued and uninterrupted function of the room.
+/// The creeps that are important depend on the room's RCL.
+/// The bot tries to keep at least one of each required essential creep type with plenty of
+/// ticks to live to restart the room if necessary.
+#[derive(Default, Clone, Debug)]
+pub struct EssentialCreeps {
+    miner: Option<CreepRef>,
+    hauler: Option<CreepRef>,
+}
+
 #[wasm_bindgen]
 pub fn set_room_blueprint(room_name: String, blueprint: JsValue) {
     info!("Room name: {}", room_name);
@@ -143,10 +164,12 @@ impl RoomState {
             structures: FxHashMap::default(),
             plan: None,
             planner: None,
+            construction_site_queue: Vec::new(),
             spawns: Vec::new(),
             extensions: Vec::new(),
             structures_broadcast: Broadcast::default(),
             resources: RoomResources::default(),
+            essential_creeps: EssentialCreeps::default(),
         }
     }
 }

@@ -7,10 +7,12 @@ use crate::spawning::{spawn_room_creeps, update_spawn_list};
 use log::{debug, info};
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::{game, RoomName};
+use crate::construction::build_structures::build_structures;
 use crate::consts::FAR_FUTURE;
 use crate::filling_spawns::fill_spawns;
 use crate::hauling::haul_resources::haul_resources;
 use crate::u;
+use crate::upgrade_controller::upgrade_controller;
 
 /// Each tick, schedule or kill processes to maintain a room.
 pub async fn maintain_rooms() {
@@ -60,27 +62,25 @@ struct Miner {
 }
 
 async fn maintain_room(room_name: RoomName) {
-    let structures_broadcast = u!(with_room_state(room_name, |room_state| {
-        room_state.structures_broadcast.clone_primed()
-    }));
-
-    // Reacting to changes in structures in the room.
-    // This and subsequent processes are scheduled with a lower priority so that they run
-    // later than this process.
-    schedule(
-        &format!("update_structures_{}", room_name),
-        current_priority() - 1,
-        async move {
-            loop {
-                update_spawn_list(room_name);
-
-                structures_broadcast.clone_not_primed().await;
-                debug!("Structures have changed in maintain rooms.");
-            }
-        },
-    );
-
     with_room_state(room_name, |room_state| {
+        let structures_broadcast = room_state.structures_broadcast.clone_primed();
+    
+        // Reacting to changes in structures in the room.
+        // This and subsequent processes are scheduled with a lower priority so that they run
+        // later than this process.
+        schedule(
+            &format!("update_structures_{}", room_name),
+            current_priority() - 1,
+            async move {
+                loop {
+                    update_spawn_list(room_name);
+    
+                    structures_broadcast.clone_not_primed().await;
+                    debug!("Structures have changed in maintain rooms.");
+                }
+            },
+        );
+
         // Schedule filling the spawns and extensions.
         schedule(
             &format!("fill_spawns_{}", room_name),
@@ -98,25 +98,39 @@ async fn maintain_room(room_name: RoomName) {
             );
         }
 
-        // Schedule hauling resources.
+        // Handle scheduled hauls and control haulers.
         schedule(
             &format!("haul_resources_{}", room_name),
             current_priority() - 1,
             haul_resources(room_name)
         );
-    });
 
-    // Spawning creeps is scheduled to run later to react to spawning requests.
-    schedule(
-        &format!("spawn_creeps_{}", room_name),
-        SPAWNING_CREEPS_PRIORITY,
-        async move {
-            loop {
-                spawn_room_creeps(room_name);
-                sleep(1).await;
-            }
-        },
-    );
+        // Spawning creeps is scheduled to run later to react to spawning requests.
+        schedule(
+            &format!("spawn_creeps_{}", room_name),
+            SPAWNING_CREEPS_PRIORITY,
+            async move {
+                loop {
+                    spawn_room_creeps(room_name);
+                    sleep(1).await;
+                }
+            },
+        );
+
+        // Upgrade the controller, spawn upgraders and schedule hauling of the energy.
+        schedule(
+            &format!("upgrade_controller_{}", room_name),
+            current_priority() - 1,
+            upgrade_controller(room_name)
+        );
+
+        // Build structures in the room and spawn builders.
+        schedule(
+            &format!("build_structures_{}", room_name),
+            current_priority() - 1,
+            build_structures(room_name)
+        );
+    });
 
     debug!("Finished setting up maintenance of room {}.", room_name);
     // The process has done its job, now it is waiting for the whole tree to be killed when

@@ -43,7 +43,7 @@ impl SpawnPoolOptions {
     }
 }
 
-// TODO Cancel spawns on drop.
+#[derive(Debug)]
 pub struct SpawnPool {
     base_spawn_request: SpawnRequest,
     current_creep_and_process: Option<(ReservedCreep, ProcessHandle<()>)>,
@@ -53,19 +53,30 @@ pub struct SpawnPool {
     kill_process_on_creep_death: bool,
 }
 
+#[derive(Debug)]
 pub enum MaybeSpawned {
     Spawned(ReservedCreep),
     Spawning(Rc<RefCell<SpawnPromise>>),
 }
 
 impl Drop for SpawnPool {
-    /// Removing all scheduled spawns when dropping the spawn pool. If the drop is not called, the creeps will simply be
-    /// spawned and potentially wasted.
+    /// Removing all scheduled spawns when dropping the spawn pool.
+    /// If the drop is not called, the creeps will simply be spawned and potentially wasted.
+    /// The current process is killed. The current creep is released as a result of dropping
+    /// `ReservedCreep`.
+    /// The prespawned creep, if it exists, is also released.
+    /// Scheduled spawns are cancelled, though they may still finish if the spawning is already
+    /// occurring.
     fn drop(&mut self) {
         debug!("Dropping a spawn pool in {} for {}.", self.room_name, self.base_spawn_request.role);
+        
+        // Cancelling scheduled spawns.
         if let Some(MaybeSpawned::Spawning(prespawned_creep)) = self.prespawned_creep.take() {
             cancel_scheduled_creep(self.room_name, prespawned_creep);
         }
+
+        let (_, current_process) = u!(self.current_creep_and_process.take());
+        kill(current_process, ());
     }
 }
 
@@ -92,15 +103,15 @@ impl SpawnPool {
         F: Future<Output = ()> + 'static,
     {
         // If the current creep is dead, killing its process and discarding its information.
-        if let Some((current_creep, current_process)) = self.current_creep_and_process.as_ref() {
+        if let Some((current_creep, _)) = self.current_creep_and_process.as_ref() {
             if current_creep.borrow().dead {
                 trace!(
                     "A current {:?} creep from the spawn pool died.",
                     self.base_spawn_request.role
                 );
-                let current_creep_and_process = self.current_creep_and_process.take();
+                let (_, current_process) = u!(self.current_creep_and_process.take());
                 if self.kill_process_on_creep_death {
-                    kill(u!(current_creep_and_process).1, ());
+                    kill(current_process, ());
                 }
             }
         }

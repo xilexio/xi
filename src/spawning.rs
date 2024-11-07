@@ -65,6 +65,7 @@ struct SpawnEvent {
 
 /// A promise to spawn a creep. It can be used to check the progress, whether the spawning was
 /// cancelled or to get the creep after it was spawned.
+#[derive(Debug)]
 pub struct SpawnPromise {
     pub id: UId,
     pub spawn_id: Option<ObjectId<StructureSpawn>>,

@@ -38,6 +38,7 @@ mod spawn_pool;
 mod filling_spawns;
 mod reserved_creep;
 mod creeps;
+mod upgrade_controller;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]

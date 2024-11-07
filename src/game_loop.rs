@@ -1,10 +1,10 @@
 use js_sys::Date;
 use crate::config::{FIRST_MEMORY_SAVE_TICK, LOG_LEVEL, MEMORY_SAVE_INTERVAL};
-use crate::construction::construct_structures;
+use crate::construction::place_construction_sites::place_construction_sites;
 use crate::game_tick::{first_tick, game_tick};
 use crate::global_state::{load_global_state, save_global_state};
 use crate::maintenance::maintain_rooms;
-use crate::priorities::{CLEANUP_CREEPS_PRIORITY, CONSTRUCTING_STRUCTURES_PRIORITY, MOVE_CREEPS_PRIORITY, ROOM_MAINTENANCE_PRIORITY, ROOM_PLANNING_PRIORITY, ROOM_SCANNING_PRIORITY, VISUALIZATIONS_PRIORITY};
+use crate::priorities::{CLEANUP_CREEPS_PRIORITY, PLACING_CONSTRUCTION_SITES_PRIORITY, MOVE_CREEPS_PRIORITY, ROOM_MAINTENANCE_PRIORITY, ROOM_PLANNING_PRIORITY, ROOM_SCANNING_PRIORITY, VISUALIZATIONS_PRIORITY};
 use crate::room_planner::plan_rooms::plan_rooms;
 use crate::room_state::scan_rooms::scan_rooms;
 use crate::visualization::show_visualizations::show_visualizations;
@@ -58,14 +58,14 @@ pub fn setup() {
     schedule("plan_rooms", ROOM_PLANNING_PRIORITY, plan_rooms());
     schedule("cleanup_creeps", CLEANUP_CREEPS_PRIORITY, cleanup_creeps());
     schedule(
-        "construct_structures",
-        CONSTRUCTING_STRUCTURES_PRIORITY,
-        construct_structures(),
+        "place_construction_sites",
+        PLACING_CONSTRUCTION_SITES_PRIORITY,
+        place_construction_sites(),
     );
     schedule(
         "construct_structures",
-        CONSTRUCTING_STRUCTURES_PRIORITY,
-        construct_structures(),
+        PLACING_CONSTRUCTION_SITES_PRIORITY,
+        place_construction_sites(),
     );
     schedule(
         "maintain_rooms",
