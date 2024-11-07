@@ -157,11 +157,9 @@ fn kill_without_result_or_cleanup(pid: PId) {
             drop(meta);
             local_trace!("Process P{} was awaiting tick {}.", pid, wake_up_tick);
             let vec_with_process = u!(kern.sleeping_processes.get_mut(&wake_up_tick));
-            // Not retain to make use of short-circuit and get the process.
-            let index = u!(vec_with_process
-                .iter()
-                .position(|process| process.borrow_meta().pid == pid));
-            let process = vec_with_process.remove(index);
+            let process = u!(vec_with_process
+                .extract_if(|process| process.borrow_meta().pid == pid).next()
+            );
             if vec_with_process.is_empty() {
                 kern.sleeping_processes.remove(&wake_up_tick);
             }
@@ -170,33 +168,34 @@ fn kill_without_result_or_cleanup(pid: PId) {
             drop(meta);
             local_trace!("Process P{} was awaiting P{}.", pid, awaited_pid);
             let vec_with_process = u!(kern.awaiting_processes.get_mut(&awaited_pid));
-            // Not retain to make use of short-circuit and get the process.
-            let index = u!(vec_with_process
-                .iter()
-                .position(|process| process.borrow_meta().pid == pid));
-            let process = vec_with_process.remove(index);
+            let process = u!(vec_with_process
+                .extract_if(|process| process.borrow_meta().pid == pid).next()
+            );
             if vec_with_process.is_empty() {
                 kern.awaiting_processes.remove(&awaited_pid);
+            }
+            process
+        } else if let Some(awaited_cid) = meta.awaited_cid {
+            drop(meta);
+            local_trace!("Process P{} was awaiting condition C{}.", pid, awaited_cid);
+            let vec_with_process = u!(kern.condition_processes.get_mut(&awaited_cid));
+            let process = u!(vec_with_process
+                .extract_if(|process| process.borrow_meta().pid == pid).next()
+            );
+            if vec_with_process.is_empty() {
+                kern.condition_processes.remove(&awaited_cid);
             }
             process
         } else {
             let priority = meta.priority;
             drop(meta);
             local_trace!("Process P{} was not awaiting anything.", pid);
-            // Fail on unwrap means that the process was neither awaiting anything nor active.
+            // Fail on unwrap means that the process was neither awaiting anything nor active,
+            // which should never happen.
             let vec_with_process = u!(kern.active_processes_by_priorities.get_mut(&priority));
-            // TODO The below failed when a process was killed.
-            // xi::kernel: Running P14-haul_resources_W5N8 (198/P9).
-            // xi::spawn_pool: A current Hauler creep from the spawn pool died.
-            // xi::kernel: Killing P18.
-            // xi::kernel: Removing meta of process P18.
-            // xi::kernel: Process P18 was not awaiting anything.
-            // xi::utils::unwrap: Unwrapping failed on Option::None at src\kernel\mod.rs:189,25 in xi::kernel.
-            // Not retain to make use of short-circuit and get the process.
-            let index = u!(vec_with_process
-                .iter()
-                .position(|process| process.borrow_meta().pid == pid));
-            let process = vec_with_process.remove(index);
+            let process = u!(vec_with_process
+                .extract_if(|process| process.borrow_meta().pid == pid).next()
+            );
             if vec_with_process.is_empty() {
                 kern.active_processes_by_priorities.remove(&priority);
             }

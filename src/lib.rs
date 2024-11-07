@@ -2,6 +2,7 @@
 #![feature(async_closure)]
 #![feature(btree_cursors)]
 #![feature(btree_extract_if)]
+#![feature(extract_if)]
 
 use js_sys::JsString;
 use wasm_bindgen::prelude::wasm_bindgen;

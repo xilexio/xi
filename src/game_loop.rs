@@ -63,11 +63,6 @@ pub fn setup() {
         place_construction_sites(),
     );
     schedule(
-        "construct_structures",
-        PLACING_CONSTRUCTION_SITES_PRIORITY,
-        place_construction_sites(),
-    );
-    schedule(
         "maintain_rooms",
         ROOM_MAINTENANCE_PRIORITY,
         maintain_rooms(),
