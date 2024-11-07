@@ -6,9 +6,9 @@ use crate::room_state::scan_room::scan_room;
 /// Scans visible rooms.
 /// It is guaranteed that the bot will scan all visible rooms each tick. 
 pub async fn scan_rooms() {
+    let mut first_scan = true;
+    
     loop {
-        let mut first_scan = true;
-        
         for room in game::rooms().values() {
             log_err!(scan_room(room.name(), first_scan));
             first_scan = false;
