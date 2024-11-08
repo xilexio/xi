@@ -205,7 +205,7 @@ impl SpawnPool {
                 let future = creep_future_constructor(reserved_creep.as_ref());
                 let wrapper_priority = current_process_wrapped_meta().borrow().priority;
                 let current_process = schedule(
-                    "spawn_pool_creep_process",
+                    &format!("spawn_pool_{}_creep_process", self.base_spawn_request.role),
                     wrapper_priority.saturating_sub(1),
                     future,
                 );

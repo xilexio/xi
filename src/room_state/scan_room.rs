@@ -26,20 +26,27 @@ pub fn update_room_state_from_scan(room_name: RoomName, force_update: bool, stat
         state.rcl = controller.level();
         let id: ObjectId<StructureController> = controller.id();
         let pos: Position = controller.pos();
-        state.controller = Some(ControllerData {
-            id,
-            xy: pos.xy(),
-            work_xy: None,
-            link_xy: None,
-        });
+        let mut work_xy = None;
+        let link_xy = None; // TODO This requires information if the link and core have been constructed.
         if let Some(owner) = controller.owner() {
             state.owner = owner.username();
             if controller.my() {
                 state.designation = RoomDesignation::Owned;
+                
+                if let Some(plan) = state.plan.as_ref() {
+                    // TODO How about not at RCL8? Is it the same work_xy?
+                    work_xy = Some(plan.controller.work_xy);
+                }
             } else {
                 state.designation = RoomDesignation::NotOwned;
             }
         }
+        state.controller = Some(ControllerData {
+            id,
+            xy: pos.xy(),
+            work_xy,
+            link_xy,
+        });
     };
     local_trace!("Room designation: {:?}", state.designation);
     state.sources = Vec::new();
@@ -132,7 +139,7 @@ pub fn update_room_state_from_scan(room_name: RoomName, force_update: bool, stat
         }
         // TODO sort lists of structures
         // TODO fast filler data
-
+        
         // Informing waiting processes that the structure changed.
         state.structures_broadcast.broadcast(());
     }

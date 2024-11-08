@@ -1,9 +1,31 @@
 use std::fmt::{Display, Formatter};
 use crate::travel::TravelState;
 use crate::u;
-use screeps::{game, Part, BodyPart, Position, ResourceType, SharedCreepProperties, Source, Withdrawable, Resource, Transferable, RoomObject, Store, CREEP_CLAIM_LIFE_TIME, CREEP_LIFE_TIME, CREEP_SPAWN_TIME, HARVEST_POWER, HasPosition};
+use screeps::{
+    game,
+    Part,
+    BodyPart,
+    Position,
+    ResourceType,
+    SharedCreepProperties,
+    Source,
+    Withdrawable,
+    Resource,
+    Transferable,
+    RoomObject,
+    Store,
+    HasPosition,
+    ObjectId,
+    MaybeHasId,
+    StructureController,
+    CREEP_CLAIM_LIFE_TIME,
+    CREEP_LIFE_TIME,
+    CREEP_SPAWN_TIME,
+    HARVEST_POWER,
+};
 use screeps::Part::{Claim, Work};
 use derive_more::Constructor;
+use crate::consts::UPGRADE_CONTROLLER_ENERGY_COST;
 use crate::errors::XiError;
 use crate::errors::XiError::*;
 use crate::utils::single_tick_cache::SingleTickCache;
@@ -15,6 +37,7 @@ pub enum CreepRole {
     Scout,
     Miner,
     Hauler,
+    Upgrader,
 }
 
 impl Default for CreepRole {
@@ -35,6 +58,7 @@ impl CreepRole {
             CreepRole::Miner => "miner",
             CreepRole::Hauler => "hauler",
             CreepRole::Scout => "scout",
+            CreepRole::Upgrader => "upgrader",
         }
     }
 
@@ -73,6 +97,11 @@ impl Creep {
         } else {
             Err(CreepDead)
         }
+    }
+    
+    pub fn screeps_id(&mut self) -> Result<ObjectId<screeps::Creep>, XiError> {
+        // If the creep is alive, it must have an ID.
+        Ok(u!(self.screeps_obj()?.try_id()))
     }
 
     // API wrappers
@@ -140,6 +169,10 @@ impl Creep {
     pub fn drop(&mut self, resource_type: ResourceType, amount: Option<u32>) -> Result<(), XiError> {
         self.screeps_obj()?.drop(resource_type, amount).or(Err(CreepDropFailed))
     }
+    
+    pub fn upgrade_controller(&mut self, controller: &StructureController) -> Result<(), XiError> {
+        self.screeps_obj()?.upgrade_controller(controller).or(Err(CreepUpgradeControllerFailed))
+    }
 
     pub fn store(&mut self) -> Result<Store, XiError> {
         Ok(self.screeps_obj()?.store())
@@ -147,8 +180,20 @@ impl Creep {
 
     // Statistics
 
-    pub fn energy_harvest_power(&mut self) -> u32 {
-        u!(self.screeps_obj()).body().iter().filter_map(|body_part| (body_part.part() == Work).then_some(HARVEST_POWER)).sum()
+    pub fn energy_harvest_power(&mut self) -> Result<u32, XiError> {
+        Ok(self.screeps_obj()?
+            .body()
+            .iter()
+            .filter_map(|body_part| (body_part.part() == Work).then_some(HARVEST_POWER))
+            .sum())
+    }
+
+    pub fn upgrade_energy_consumption(&mut self) -> Result<u32, XiError> {
+        Ok(self.screeps_obj()?
+            .body()
+            .iter()
+            .filter_map(|body_part| (body_part.part() == Work).then_some(UPGRADE_CONTROLLER_ENERGY_COST))
+            .sum())
     }
 }
 

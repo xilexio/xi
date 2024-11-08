@@ -74,6 +74,7 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
         loop_until_structures_change(room_name, 1, || {
             // TODO Body should depend on max extension fill and also on current resources. Later, also on statistics
             //      about energy income, but this applies mostly before the storage is online.
+            // TODO The miner is not mining right after restarting the bot.
             // Keeping a miner spawned and mining with it.
             spawn_pool.with_spawned_creep(|creep_ref| {
                 let travel_spec = travel_spec.clone();
