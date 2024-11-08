@@ -18,14 +18,16 @@ use screeps::{
     ObjectId,
     MaybeHasId,
     StructureController,
+    ConstructionSite,
     CREEP_CLAIM_LIFE_TIME,
     CREEP_LIFE_TIME,
     CREEP_SPAWN_TIME,
     HARVEST_POWER,
+    UPGRADE_CONTROLLER_POWER,
+    BUILD_POWER,
 };
 use screeps::Part::{Claim, Work};
 use derive_more::Constructor;
-use crate::consts::UPGRADE_CONTROLLER_ENERGY_COST;
 use crate::errors::XiError;
 use crate::errors::XiError::*;
 use crate::utils::single_tick_cache::SingleTickCache;
@@ -38,6 +40,7 @@ pub enum CreepRole {
     Miner,
     Hauler,
     Upgrader,
+    Builder,
 }
 
 impl Default for CreepRole {
@@ -59,6 +62,7 @@ impl CreepRole {
             CreepRole::Hauler => "hauler",
             CreepRole::Scout => "scout",
             CreepRole::Upgrader => "upgrader",
+            CreepRole::Builder => "builder",
         }
     }
 
@@ -67,6 +71,8 @@ impl CreepRole {
             "miner" => Some(CreepRole::Miner),
             "hauler" => Some(CreepRole::Hauler),
             "scout" => Some(CreepRole::Scout),
+            "upgrader" => Some(CreepRole::Upgrader),
+            "builder" => Some(CreepRole::Builder),
             _ => None
         }
     }
@@ -174,6 +180,10 @@ impl Creep {
         self.screeps_obj()?.upgrade_controller(controller).or(Err(CreepUpgradeControllerFailed))
     }
 
+    pub fn build(&mut self, construction_site: &ConstructionSite) -> Result<(), XiError> {
+        self.screeps_obj()?.build(construction_site).or(Err(CreepBuildFailed))
+    }
+
     pub fn store(&mut self) -> Result<Store, XiError> {
         Ok(self.screeps_obj()?.store())
     }
@@ -192,7 +202,15 @@ impl Creep {
         Ok(self.screeps_obj()?
             .body()
             .iter()
-            .filter_map(|body_part| (body_part.part() == Work).then_some(UPGRADE_CONTROLLER_ENERGY_COST))
+            .filter_map(|body_part| (body_part.part() == Work).then_some(UPGRADE_CONTROLLER_POWER))
+            .sum())
+    }
+    
+    pub fn build_energy_consumption(&mut self) -> Result<u32, XiError> {
+        Ok(self.screeps_obj()?
+            .body()
+            .iter()
+            .filter_map(|body_part| (body_part.part() == Work).then_some(BUILD_POWER))
             .sum())
     }
 }

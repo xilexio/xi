@@ -16,3 +16,4 @@ pub const VISUALIZATIONS_PRIORITY: Priority = Priority(10);
 pub const MINER_SPAWN_PRIORITY: Priority = Priority(200);
 pub const HAULER_SPAWN_PRIORITY: Priority = Priority(150);
 pub const UPGRADER_SPAWN_PRIORITY: Priority = Priority(100);
+pub const BUILDER_SPAWN_PRIORITY: Priority = Priority(50);

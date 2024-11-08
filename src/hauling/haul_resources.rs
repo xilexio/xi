@@ -19,15 +19,17 @@ use std::iter::repeat;
 use std::vec;
 use crate::creeps::actions::{pickup_when_able, transfer_when_able, withdraw_when_able};
 use crate::hauling::store_anywhere_or_drop::store_anywhere_or_drop;
+use crate::room_state::RoomState;
 
 /// Execute hauling of resources of haulers assigned to given room.
 /// Withdraw and store requests are registered in the system and the system assigns them to fre
 /// haulers. One or more withdraw event is paired with one or more store events. There are special
 /// withdraw and store events for the storage which may not be paired with one another.
 pub async fn haul_resources(room_name: RoomName) {
-    let body = hauler_body(room_name);
     
     let base_spawn_request = u!(with_room_state(room_name, |room_state| {
+        let body = hauler_body(room_state);
+        
         // TODO
         let preferred_spawns = room_state
             .spawns
@@ -51,6 +53,12 @@ pub async fn haul_resources(room_name: RoomName) {
     let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, SpawnPoolOptions::default());
     
     loop {
+        // TODO Handling more creeps at once.
+        // TODO Having a configurable lower and upper limit of the number of creeps and possibly
+        //      total relevant body parts.
+        // TODO Measuring number of idle creeps and trying to minimize their number while
+        //      fulfilling all requests. To this end, keeping track of fulfillment of requests,
+        //      how big is the backlog, etc.
         spawn_pool.with_spawned_creep(|creep_ref| async move {
             loop {
                 let mut maybe_withdraw_request = None;
@@ -155,7 +163,7 @@ async fn fulfill_requests(
 
 fn hauler_spawn_request(room_name: RoomName) -> SpawnRequest {
     // Prefer being spawned closer to the storage.
-    let preferred_spawns = u!(with_room_state(room_name, |room_state| {
+    let (preferred_spawns, body) = u!(with_room_state(room_name, |room_state| {
         let mut spawns = room_state
             .spawns
             .iter()
@@ -177,10 +185,15 @@ fn hauler_spawn_request(room_name: RoomName) -> SpawnRequest {
         {
             spawns.sort_by_key(|(spawn_xy, _)| spawn_xy.dist(storage_xy));
         }
-        spawns
+        
+        let preferred_spawns = spawns
             .into_iter()
             .map(|(_, preferred_spawn)| preferred_spawn)
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>();
+        
+        let body = hauler_body(room_state);
+        
+        (preferred_spawns, body)
     }));
 
     let min_preferred_tick = game_tick();
@@ -188,19 +201,17 @@ fn hauler_spawn_request(room_name: RoomName) -> SpawnRequest {
 
     SpawnRequest {
         role: CreepRole::Hauler,
-        body: hauler_body(room_name),
+        body,
         priority: HAULER_SPAWN_PRIORITY,
         preferred_spawns,
         tick: (min_preferred_tick, max_preferred_tick),
     }
 }
 
-fn hauler_body(room_name: RoomName) -> CreepBody {
+fn hauler_body(room_state: &RoomState) -> CreepBody {
     // TODO Instead of unwrap in such places, there should be a separate section for owned rooms that is guaranteed to be updated each tick.
     // TODO It seems double borrow doesnt work here.
-    let spawn_energy = u!(with_room_state(room_name, |state| {
-        state.resources.spawn_energy
-    }));
+    let spawn_energy = room_state.resources.spawn_energy;
 
     let parts = if spawn_energy >= 550 {
         repeat([Carry, Move]).take(5).flatten().collect::<Vec<_>>()

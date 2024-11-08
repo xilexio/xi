@@ -246,7 +246,7 @@ impl SpawnPool {
             // TODO Some other process may reserve this creep using find_idle_creeps immediately, need to prevent that.
             self.prespawned_creep = Some(MaybeSpawned::Spawning(spawn_promise));
             debug!(
-                "Scheduled a spawn of {:?} creep from the spawn pool.",
+                "Scheduled a prespawn of {} creep from the spawn pool.",
                 self.base_spawn_request.role
             );
         }

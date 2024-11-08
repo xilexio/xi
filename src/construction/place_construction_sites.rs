@@ -155,11 +155,12 @@ pub async fn place_construction_sites() {
                         MAX_CONSTRUCTION_SITES_PER_ROOM as i32 + extra_construction_sites.len() as i32 - room_construction_sites_count as i32,
                         0
                     ) as usize;
-                    
+
                     // Registering the correct construction sites in the room state.
                     room_state.construction_site_queue = correct_construction_sites;
 
                     // Removing invalid construction sites.
+                    // TODO Do not remove construction site with decent progress on them.
                     for cs in extra_construction_sites {
                         let construction_site = u!(game::get_object_by_id_typed(&cs.id));
                         construction_site.remove().warn_if_err(&format!(
@@ -172,7 +173,7 @@ pub async fn place_construction_sites() {
                     // Taking only the `construction_sites_left_to_limit` because the next iteration
                     // of this function every extra structure and construction site will be removed
                     // (maybe except the sole incorrect spawn), so no point in starting work on
-                    // other construction sites only to remove 
+                    // other construction sites only to remove
                     let placed_construction_sites = missing_construction_sites
                         .iter()
                         .take(construction_sites_left_to_limit);

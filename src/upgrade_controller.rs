@@ -74,15 +74,6 @@ pub async fn upgrade_controller(room_name: RoomName) {
                 let mut store_request_id = None;
 
                 loop {
-                    let store_request = StoreRequest {
-                        room_name,
-                        target: creep_id,
-                        resource_type: ResourceType::Energy,
-                        xy: Some(work_pos),
-                        amount: Some(capacity),
-                        priority: Priority(40),
-                    };
-
                     // This can only fail if the creep died, but then this process would be killed.
                     if u!(creep_ref.borrow_mut().store()).get_used_capacity(Some(ResourceType::Energy)) >= upgrade_energy_consumption {
                         let controller = u!(get_object_by_id_typed(&controller_id));
@@ -97,6 +88,15 @@ pub async fn upgrade_controller(room_name: RoomName) {
                         // TODO Request the energy in advance.
                         // TODO Use a container.
                         // TODO Use link.
+                        let store_request = StoreRequest {
+                            room_name,
+                            target: creep_id,
+                            resource_type: ResourceType::Energy,
+                            xy: Some(work_pos),
+                            amount: Some(capacity),
+                            priority: Priority(40),
+                        };
+                        
                         store_request_id = Some(schedule_store(store_request, None));
                     }
 

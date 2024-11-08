@@ -1,3 +1,5 @@
+use std::fmt::Display;
+use log::trace;
 use crate::creeps::{for_each_creep, CreepRef};
 use crate::kernel::broadcast::Broadcast;
 use crate::kernel::sleep::sleep;
@@ -35,17 +37,24 @@ pub struct TravelSpec {
     pub range: u8,
 }
 
+impl Display for TravelSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}-{} (range: {})", self.target.room_name(), self.target.xy(), self.range)
+    }
+}
+
 pub fn travel(creep_ref: &CreepRef, travel_spec: TravelSpec) -> Broadcast<Result<Position, XiError>> {
     let mut creep = creep_ref.borrow_mut();
+    trace!("Creep {} travelling to {}", creep.name, travel_spec);
     creep.travel_state.spec = Some(travel_spec);
     if let Some(creep_pos) = creep_arrival_pos(&mut creep) {
         creep.travel_state.arrived = true;
         creep.travel_state.arrival_broadcast.broadcast(Ok(creep_pos));
-        creep.travel_state.arrival_broadcast.clone_not_primed()
+        creep.travel_state.arrival_broadcast.clone_primed()
     } else {
         creep.travel_state.arrived = false;
         creep.travel_state.arrival_broadcast.reset();
-        creep.travel_state.arrival_broadcast.clone_not_primed()
+        creep.travel_state.arrival_broadcast.clone_primed()
     }
 }
 

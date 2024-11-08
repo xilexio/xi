@@ -16,17 +16,17 @@ use screeps::Part::{Move, Work};
 use screeps::{HasId, Position, ResourceType, RoomName};
 use crate::consts::FAR_FUTURE;
 use crate::hauling::requests::WithdrawRequest;
+use crate::room_state::RoomState;
 use crate::room_state::utils::loop_until_structures_change;
 use crate::utils::priority::Priority;
 
 pub async fn mine_source(room_name: RoomName, source_ix: usize) {
     loop {
-        // TODO This function should take room_state instead of room_name to prevent double borrow.
-        let body = miner_body(room_name);
-        
         // Computing a schema for spawn request that will later have its tick intervals modified.
         // Also computing travel time for prespawning.
         let (base_spawn_request, source_data, travel_ticks, work_pos) = u!(with_room_state(room_name, |room_state| {
+            let body = miner_body(room_state);
+            
             let source_data = room_state.sources[source_ix];
 
             let work_xy = u!(source_data.work_xy);
@@ -74,7 +74,6 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
         loop_until_structures_change(room_name, 1, || {
             // TODO Body should depend on max extension fill and also on current resources. Later, also on statistics
             //      about energy income, but this applies mostly before the storage is online.
-            // TODO The miner is not mining right after restarting the bot.
             // Keeping a miner spawned and mining with it.
             spawn_pool.with_spawned_creep(|creep_ref| {
                 let travel_spec = travel_spec.clone();
@@ -149,10 +148,8 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
     }
 }
 
-fn miner_body(room_name: RoomName) -> CreepBody {
-    let spawn_energy = u!(with_room_state(room_name, |state| {
-        state.resources.spawn_energy
-    }));
+fn miner_body(room_state: &RoomState) -> CreepBody {
+    let spawn_energy = room_state.resources.spawn_energy;
 
     let parts = if spawn_energy >= 550 {
         vec![Work, Work, Work, Work, Work, Move]

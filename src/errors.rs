@@ -22,6 +22,8 @@ pub enum XiError {
     CreepSuicideFailed,
     #[error("creep failed to upgrade the controller")]
     CreepUpgradeControllerFailed,
+    #[error("creep failed to build the construction site")]
+    CreepBuildFailed,
     #[error("object does not exist in the game")]
     ObjectDoesNotExist,
     #[error("failed to scan the room due to lack of visibility")]
