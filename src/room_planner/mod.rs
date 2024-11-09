@@ -11,7 +11,7 @@ use crate::algorithms::room_matrix_slice::RoomMatrixSlice;
 use crate::algorithms::shortest_path_by_distance_matrix::{distance_by_matrix, shortest_path_by_distance_matrix};
 use crate::algorithms::weighted_distance_matrix::{obstacle_cost, unreachable_cost};
 use crate::consts::{OBSTACLE_COST, UNREACHABLE_COST};
-use crate::cost_approximation::energy_balance_and_cpu_cost;
+use crate::resource_distribution::cost_approximation::energy_balance_and_cpu_cost;
 use crate::geometry::rect::{ball, bounding_rect, room_rect, Rect};
 use crate::geometry::room_xy::RoomXYUtils;
 use crate::profiler::measure_time;

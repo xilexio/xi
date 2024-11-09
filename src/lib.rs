@@ -12,7 +12,6 @@ mod blueprint;
 mod config;
 mod construction;
 mod consts;
-mod cost_approximation;
 mod fresh_number;
 mod game_loop;
 mod game_tick;
@@ -40,6 +39,7 @@ mod filling_spawns;
 mod reserved_creep;
 mod creeps;
 mod upgrade_controller;
+mod resource_distribution;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]

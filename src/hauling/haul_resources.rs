@@ -54,7 +54,7 @@ pub async fn haul_resources(room_name: RoomName) {
     
     loop {
         let required_haulers = u!(with_room_state(room_name, |room_state| {
-            room_state.hauling_stats.required_haulers
+            room_state.resource_distribution.required_haulers
         }));
 
         // TODO Not spawning the replacement creep when the number of required haulers is lower than

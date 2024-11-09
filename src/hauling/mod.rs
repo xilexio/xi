@@ -12,7 +12,6 @@ use crate::hauling::requests::{
 pub mod haul_resources;
 pub mod requests;
 pub mod store_anywhere_or_drop;
-pub mod hauling_stats;
 
 pub fn schedule_withdraw<T>(withdraw_request: &WithdrawRequest<T>, replaced_request_id: Option<WithdrawRequestId>) -> WithdrawRequestId
     where
