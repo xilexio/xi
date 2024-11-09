@@ -11,6 +11,7 @@ use crate::construction::build_structures::build_structures;
 use crate::consts::FAR_FUTURE;
 use crate::filling_spawns::fill_spawns;
 use crate::hauling::haul_resources::haul_resources;
+use crate::hauling::hauling_stats::update_hauling_stats;
 use crate::u;
 use crate::upgrade_controller::upgrade_controller;
 
@@ -103,6 +104,13 @@ async fn maintain_room(room_name: RoomName) {
             &format!("haul_resources_{}", room_name),
             current_priority() - 1,
             haul_resources(room_name)
+        );
+
+        // Update stats required to schedule good number of haulers.
+        schedule(
+            &format!("update_hauling_stats{}", room_name),
+            current_priority() - 2,
+            update_hauling_stats(room_name)
         );
 
         // Spawning creeps is scheduled to run later to react to spawning requests.

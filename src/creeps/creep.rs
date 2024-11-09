@@ -1,32 +1,9 @@
+use std::cmp::max;
 use std::fmt::{Display, Formatter};
 use crate::travel::TravelState;
 use crate::u;
-use screeps::{
-    game,
-    Part,
-    BodyPart,
-    Position,
-    ResourceType,
-    SharedCreepProperties,
-    Source,
-    Withdrawable,
-    Resource,
-    Transferable,
-    RoomObject,
-    Store,
-    HasPosition,
-    ObjectId,
-    MaybeHasId,
-    StructureController,
-    ConstructionSite,
-    CREEP_CLAIM_LIFE_TIME,
-    CREEP_LIFE_TIME,
-    CREEP_SPAWN_TIME,
-    HARVEST_POWER,
-    UPGRADE_CONTROLLER_POWER,
-    BUILD_POWER,
-};
-use screeps::Part::{Claim, Work};
+use screeps::{game, Part, BodyPart, Position, ResourceType, SharedCreepProperties, Source, Withdrawable, Resource, Transferable, RoomObject, Store, HasPosition, ObjectId, MaybeHasId, StructureController, ConstructionSite, CREEP_CLAIM_LIFE_TIME, CREEP_LIFE_TIME, CREEP_SPAWN_TIME, HARVEST_POWER, UPGRADE_CONTROLLER_POWER, BUILD_POWER, CARRY_CAPACITY, MOVE_COST_PLAIN, MOVE_COST_ROAD, MOVE_POWER};
+use screeps::Part::{Carry, Claim, Move, Work};
 use derive_more::Constructor;
 use crate::errors::XiError;
 use crate::errors::XiError::*;
@@ -104,7 +81,7 @@ impl Creep {
             Err(CreepDead)
         }
     }
-    
+
     pub fn screeps_id(&mut self) -> Result<ObjectId<screeps::Creep>, XiError> {
         // If the creep is alive, it must have an ID.
         Ok(u!(self.screeps_obj()?.try_id()))
@@ -175,7 +152,7 @@ impl Creep {
     pub fn drop(&mut self, resource_type: ResourceType, amount: Option<u32>) -> Result<(), XiError> {
         self.screeps_obj()?.drop(resource_type, amount).or(Err(CreepDropFailed))
     }
-    
+
     pub fn upgrade_controller(&mut self, controller: &StructureController) -> Result<(), XiError> {
         self.screeps_obj()?.upgrade_controller(controller).or(Err(CreepUpgradeControllerFailed))
     }
@@ -205,7 +182,7 @@ impl Creep {
             .filter_map(|body_part| (body_part.part() == Work).then_some(UPGRADE_CONTROLLER_POWER))
             .sum())
     }
-    
+
     pub fn build_energy_consumption(&mut self) -> Result<u32, XiError> {
         Ok(self.screeps_obj()?
             .body()
@@ -221,22 +198,31 @@ pub struct CreepBody {
 }
 
 impl CreepBody {
-    pub(crate) fn lifetime(&self) -> u32 {
+    pub fn lifetime(&self) -> u32 {
         if self.parts.contains(&Claim) {
             CREEP_CLAIM_LIFE_TIME
         } else {
             CREEP_LIFE_TIME
         }
     }
-}
-
-impl CreepBody {
+    
     pub fn spawn_duration(&self) -> u32 {
         self.parts.len() as u32 * CREEP_SPAWN_TIME
     }
 
     pub fn energy_cost(&self) -> u32 {
         self.parts.iter().map(|part| part.cost()).sum()
+    }
+
+    pub fn store_capacity(&self) -> u32 {
+        self.parts.iter().map(|&part| if part == Carry { CARRY_CAPACITY } else { 0 }).sum()
+    }
+    
+    pub fn ticks_per_tile(&self, road: bool) -> u32 {
+        let move_cost_per_part = if road { MOVE_COST_ROAD } else { MOVE_COST_PLAIN };
+        let fatigue = self.parts.iter().filter(|&&part| part != Move).count() as u32 * move_cost_per_part;
+        let move_power = self.parts.iter().filter(|&&part| part == Move).count() as u32 * MOVE_POWER;
+        max(1, (fatigue + move_power - 1) / move_power)
     }
 }
 

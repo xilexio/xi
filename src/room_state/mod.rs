@@ -8,6 +8,7 @@ use wasm_bindgen::{JsCast, JsValue};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 use crate::creeps::CreepRef;
+use crate::hauling::hauling_stats::HaulingStats;
 use crate::kernel::broadcast::Broadcast;
 use crate::room_planner::plan::Plan;
 use crate::room_planner::RoomPlanner;
@@ -57,6 +58,7 @@ pub struct RoomState {
     pub resources: RoomResources,
     #[serde(skip)]
     pub essential_creeps: EssentialCreeps,
+    pub hauling_stats: HaulingStats,
 }
 
 #[derive(Deserialize, Serialize, Copy, Clone, Eq, PartialEq, Debug)]
@@ -170,6 +172,7 @@ impl RoomState {
             structures_broadcast: Broadcast::default(),
             resources: RoomResources::default(),
             essential_creeps: EssentialCreeps::default(),
+            hauling_stats: HaulingStats::default(),
         }
     }
 }

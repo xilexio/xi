@@ -1,9 +1,18 @@
 use screeps::{Resource, RoomName, Transferable, Withdrawable};
-use crate::hauling::requests::{with_haul_requests, RawStoreRequest, RawWithdrawRequest, StoreRequest, StoreRequestId, WithdrawRequest, WithdrawRequestId};
+use crate::hauling::requests::{
+    RawStoreRequest,
+    RawWithdrawRequest,
+    StoreRequest,
+    StoreRequestId,
+    WithdrawRequest,
+    WithdrawRequestId,
+    with_haul_requests,
+};
 
 pub mod haul_resources;
 pub mod requests;
-mod store_anywhere_or_drop;
+pub mod store_anywhere_or_drop;
+pub mod hauling_stats;
 
 pub fn schedule_withdraw<T>(withdraw_request: &WithdrawRequest<T>, replaced_request_id: Option<WithdrawRequestId>) -> WithdrawRequestId
     where

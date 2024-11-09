@@ -26,11 +26,11 @@ use crate::room_state::RoomState;
 /// haulers. One or more withdraw event is paired with one or more store events. There are special
 /// withdraw and store events for the storage which may not be paired with one another.
 pub async fn haul_resources(room_name: RoomName) {
-    
     let base_spawn_request = u!(with_room_state(room_name, |room_state| {
         let body = hauler_body(room_state);
-        
-        // TODO
+
+        // Any spawn is good.
+        // TODO Remove directions reserved for the fast filler.
         let preferred_spawns = room_state
             .spawns
             .iter()
@@ -50,70 +50,82 @@ pub async fn haul_resources(room_name: RoomName) {
         }
     }));
 
-    let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, SpawnPoolOptions::default());
+    let mut spawn_pools = Vec::new();
     
     loop {
-        // TODO Handling more creeps at once.
-        // TODO Having a configurable lower and upper limit of the number of creeps and possibly
-        //      total relevant body parts.
-        // TODO Measuring number of idle creeps and trying to minimize their number while
-        //      fulfilling all requests. To this end, keeping track of fulfillment of requests,
-        //      how big is the backlog, etc.
-        spawn_pool.with_spawned_creep(|creep_ref| async move {
-            loop {
-                let mut maybe_withdraw_request = None;
-                let mut maybe_store_request = None;
+        let required_haulers = u!(with_room_state(room_name, |room_state| {
+            room_state.hauling_stats.required_haulers
+        }));
 
-                with_haul_requests(room_name, |schedule| {
-                    debug!(
-                        "{} searching for withdraw/pickup and store requests.",
-                        creep_ref.borrow().name
-                    );
-                    debug!("{:?}", schedule.withdraw_requests);
-                    debug!("{:?}", schedule.store_requests);
+        // TODO Not spawning the replacement creep when the number of required haulers is lower than
+        //      the number of existing spawn pools. Instead of maintaining a few spawn pools, this
+        //      should be a single spawn pool handling multiple creeps.
+        if spawn_pools.len() < required_haulers as usize {
+            spawn_pools.push(SpawnPool::new(room_name, base_spawn_request.clone(), SpawnPoolOptions::default()));
+        }
 
-                    if schedule.withdraw_requests.is_empty() || schedule.store_requests.is_empty() {
-                        return;
-                    }
+        for spawn_pool in spawn_pools.iter_mut() {
+            // TODO Having a configurable lower and upper limit of the number of creeps and possibly
+            //      total relevant body parts.
+            // TODO Measuring number of idle creeps and trying to minimize their number while
+            //      fulfilling all requests. To this end, keeping track of fulfillment of requests,
+            //      how big is the backlog, etc.
+            spawn_pool.with_spawned_creep(|creep_ref| async move {
+                loop {
+                    let mut maybe_withdraw_request = None;
+                    let mut maybe_store_request = None;
 
-                    let creep_pos = u!(creep_ref.borrow_mut().pos());
+                    with_haul_requests(room_name, |schedule| {
+                        debug!(
+                            "{} searching for withdraw/pickup and store requests.",
+                            creep_ref.borrow().name
+                        );
+                        debug!("withdraw_requests: {:?}", schedule.withdraw_requests);
+                        debug!("store_requests: {:?}", schedule.store_requests);
 
-                    let maybe_closest_withdraw_request_data = schedule
-                        .withdraw_requests
-                        .iter()
-                        .filter_map(|(&id, request)| {
-                            request.xy.map(|xy| (id, xy, xy.get_range_to(creep_pos)))
-                        })
-                        .min_by_key(|&(_, _, d)| d);
-
-                    if let Some((closest_withdraw_request_id, withdraw_xy, _)) = maybe_closest_withdraw_request_data {
-                        let maybe_closest_store_request_data = schedule
-                            .store_requests
-                            .iter()
-                            .filter_map(|(&id, request)| request.xy.map(|xy| (id, xy.get_range_to(withdraw_xy))))
-                            .min_by_key(|&(_, d)| d);
-
-                        if let Some((closest_store_request_id, _)) = maybe_closest_store_request_data {
-                            maybe_withdraw_request = schedule.withdraw_requests.remove(&closest_withdraw_request_id);
-                            maybe_store_request = schedule.store_requests.remove(&closest_store_request_id);
+                        if schedule.withdraw_requests.is_empty() || schedule.store_requests.is_empty() {
+                            return;
                         }
-                    }
-                });
 
-                if let Some(withdraw_request) = maybe_withdraw_request.take() {
-                    let store_request = u!(maybe_store_request.take());
+                        let creep_pos = u!(creep_ref.borrow_mut().pos());
 
-                    let result = fulfill_requests(&creep_ref, Some(withdraw_request), Some(store_request)).await;
+                        let maybe_closest_withdraw_request_data = schedule
+                            .withdraw_requests
+                            .iter()
+                            .filter_map(|(&id, request)| {
+                                request.xy.map(|xy| (id, xy, xy.get_range_to(creep_pos)))
+                            })
+                            .min_by_key(|&(_, _, d)| d);
 
-                    if let Err(e) = result {
-                        debug!("Error when hauling: {:?}.", e);
+                        if let Some((closest_withdraw_request_id, withdraw_xy, _)) = maybe_closest_withdraw_request_data {
+                            let maybe_closest_store_request_data = schedule
+                                .store_requests
+                                .iter()
+                                .filter_map(|(&id, request)| request.xy.map(|xy| (id, xy.get_range_to(withdraw_xy))))
+                                .min_by_key(|&(_, d)| d);
+
+                            if let Some((closest_store_request_id, _)) = maybe_closest_store_request_data {
+                                maybe_withdraw_request = schedule.withdraw_requests.remove(&closest_withdraw_request_id);
+                                maybe_store_request = schedule.store_requests.remove(&closest_store_request_id);
+                            }
+                        }
+                    });
+
+                    if let Some(withdraw_request) = maybe_withdraw_request.take() {
+                        let store_request = u!(maybe_store_request.take());
+
+                        let result = fulfill_requests(&creep_ref, Some(withdraw_request), Some(store_request)).await;
+
+                        if let Err(e) = result {
+                            debug!("Error when hauling: {:?}.", e);
+                            sleep(1).await;
+                        }
+                    } else {
                         sleep(1).await;
                     }
-                } else {
-                    sleep(1).await;
                 }
-            }
-        });
+            });
+        }
 
         sleep(1).await;
     }
@@ -185,14 +197,14 @@ fn hauler_spawn_request(room_name: RoomName) -> SpawnRequest {
         {
             spawns.sort_by_key(|(spawn_xy, _)| spawn_xy.dist(storage_xy));
         }
-        
+
         let preferred_spawns = spawns
             .into_iter()
             .map(|(_, preferred_spawn)| preferred_spawn)
             .collect::<Vec<_>>();
-        
+
         let body = hauler_body(room_state);
-        
+
         (preferred_spawns, body)
     }));
 
@@ -208,7 +220,7 @@ fn hauler_spawn_request(room_name: RoomName) -> SpawnRequest {
     }
 }
 
-fn hauler_body(room_state: &RoomState) -> CreepBody {
+pub fn hauler_body(room_state: &RoomState) -> CreepBody {
     // TODO Instead of unwrap in such places, there should be a separate section for owned rooms that is guaranteed to be updated each tick.
     // TODO It seems double borrow doesnt work here.
     let spawn_energy = room_state.resources.spawn_energy;
