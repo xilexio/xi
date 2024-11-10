@@ -39,7 +39,7 @@ mod filling_spawns;
 mod reserved_creep;
 mod creeps;
 mod upgrade_controller;
-mod resource_distribution;
+mod economy;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]

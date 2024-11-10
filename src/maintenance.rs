@@ -9,9 +9,9 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::{game, RoomName};
 use crate::construction::build_structures::build_structures;
 use crate::consts::FAR_FUTURE;
+use crate::economy::update_eco_config::update_eco_config;
 use crate::filling_spawns::fill_spawns;
 use crate::hauling::haul_resources::haul_resources;
-use crate::resource_distribution::update_resource_distribution;
 use crate::u;
 use crate::upgrade_controller::upgrade_controller;
 
@@ -110,7 +110,7 @@ async fn maintain_room(room_name: RoomName) {
         schedule(
             &format!("update_resource_distribution{}", room_name),
             current_priority() - 2,
-            update_resource_distribution(room_name)
+            update_eco_config(room_name)
         );
 
         // Spawning creeps is scheduled to run later to react to spawning requests.

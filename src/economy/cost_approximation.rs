@@ -16,11 +16,6 @@ const SOURCE_ENERGY_PER_TICK: f32 = SOURCE_ENERGY_CAPACITY as f32 / ENERGY_REGEN
 
 const AVERAGE_MINERAL_DENSITY: f32 = 15_000.0 * 0.1 + 35_000.0 * 0.4 + 70_000.0 * 0.4 + 100_000.0 * 0.1;
 
-#[inline]
-pub fn spawn_intent_cost(energy_cost: u32) -> f32 {
-    1.0 + energy_cost as f32 * FAST_FILLER_INTENTS_PER_ENERGY
-}
-
 pub fn energy_balance_and_cpu_cost(
     room_name: RoomName,
     source_distances: Vec<u8>,
@@ -216,4 +211,9 @@ pub fn energy_balance_and_cpu_cost(
     );
 
     (total_energy_balance, total_intents_per_tick * INTENT_CPU_COST as f32)
+}
+
+#[inline]
+pub fn spawn_intent_cost(energy_cost: u32) -> f32 {
+    1.0 + energy_cost as f32 * FAST_FILLER_INTENTS_PER_ENERGY
 }

@@ -2,16 +2,17 @@ use derive_more::Constructor;
 use crate::room_state::packed_terrain::PackedTerrain;
 use js_sys::{Object, Reflect};
 use log::info;
-use screeps::{game, ConstructionSite, Mineral, ObjectId, ResourceType, RoomName, RoomXY, Source, StructureContainer, StructureController, StructureExtension, StructureLink, StructureSpawn, StructureType};
+use screeps::{game, ConstructionSite, Mineral, ObjectId, Position, ResourceType, RoomName, RoomXY, Source, StructureContainer, StructureController, StructureExtension, StructureLink, StructureSpawn, StructureType};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
 use rustc_hash::{FxHashMap, FxHashSet};
 use serde::{Deserialize, Serialize};
 use crate::creeps::CreepRef;
+use crate::economy::room_eco_config::RoomEcoConfig;
+use crate::economy::room_eco_stats::RoomEcoStats;
 use crate::kernel::broadcast::Broadcast;
 use crate::room_planner::plan::Plan;
 use crate::room_planner::RoomPlanner;
-use crate::resource_distribution::RoomResourceDistribution;
 use crate::u;
 
 pub mod packed_terrain;
@@ -57,8 +58,11 @@ pub struct RoomState {
     #[serde(skip)]
     pub resources: RoomResources,
     #[serde(skip)]
-    pub essential_creeps: EssentialCreeps,
-    pub resource_distribution: RoomResourceDistribution,
+    pub essential_creeps: Option<EssentialCreeps>,
+    #[serde(skip)]
+    pub eco_stats: Option<RoomEcoStats>,
+    #[serde(skip)]
+    pub eco_config: Option<RoomEcoConfig>,
 }
 
 #[derive(Deserialize, Serialize, Copy, Clone, Eq, PartialEq, Debug)]
@@ -171,9 +175,31 @@ impl RoomState {
             extensions: Vec::new(),
             structures_broadcast: Broadcast::default(),
             resources: RoomResources::default(),
-            essential_creeps: EssentialCreeps::default(),
-            resource_distribution: RoomResourceDistribution::default(),
+            essential_creeps: None,
+            eco_stats: None,
+            eco_config: None,
         }
+    }
+
+    /// Returns the `RoomXY` of the first structure of the given type.
+    /// If there is more than one, an arbitrary one is chosen.
+    pub fn structure_xy(&self, structure_type: StructureType) -> Option<RoomXY> {
+        self.structures
+            .get(&structure_type)
+            .map(|xys| xys.iter().next())
+            .flatten()
+            .cloned()
+    }
+
+    /// Returns the `Position` of the first structure of the given type.
+    /// If there is more than one, an arbitrary one is chosen.
+    pub fn structure_pos(&self, structure_type: StructureType) -> Option<Position> {
+        self.structure_xy(structure_type)
+            .map(|xy| Position::new(xy.x, xy.y, self.room_name))
+    }
+
+    pub fn xy_to_pos(&self, xy: RoomXY) -> Position {
+        Position::new(xy.x, xy.y, self.room_name)
     }
 }
 

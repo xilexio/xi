@@ -5,6 +5,7 @@ use crate::u;
 use screeps::{game, Part, BodyPart, Position, ResourceType, SharedCreepProperties, Source, Withdrawable, Resource, Transferable, RoomObject, Store, HasPosition, ObjectId, MaybeHasId, StructureController, ConstructionSite, CREEP_CLAIM_LIFE_TIME, CREEP_LIFE_TIME, CREEP_SPAWN_TIME, HARVEST_POWER, UPGRADE_CONTROLLER_POWER, BUILD_POWER, CARRY_CAPACITY, MOVE_COST_PLAIN, MOVE_COST_ROAD, MOVE_POWER};
 use screeps::Part::{Carry, Claim, Move, Work};
 use derive_more::Constructor;
+use serde::{Deserialize, Serialize};
 use crate::errors::XiError;
 use crate::errors::XiError::*;
 use crate::utils::single_tick_cache::SingleTickCache;
@@ -192,7 +193,7 @@ impl Creep {
     }
 }
 
-#[derive(Debug, Clone, Constructor, Eq, PartialEq)]
+#[derive(Debug, Clone, Constructor, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CreepBody {
     pub parts: Vec<Part>,
 }
@@ -214,15 +215,42 @@ impl CreepBody {
         self.parts.iter().map(|part| part.cost()).sum()
     }
 
+    pub fn count_parts(&self, part: Part) -> u32 {
+        self.parts.iter().filter(|&&p| p == part).count() as u32
+    }
+
+    /// The amount of energy per tick required to keep a creep with this body spawned.
+    pub fn body_energy_usage(&self) -> f32 {
+        self.energy_cost() as f32 / self.lifetime() as f32
+    }
+
     pub fn store_capacity(&self) -> u32 {
-        self.parts.iter().map(|&part| if part == Carry { CARRY_CAPACITY } else { 0 }).sum()
+        self.count_parts(Carry) * CARRY_CAPACITY
     }
     
     pub fn ticks_per_tile(&self, road: bool) -> u32 {
+        let move_parts = self.count_parts(Move);
+        if move_parts == 0 {
+            return 10000;
+        }
         let move_cost_per_part = if road { MOVE_COST_ROAD } else { MOVE_COST_PLAIN };
-        let fatigue = self.parts.iter().filter(|&&part| part != Move).count() as u32 * move_cost_per_part;
-        let move_power = self.parts.iter().filter(|&&part| part == Move).count() as u32 * MOVE_POWER;
-        max(1, (fatigue + move_power - 1) / move_power)
+        let fatigue = (self.parts.len() as u32 - move_parts) * move_cost_per_part;
+        let move_power = move_parts * MOVE_POWER;
+        max(1, fatigue.div_ceil(move_power))
+    }
+
+    /// Amount of resources per tick per tile that can be carried by the creep with this body.
+    /// This assumes a one-way trip, so the throughput is half of that when going back empty.
+    pub fn hauling_throughput(&self, road: bool) -> f32 {
+        self.store_capacity() as f32 / self.ticks_per_tile(road) as f32
+    }
+    
+    pub fn build_energy_usage(&self) -> u32 {
+        self.count_parts(Work) * BUILD_POWER
+    }
+    
+    pub fn upgrade_energy_usage(&self) -> u32 {
+        self.count_parts(Work) * UPGRADE_CONTROLLER_POWER
     }
 }
 

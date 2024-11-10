@@ -11,7 +11,7 @@ use crate::algorithms::room_matrix_slice::RoomMatrixSlice;
 use crate::algorithms::shortest_path_by_distance_matrix::{distance_by_matrix, shortest_path_by_distance_matrix};
 use crate::algorithms::weighted_distance_matrix::{obstacle_cost, unreachable_cost};
 use crate::consts::{OBSTACLE_COST, UNREACHABLE_COST};
-use crate::resource_distribution::cost_approximation::energy_balance_and_cpu_cost;
+use crate::economy::cost_approximation::energy_balance_and_cpu_cost;
 use crate::geometry::rect::{ball, bounding_rect, room_rect, Rect};
 use crate::geometry::room_xy::RoomXYUtils;
 use crate::profiler::measure_time;
@@ -53,8 +53,8 @@ pub mod planned_tile;
 pub mod stamps;
 
 pub const MIN_RAMPART_RCL: u8 = 5;
-const MIN_MIN_ROAD_RCL: u8 = 3;
-const MAX_MIN_ROAD_RCL: u8 = 6;
+pub const SOURCE_AND_CONTROLLER_ROAD_RCL: u8 = 3;
+pub const ALL_ROAD_RCL: u8 = 6;
 
 const APPROXIMATE_BASE_TILES: u16 = 140;
 const SOURCE_DIST_WEIGHT: f32 = 2.0;
@@ -1887,7 +1887,7 @@ impl RoomPlanner {
                 // TODO it may happen that work_xy is on, e.g., the road around the core, blocking access.
                 if path.len() >= 2 {
                     // TODO Shouldn't this be done for the whole path?
-                    self.planned_tiles.set_min_rcl(path[1], MIN_MIN_ROAD_RCL);
+                    self.planned_tiles.set_min_rcl(path[1], SOURCE_AND_CONTROLLER_ROAD_RCL);
                 }
             }
 
@@ -1897,7 +1897,7 @@ impl RoomPlanner {
                 let tile = self.planned_tiles.get(xy);
                 let mut min_rcl = tile.min_rcl();
                 if min_rcl == 0 {
-                    min_rcl = MAX_MIN_ROAD_RCL;
+                    min_rcl = ALL_ROAD_RCL;
 
                     for near in xy.around() {
                         let tile = self.planned_tiles.get(near);
