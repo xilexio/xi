@@ -34,7 +34,6 @@ mod travel;
 mod errors;
 mod mining;
 mod hauling;
-mod spawn_pool;
 mod filling_spawns;
 mod reserved_creep;
 mod creeps;

@@ -7,8 +7,6 @@ use crate::hauling::requests::{with_haul_requests, RawStoreRequest, RawWithdrawR
 use crate::kernel::sleep::sleep;
 use crate::priorities::HAULER_SPAWN_PRIORITY;
 use crate::room_state::room_states::with_room_state;
-use crate::spawn_pool::{SpawnPool, SpawnPoolOptions};
-use crate::spawning::{PreferredSpawn, SpawnRequest};
 use crate::travel::{travel, TravelSpec};
 use crate::u;
 use log::debug;
@@ -20,6 +18,8 @@ use std::vec;
 use crate::creeps::actions::{pickup_when_able, transfer_when_able, withdraw_when_able};
 use crate::hauling::store_anywhere_or_drop::store_anywhere_or_drop;
 use crate::room_state::RoomState;
+use crate::spawning::spawn_pool::{SpawnPool, SpawnPoolOptions};
+use crate::spawning::spawn_schedule::{PreferredSpawn, SpawnRequest};
 
 /// Execute hauling of resources of haulers assigned to given room.
 /// Withdraw and store requests are registered in the system and the system assigns them to fre

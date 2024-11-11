@@ -3,9 +3,7 @@ use crate::hauling::schedule_pickup;
 use crate::kernel::sleep::sleep;
 use crate::priorities::MINER_SPAWN_PRIORITY;
 use crate::room_state::room_states::with_room_state;
-use crate::spawn_pool::{SpawnPool, SpawnPoolOptions};
 use crate::creeps::creep::CreepBody;
-use crate::spawning::{PreferredSpawn, SpawnRequest};
 use crate::travel::{predicted_travel_ticks, travel, TravelSpec};
 use crate::u;
 use crate::utils::result_utils::ResultUtils;
@@ -18,6 +16,8 @@ use crate::consts::FAR_FUTURE;
 use crate::hauling::requests::WithdrawRequest;
 use crate::room_state::RoomState;
 use crate::room_state::utils::loop_until_structures_change;
+use crate::spawning::spawn_pool::{SpawnPool, SpawnPoolOptions};
+use crate::spawning::spawn_schedule::{PreferredSpawn, SpawnRequest};
 use crate::utils::priority::Priority;
 
 pub async fn mine_source(room_name: RoomName, source_ix: usize) {
