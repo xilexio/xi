@@ -2,7 +2,7 @@ use std::cmp::max;
 use std::fmt::{Display, Formatter};
 use crate::travel::TravelState;
 use crate::u;
-use screeps::{game, Part, BodyPart, Position, ResourceType, SharedCreepProperties, Source, Withdrawable, Resource, Transferable, RoomObject, Store, HasPosition, ObjectId, MaybeHasId, StructureController, ConstructionSite, CREEP_CLAIM_LIFE_TIME, CREEP_LIFE_TIME, CREEP_SPAWN_TIME, HARVEST_POWER, UPGRADE_CONTROLLER_POWER, BUILD_POWER, CARRY_CAPACITY, MOVE_COST_PLAIN, MOVE_COST_ROAD, MOVE_POWER};
+use screeps::{game, Part, BodyPart, Position, ResourceType, SharedCreepProperties, Source, Withdrawable, Resource, Transferable, RoomObject, Store, HasPosition, ObjectId, MaybeHasId, StructureController, ConstructionSite, CREEP_CLAIM_LIFE_TIME, CREEP_LIFE_TIME, CREEP_SPAWN_TIME, HARVEST_POWER, UPGRADE_CONTROLLER_POWER, BUILD_POWER, CARRY_CAPACITY, MOVE_COST_PLAIN, MOVE_COST_ROAD, MOVE_POWER, MoveToOptions, PolyStyle};
 use screeps::Part::{Carry, Claim, Move, Work};
 use derive_more::Constructor;
 use serde::{Deserialize, Serialize};
@@ -99,11 +99,12 @@ impl Creep {
     }
 
     pub fn move_to(&mut self, pos: Position) -> Result<(), XiError> {
-        self.screeps_obj()?.move_to(pos).or(Err(CreepMoveToFailed))
+        let options = MoveToOptions::default().visualize_path_style(PolyStyle::default());
+        self.screeps_obj()?.move_to_with_options(pos, Some(options)).or(Err(CreepMoveToFailed))
     }
 
     pub fn pos(&mut self) -> Result<Position, XiError> {
-        Ok(self.screeps_obj()?.pos().into())
+        Ok(self.screeps_obj()?.pos())
     }
 
     pub fn public_say(&mut self, message: &str) -> Result<(), XiError> {
@@ -244,11 +245,11 @@ impl CreepBody {
     pub fn hauling_throughput(&self, road: bool) -> f32 {
         self.store_capacity() as f32 / self.ticks_per_tile(road) as f32
     }
-    
+
     pub fn build_energy_usage(&self) -> u32 {
         self.count_parts(Work) * BUILD_POWER
     }
-    
+
     pub fn upgrade_energy_usage(&self) -> u32 {
         self.count_parts(Work) * UPGRADE_CONTROLLER_POWER
     }
