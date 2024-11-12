@@ -2,7 +2,11 @@ use std::cmp::min;
 use log::trace;
 use screeps::{Position, RoomName};
 use crate::hauling::issuing_requests::{with_haul_requests, RawStoreRequest, RawWithdrawRequest, RequestId};
+use crate::hauling::issuing_requests::RequestAmountChange::Increase;
 use crate::u;
+
+/// Not taking into consideration picking up decaying resources under this amount.
+const MIN_DECAYING_AMOUNT: u32 = 100;
 
 /// A structure containing matching requests to first withdraw and then store resources.
 /// When dropped, then remaining requests are rescheduled.
@@ -47,14 +51,27 @@ pub fn find_matching_requests(room_name: RoomName, creep_pos: Position, creep_ca
             .iter()
             .filter_map(|(&id, request)| {
                 // TODO Creep target.
-                request.pos.map(|pos| {
+                // TODO Prioritize decaying resources at the expense of distance, but only if no one
+                //      else who wants it is closer.
+                request.pos.and_then(|pos| {
+                    if request.amount_change == Increase && request.amount < creep_capacity {
+                        // Not taking something which amount will only increase and is under creep
+                        // carry capacity.
+                        return None;
+                    }
+
+                    let dist = pos.get_range_to(creep_pos);
+                    if request.amount_change != Increase && request.amount - request.decay * dist < MIN_DECAYING_AMOUNT {
+                        return None;
+                    }
+
                     let withdrawable_amount = min(creep_capacity, request.amount);
-                    (id, pos, withdrawable_amount, pos.get_range_to(creep_pos))
+                    Some((id, pos, withdrawable_amount, dist, request.decay))
                 })
             })
-            .min_by_key(|&(_, _, withdrawable_amount, d)| (u32::MAX - withdrawable_amount, d));
+            .min_by_key(|&(_, _, withdrawable_amount, dist, decay)| (-(withdrawable_amount as i32), dist, -(decay as i32)));
 
-        if let Some((withdraw_request_id, withdraw_pos, _, _)) = best_withdraw_request_data {
+        if let Some((withdraw_request_id, withdraw_pos, _, _, _)) = best_withdraw_request_data {
             let best_store_request_data = schedule
                 .store_requests
                 .iter()
@@ -66,14 +83,14 @@ pub fn find_matching_requests(room_name: RoomName, creep_pos: Position, creep_ca
             if let Some((store_request_id, _)) = best_store_request_data {
                 let withdraw_request = u!(schedule.withdraw_requests.remove(&withdraw_request_id));
                 let store_request = u!(schedule.store_requests.remove(&store_request_id));
-                
+
                 return Some(MatchingRequests {
                     withdraw_requests: vec![(withdraw_request_id, withdraw_request)],
                     store_requests: vec![(store_request_id, store_request)],
                 });
             }
         }
-        
+
         None
     })
 }

@@ -53,11 +53,11 @@ pub struct WithdrawRequest<T> {
     // pub preferred_tick: (u32, u32),
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub enum RequestAmountChange {
     /// The amount will not change until the request is fulfilled.
     NoChange,
-    /// They amount may change unpredictably.
+    /// The amount may change unpredictably.
     UnknownChange,
     /// The amount will be increasing until the request is fulfilled, although possibly erratically.
     Increase,
@@ -74,6 +74,8 @@ pub(crate) struct RawWithdrawRequest {
     pub pos: Option<Position>,
     pub resource_type: ResourceType,
     pub amount: u32,
+    pub amount_change: RequestAmountChange,
+    pub decay: u32,
     // amount_per_tick: u32,
     // max_amount: u32,
     pub priority: Priority,
@@ -107,6 +109,7 @@ pub struct RawStoreRequest {
     pub pos: Option<Position>,
     pub resource_type: ResourceType,
     pub amount: u32,
+    pub amount_change: RequestAmountChange,
     pub priority: Priority,
     // pub preferred_tick: (u32, u32),
 }
@@ -157,6 +160,8 @@ pub fn schedule_withdraw<T>(withdraw_request: &WithdrawRequest<T>, replaced_requ
         pos: withdraw_request.pos,
         resource_type: withdraw_request.resource_type,
         amount: withdraw_request.amount,
+        amount_change: withdraw_request.amount_change,
+        decay: withdraw_request.decay,
         // amount_per_tick: withdraw_request.amount_per_tick,
         // max_amount: withdraw_request.max_amount,
         priority: withdraw_request.priority,
@@ -174,6 +179,8 @@ pub fn schedule_pickup(withdraw_request: WithdrawRequest<Resource>, replaced_req
         pos: withdraw_request.pos,
         resource_type: withdraw_request.resource_type,
         amount: withdraw_request.amount,
+        amount_change: withdraw_request.amount_change,
+        decay: withdraw_request.decay,
         // amount_per_tick: withdraw_request.amount_per_tick,
         // max_amount: withdraw_request.max_amount,
         priority: withdraw_request.priority,
@@ -224,6 +231,7 @@ where
         pos: store_request.pos,
         resource_type: store_request.resource_type,
         amount: store_request.amount,
+        amount_change: store_request.amount_change,
         priority: store_request.priority,
         // preferred_tick: store_request.preferred_tick,
     };
