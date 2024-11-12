@@ -1,13 +1,13 @@
 use log::debug;
 use rustc_hash::FxHashMap;
-use crate::hauling::schedule_store;
+use crate::hauling::issuing_requests::schedule_store;
 use crate::room_state::room_states::with_room_state;
 use crate::u;
 use screeps::game::get_object_by_id_typed;
 use screeps::ResourceType::Energy;
 use screeps::{HasId, HasPosition, HasStore, ObjectId, RoomName, Transferable};
 use wasm_bindgen::{JsCast, JsValue};
-use crate::hauling::requests::{StoreRequest, StoreRequestId};
+use crate::hauling::issuing_requests::{StoreRequest, StoreRequestHandle};
 use crate::room_state::utils::loop_until_structures_change;
 use crate::utils::priority::Priority;
 
@@ -37,7 +37,7 @@ pub async fn fill_spawns(room_name: RoomName) {
     }
 }
 
-pub fn schedule_missing_energy_store<T>(room_name: RoomName, id: ObjectId<T>) -> Option<StoreRequestId>
+pub fn schedule_missing_energy_store<T>(room_name: RoomName, id: ObjectId<T>) -> Option<StoreRequestHandle>
 where
     T: HasStore + HasId + Transferable + From<JsValue> + JsCast,
 {
@@ -49,9 +49,9 @@ where
         Some(schedule_store(StoreRequest {
             room_name,
             target: spawn.id(),
-            xy: Some(spawn.pos()),
+            pos: Some(spawn.pos()),
             resource_type: Energy,
-            amount: Some(missing_energy),
+            amount: missing_energy,
             priority: Priority(1), // TODO far away extensions less important
             // preferred_tick: (game_tick(), FAR_FUTURE),
         }, None))

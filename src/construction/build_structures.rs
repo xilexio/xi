@@ -1,14 +1,13 @@
 use log::{trace, warn};
-use screeps::Part::{Carry, Move, Work};
 use screeps::{Position, ResourceType, RoomName, CREEP_RANGED_ACTION_RANGE};
 use screeps::game::get_object_by_id_typed;
 use crate::creeps::creep::{CreepBody, CreepRole};
-use crate::hauling::requests::StoreRequest;
-use crate::hauling::schedule_store;
+use crate::hauling::issuing_requests::StoreRequest;
+use crate::hauling::issuing_requests::schedule_store;
 use crate::kernel::sleep::sleep;
+use crate::kernel::wait_until_some::wait_until_some;
 use crate::priorities::BUILDER_SPAWN_PRIORITY;
 use crate::room_state::room_states::with_room_state;
-use crate::room_state::RoomState;
 use crate::spawning::spawn_pool::{SpawnPool, SpawnPoolOptions};
 use crate::spawning::spawn_schedule::{PreferredSpawn, SpawnRequest};
 use crate::travel::{travel, TravelSpec};
@@ -17,9 +16,7 @@ use crate::utils::priority::Priority;
 use crate::utils::result_utils::ResultUtils;
 
 pub async fn build_structures(room_name: RoomName) {
-    let base_spawn_request = u!(with_room_state(room_name, |room_state| {
-        let body = builder_body(room_state);
-
+    let mut base_spawn_request = u!(with_room_state(room_name, |room_state| {
         // TODO
         let preferred_spawns = room_state
             .spawns
@@ -33,7 +30,7 @@ pub async fn build_structures(room_name: RoomName) {
 
         SpawnRequest {
             role: CreepRole::Builder,
-            body,
+            body: CreepBody::empty(),
             priority: BUILDER_SPAWN_PRIORITY,
             preferred_spawns,
             tick: (0, 0),
@@ -64,6 +61,13 @@ pub async fn build_structures(room_name: RoomName) {
 
         if let Some(cs_data) = cs_data {
             // Initializing the spawn pool.
+            let builder_body = wait_until_some(|| with_room_state(room_name, |room_state| {
+                room_state
+                    .eco_config
+                    .as_ref()
+                    .map(|config| config.builder_body.clone())
+            }).flatten()).await;
+            base_spawn_request.body = builder_body;
             let mut spawn_pool = Some(SpawnPool::new(room_name, base_spawn_request.clone(), spawn_pool_options.clone()));
 
             loop {
@@ -128,8 +132,8 @@ pub async fn build_structures(room_name: RoomName) {
                                 room_name,
                                 target: creep_id,
                                 resource_type: ResourceType::Energy,
-                                xy: Some(u!(creep_ref.borrow_mut().pos())),
-                                amount: Some(capacity),
+                                pos: Some(u!(creep_ref.borrow_mut().pos())),
+                                amount: capacity,
                                 priority: Priority(30),
                             };
                             
@@ -146,16 +150,4 @@ pub async fn build_structures(room_name: RoomName) {
             sleep(10).await;
         }
     }
-}
-
-fn builder_body(room_state: &RoomState) -> CreepBody {
-    let spawn_energy = room_state.resources.spawn_energy;
-
-    let parts = if spawn_energy >= 550 {
-        vec![Move, Move, Carry, Work, Work, Work]
-    } else {
-        vec![Move, Carry, Work, Work]
-    };
-
-    CreepBody::new(parts)
 }

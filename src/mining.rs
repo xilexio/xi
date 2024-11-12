@@ -1,20 +1,19 @@
 use crate::creeps::creep::CreepRole;
-use crate::hauling::schedule_pickup;
+use crate::hauling::issuing_requests::schedule_pickup;
 use crate::kernel::sleep::sleep;
 use crate::priorities::MINER_SPAWN_PRIORITY;
 use crate::room_state::room_states::with_room_state;
 use crate::creeps::creep::CreepBody;
-use crate::travel::{predicted_travel_ticks, travel, TravelSpec};
+use crate::travel::{travel, TravelSpec};
 use crate::u;
 use crate::utils::result_utils::ResultUtils;
 use log::{debug, warn};
 use screeps::game::get_object_by_id_typed;
 use screeps::look::ENERGY;
-use screeps::Part::{Move, Work};
 use screeps::{HasId, Position, ResourceType, RoomName};
 use crate::consts::FAR_FUTURE;
-use crate::hauling::requests::WithdrawRequest;
-use crate::room_state::RoomState;
+use crate::hauling::issuing_requests::WithdrawRequest;
+use crate::kernel::wait_until_some::wait_until_some;
 use crate::room_state::utils::loop_until_structures_change;
 use crate::spawning::spawn_pool::{SpawnPool, SpawnPoolOptions};
 use crate::spawning::spawn_schedule::{PreferredSpawn, SpawnRequest};
@@ -24,9 +23,7 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
     loop {
         // Computing a schema for spawn request that will later have its tick intervals modified.
         // Also computing travel time for prespawning.
-        let (base_spawn_request, source_data, travel_ticks, work_pos) = u!(with_room_state(room_name, |room_state| {
-            let body = miner_body(room_state);
-            
+        let (mut base_spawn_request, source_data, work_pos) = u!(with_room_state(room_name, |room_state| {
             let source_data = room_state.sources[source_ix];
 
             let work_xy = u!(source_data.work_xy);
@@ -49,17 +46,17 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
             let best_spawn_xy = u!(room_state.spawns.first()).xy;
             let best_spawn_pos = Position::new(best_spawn_xy.x, best_spawn_xy.y, room_name);
 
-            let travel_ticks = predicted_travel_ticks(best_spawn_pos, work_pos, 1, 0, &body);
+            // let travel_ticks = predicted_travel_ticks(best_spawn_pos, work_pos, 1, 0, &body);
 
             let base_spawn_request = SpawnRequest {
                 role: CreepRole::Miner,
-                body,
+                body: CreepBody::empty(),
                 priority: MINER_SPAWN_PRIORITY,
                 preferred_spawns,
                 tick: (0, 0),
             };
 
-            (base_spawn_request, source_data, travel_ticks, work_pos)
+            (base_spawn_request, source_data, work_pos)
         }));
 
         // Travel spec for the miner. Will not change unless structures change.
@@ -69,6 +66,13 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
         };
 
         let spawn_pool_options = SpawnPoolOptions::default().travel_spec(Some(travel_spec.clone()));
+        let miner_body = wait_until_some(|| with_room_state(room_name, |room_state| {
+            room_state
+                .eco_config
+                .as_ref()
+                .map(|config| config.miner_body.clone())
+        }).flatten()).await;
+        base_spawn_request.body = miner_body;
         let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, spawn_pool_options);
 
         loop_until_structures_change(room_name, 1, || {
@@ -127,9 +131,9 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                                 let withdraw_request = WithdrawRequest {
                                     room_name,
                                     target: dropped_energy.id(),
-                                    xy: Some(work_pos),
+                                    pos: Some(work_pos),
                                     resource_type: ResourceType::Energy,
-                                    amount: None,
+                                    amount: dropped_energy.amount(),
                                     // amount_per_tick: energy_per_tick,
                                     // max_amount: min(1000, source.energy() + dropped_energy.amount()),
                                     priority: Priority(100),
@@ -146,16 +150,4 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
             true
         }).await;
     }
-}
-
-fn miner_body(room_state: &RoomState) -> CreepBody {
-    let spawn_energy = room_state.resources.spawn_energy;
-
-    let parts = if spawn_energy >= 550 {
-        vec![Work, Work, Work, Work, Work, Move]
-    } else {
-        vec![Work, Work, Move, Move]
-    };
-
-    CreepBody::new(parts)
 }

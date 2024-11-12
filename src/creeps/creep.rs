@@ -200,6 +200,12 @@ pub struct CreepBody {
 }
 
 impl CreepBody {
+    pub fn empty() -> CreepBody {
+        CreepBody {
+            parts: Vec::new(),
+        }
+    }
+    
     pub fn lifetime(&self) -> u32 {
         if self.parts.contains(&Claim) {
             CREEP_CLAIM_LIFE_TIME
