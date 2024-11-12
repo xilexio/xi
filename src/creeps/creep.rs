@@ -56,6 +56,8 @@ impl CreepRole {
     }
 }
 
+type CrId = u32;
+
 #[derive(Debug, Default)]
 pub struct Creep {
     /// Globally unique creep name.
@@ -63,7 +65,7 @@ pub struct Creep {
     /// Creep role. May not change.
     pub role: CreepRole,
     /// Unique creep identifier, separate for each role.
-    pub number: u32,
+    pub number: CrId,
     /// State of travel of the creep with information about location where it is supposed to be
     /// and temporary state to be managed by the travel module.
     pub travel_state: TravelState,

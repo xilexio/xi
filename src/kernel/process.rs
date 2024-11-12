@@ -9,8 +9,9 @@ use std::sync::Arc;
 use std::task::{Context, Poll, Wake, Waker};
 use crate::kernel::cid::CId;
 use crate::utils::priority::Priority;
+use crate::utils::uid::UId;
 
-pub type PId = u32;
+pub type PId = UId;
 
 /// Metadata of the process and resources reserved by it.
 #[derive(Debug)]

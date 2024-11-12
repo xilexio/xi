@@ -97,6 +97,7 @@ pub async fn cleanup_creeps() {
 /// after `cleanup_creeps`.
 pub fn register_creep(role: CreepRole) -> CreepRef {
     with_creeps(|creeps| {
+        // Note that it may not overlap with existing creeps after a reset, so UId is insufficient.
         let number = fresh_number_if_some(creeps.get(&role));
         let name = format!("{}{}", role.creep_name_prefix(), number);
 
@@ -158,11 +159,4 @@ where
             }
         }
     });
-}
-
-fn fresh_creep_name(role: CreepRole) -> String {
-    with_creeps(|creeps| {
-        let creep_number = fresh_number_if_some(creeps.get(&role));
-        format!("{}{}", role.creep_name_prefix(), creep_number)
-    })
 }

@@ -1,4 +1,3 @@
-use crate::fresh_number::fresh_number;
 use crate::utils::game_tick::game_tick;
 use crate::kernel::cid::CId;
 use crate::kernel::process::{PId, Process, WrappedProcessMeta};
@@ -16,7 +15,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::task::Poll;
 use crate::utils::priority::Priority;
-
+use crate::utils::uid::UId;
 
 const DEBUG: bool = true;
 
@@ -68,7 +67,7 @@ where
 {
     let mut kern = kernel();
 
-    let pid = fresh_number(&kern.meta_by_pid);
+    let pid = UId::new();
     let parent_pid = kern.current_process_meta.as_ref().map(|meta| meta.borrow().pid);
     let process = Process::new(name.into(), pid, parent_pid, priority, future);
 
