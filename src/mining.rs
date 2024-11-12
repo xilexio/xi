@@ -12,12 +12,14 @@ use screeps::game::get_object_by_id_typed;
 use screeps::look::ENERGY;
 use screeps::{HasId, Position, ResourceType, RoomName};
 use crate::consts::FAR_FUTURE;
+use crate::hauling::issuing_requests::RequestAmountChange::Increase;
 use crate::hauling::issuing_requests::WithdrawRequest;
 use crate::kernel::wait_until_some::wait_until_some;
 use crate::room_state::utils::loop_until_structures_change;
 use crate::spawning::spawn_pool::{SpawnPool, SpawnPoolOptions};
 use crate::spawning::spawn_schedule::{PreferredSpawn, SpawnRequest};
 use crate::utils::priority::Priority;
+use crate::utils::resource_decay::decay_per_tick;
 
 pub async fn mine_source(room_name: RoomName, source_ix: usize) {
     loop {
@@ -128,12 +130,15 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                         } else {
                             // Drop mining.
                             if let Some(dropped_energy) = u!(work_pos.look_for(ENERGY)).first() {
+                                let amount = dropped_energy.amount();
                                 let withdraw_request = WithdrawRequest {
                                     room_name,
                                     target: dropped_energy.id(),
                                     pos: Some(work_pos),
                                     resource_type: ResourceType::Energy,
-                                    amount: dropped_energy.amount(),
+                                    amount,
+                                    amount_change: Increase,
+                                    decay: decay_per_tick(amount),
                                     // amount_per_tick: energy_per_tick,
                                     // max_amount: min(1000, source.energy() + dropped_energy.amount()),
                                     priority: Priority(100),

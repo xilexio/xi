@@ -8,6 +8,7 @@ use screeps::ResourceType::Energy;
 use screeps::{HasId, HasPosition, HasStore, ObjectId, RoomName, Transferable};
 use wasm_bindgen::{JsCast, JsValue};
 use crate::hauling::issuing_requests::{StoreRequest, StoreRequestHandle};
+use crate::hauling::issuing_requests::RequestAmountChange::NoChange;
 use crate::room_state::utils::loop_until_structures_change;
 use crate::utils::priority::Priority;
 
@@ -52,6 +53,7 @@ where
             pos: Some(spawn.pos()),
             resource_type: Energy,
             amount: missing_energy,
+            amount_change: NoChange,
             priority: Priority(1), // TODO far away extensions less important
             // preferred_tick: (game_tick(), FAR_FUTURE),
         }, None))

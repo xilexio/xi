@@ -12,3 +12,4 @@ pub mod unchecked_withdrawable;
 pub mod single_tick_cache;
 pub mod priority;
 pub mod uid;
+pub mod resource_decay;

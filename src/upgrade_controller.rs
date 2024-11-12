@@ -2,6 +2,7 @@ use log::warn;
 use screeps::{Position, ResourceType, RoomName};
 use screeps::game::get_object_by_id_typed;
 use crate::creeps::creep::{CreepBody, CreepRole};
+use crate::hauling::issuing_requests::RequestAmountChange::NoChange;
 use crate::hauling::issuing_requests::StoreRequest;
 use crate::hauling::issuing_requests::schedule_store;
 use crate::kernel::sleep::sleep;
@@ -98,6 +99,7 @@ pub async fn upgrade_controller(room_name: RoomName) {
                             resource_type: ResourceType::Energy,
                             pos: Some(work_pos),
                             amount: capacity,
+                            amount_change: NoChange,
                             priority: Priority(40),
                         };
                         

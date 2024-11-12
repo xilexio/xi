@@ -43,10 +43,26 @@ pub struct WithdrawRequest<T> {
     pub resource_type: ResourceType,
     /// Amount of the resource to withdraw.
     pub amount: u32,
+    /// How will the amount change in the near future.
+    pub amount_change: RequestAmountChange,
+    /// How many units of the resource are lost to decay.
+    pub decay: u32,
     // pub amount_per_tick: u32,
     // pub max_amount: u32,
     pub priority: Priority,
     // pub preferred_tick: (u32, u32),
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum RequestAmountChange {
+    /// The amount will not change until the request is fulfilled.
+    NoChange,
+    /// They amount may change unpredictably.
+    UnknownChange,
+    /// The amount will be increasing until the request is fulfilled, although possibly erratically.
+    Increase,
+    /// The amount will decrease until it disappears or the request is fulfilled.
+    Decrease,
 }
 
 #[derive(Debug)]
@@ -75,8 +91,10 @@ where
     pub target: ObjectId<T>,
     pub resource_type: ResourceType,
     pub pos: Option<Position>,
-    /// Amount of resource to store. Can exceed the capacity in which case its maximum capacity.
+    /// Amount of resource to store.
     pub amount: u32,
+    /// How will the amount change in the near future.
+    pub amount_change: RequestAmountChange,
     pub priority: Priority,
     // pub preferred_tick: (u32, u32),
 }
