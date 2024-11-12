@@ -2,7 +2,7 @@ use log::trace;
 use screeps::RoomName;
 use crate::economy::room_eco_config::RoomEcoConfig;
 use crate::kernel::sleep::sleep;
-use crate::room_state::room_states::with_room_state;
+use crate::room_states::room_states::with_room_state;
 
 pub async fn update_eco_config(room_name: RoomName) {
     loop {

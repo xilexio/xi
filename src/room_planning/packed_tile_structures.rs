@@ -247,7 +247,7 @@ impl PackedTileStructures {
 
 #[cfg(test)]
 mod tests {
-    use crate::room_planner::packed_tile_structures::{MainStructureType, PackedTileStructures};
+    use crate::room_planning::packed_tile_structures::{MainStructureType, PackedTileStructures};
     use screeps::StructureType::{Container, Rampart, Road, Spawn};
     use std::error::Error;
 

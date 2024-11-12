@@ -124,7 +124,7 @@ impl Display for PackedTerrain {
 #[cfg(test)]
 mod tests {
     use crate::consts::ROOM_AREA;
-    use crate::room_state::packed_terrain::PackedTerrain;
+    use crate::room_states::packed_terrain::PackedTerrain;
     use screeps::Terrain::{Plain, Swamp, Wall};
     use screeps::{ROOM_SIZE, RoomXY, Terrain};
     use crate::geometry::rect::room_rect;

@@ -1,5 +1,5 @@
 use crate::game_tick::game_tick;
-use crate::kernel::move_current_process_to_sleeping;
+use crate::kernel::kernel::move_current_process_to_sleeping;
 use derive_more::Constructor;
 use log::trace;
 use std::future::Future;

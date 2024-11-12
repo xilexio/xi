@@ -6,8 +6,8 @@ use screeps::Part::{Carry, Move, Work};
 use screeps::StructureType::{Spawn, Storage};
 use serde::{Deserialize, Serialize};
 use crate::creeps::creep::CreepBody;
-use crate::room_planner::SOURCE_AND_CONTROLLER_ROAD_RCL;
-use crate::room_state::RoomState;
+use crate::room_planning::room_planner::SOURCE_AND_CONTROLLER_ROAD_RCL;
+use crate::room_states::room_state::RoomState;
 use crate::u;
 
 /// Structure containing parameters for the room economy that decide the distribution of resources

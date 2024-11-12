@@ -1,7 +1,7 @@
 use log::debug;
 use rustc_hash::FxHashMap;
 use crate::hauling::issuing_requests::schedule_store;
-use crate::room_state::room_states::with_room_state;
+use crate::room_states::room_states::with_room_state;
 use crate::u;
 use screeps::game::get_object_by_id_typed;
 use screeps::ResourceType::Energy;
@@ -9,7 +9,7 @@ use screeps::{HasId, HasPosition, HasStore, ObjectId, RoomName, Transferable};
 use wasm_bindgen::{JsCast, JsValue};
 use crate::hauling::issuing_requests::{StoreRequest, StoreRequestHandle};
 use crate::hauling::issuing_requests::RequestAmountChange::NoChange;
-use crate::room_state::utils::loop_until_structures_change;
+use crate::room_states::utils::loop_until_structures_change;
 use crate::utils::priority::Priority;
 
 /// Keeps spawns filled by requesting haulers to fill them.

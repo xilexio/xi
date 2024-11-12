@@ -1,10 +1,10 @@
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix_slice::RoomMatrixSlice;
 use crate::geometry::rect::Rect;
-use crate::room_planner::planned_tile::{BasePart, PlannedTile};
+use crate::room_planning::planned_tile::{BasePart, PlannedTile};
 use screeps::StructureType::{Container, Extension, Factory, Lab, Link, PowerSpawn, Road, Spawn, Storage, Terminal};
-use crate::room_planner::SOURCE_AND_CONTROLLER_ROAD_RCL;
-use crate::room_planner::plan_rooms::MIN_CONTAINER_RCL;
+use crate::room_planning::plan_rooms::MIN_CONTAINER_RCL;
+use crate::room_planning::room_planner::SOURCE_AND_CONTROLLER_ROAD_RCL;
 
 /// Fast filler/core stamp.
 // {

@@ -1,5 +1,5 @@
 use crate::algorithms::room_matrix::RoomMatrix;
-use crate::room_planner::planned_tile::PlannedTile;
+use crate::room_planning::planned_tile::PlannedTile;
 use derive_more::Constructor;
 use screeps::RoomXY;
 use std::cmp::Ordering;

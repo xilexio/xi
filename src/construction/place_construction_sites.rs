@@ -1,7 +1,7 @@
 use std::cmp::max;
 use crate::game_tick::first_tick;
 use crate::kernel::sleep::{sleep, sleep_until};
-use crate::room_state::room_states::for_each_owned_room;
+use crate::room_states::room_states::for_each_owned_room;
 use crate::u;
 use crate::utils::find::get_structure;
 use crate::utils::multi_map_utils::MultiMapUtils;
@@ -15,7 +15,7 @@ use screeps::StructureType::{
     Terminal, Tower, Wall,
 };
 use screeps::{game, HasPosition, MaybeHasId, RoomName, RoomXY, StructureType};
-use crate::room_state::{ConstructionSiteData, StructuresMap};
+use crate::room_states::room_state::{ConstructionSiteData, StructuresMap};
 
 const MAX_CONSTRUCTION_SITES_PER_ROOM: u32 = 4;
 

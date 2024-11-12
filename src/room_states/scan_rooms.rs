@@ -1,7 +1,7 @@
 use screeps::game;
 use crate::log_err;
 use crate::kernel::sleep::sleep;
-use crate::room_state::scan_room::scan_room;
+use crate::room_states::scan_room::scan_room;
 
 /// Scans visible rooms.
 /// It is guaranteed that the bot will scan all visible rooms each tick. 

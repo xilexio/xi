@@ -1,3 +1,4 @@
 pub mod spawn_pool;
 pub mod spawn_schedule;
-pub mod spawning;
+pub mod spawn_room_creeps;
+mod scheduling_creeps;

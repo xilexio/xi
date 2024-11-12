@@ -1,8 +1,8 @@
-use crate::room_state::{RoomDesignation, RoomState};
 use rustc_hash::FxHashMap;
 use screeps::RoomName;
 use std::cell::RefCell;
 use std::ops::DerefMut;
+use crate::room_states::room_state::{RoomDesignation, RoomState};
 
 pub type RoomStates = FxHashMap<RoomName, RoomState>;
 

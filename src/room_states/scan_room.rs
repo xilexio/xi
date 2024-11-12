@@ -1,12 +1,12 @@
 use log::{debug, trace};
-use crate::room_state::room_states::map_and_replace_room_state;
-use crate::room_state::{ControllerData, MineralData, RoomDesignation, RoomResources, RoomState, SourceData, StructureData};
+use crate::room_states::room_states::map_and_replace_room_state;
 use crate::{local_trace, u};
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::StructureType::{Extension, Spawn};
 use screeps::{find, game, HasId, HasPosition, Mineral, ObjectId, OwnedStructureProperties, Position, ResourceType, RoomName, Source, StructureController};
 use screeps::ResourceType::Energy;
 use crate::errors::XiError;
+use crate::room_states::room_state::{ControllerData, MineralData, RoomDesignation, RoomResources, RoomState, SourceData, StructureData};
 
 const DEBUG: bool = true;
 

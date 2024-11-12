@@ -1,8 +1,8 @@
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix::RoomMatrix;
 use crate::algorithms::room_matrix_slice::RoomMatrixSlice;
-use crate::room_planner::packed_tile_structures::{MainStructureType, PackedTileStructures, PackedTileStructuresError};
-use crate::room_state::StructuresMap;
+use crate::room_planning::packed_tile_structures::{MainStructureType, PackedTileStructures, PackedTileStructuresError};
+use crate::room_states::room_state::StructuresMap;
 use crate::utils::multi_map_utils::MultiMapUtils;
 use log::debug;
 use modular_bitfield::specifiers::B4;

@@ -1,6 +1,6 @@
-use crate::room_state::{StructuresMap, MineralData, SourceData};
 use screeps::RoomXY;
 use rustc_hash::FxHashMap;
+use crate::room_states::room_state::{MineralData, SourceData, StructuresMap};
 
 pub struct Blueprint {
     pub name: String,

@@ -6,7 +6,7 @@ use std::task::{Context, Poll};
 use log::trace;
 use crate::game_tick::game_tick;
 use crate::kernel::cid::CId;
-use crate::kernel::{move_current_process_to_waiting_for_condition, signal_condition};
+use crate::kernel::kernel::{move_current_process_to_waiting_for_condition, signal_condition};
 
 /// A condition which can be repeatedly waited on. Waits even if there is a value present.
 #[derive(Debug)]

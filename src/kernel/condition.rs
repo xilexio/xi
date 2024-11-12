@@ -1,4 +1,4 @@
-use crate::kernel::{move_current_process_to_waiting_for_condition, signal_condition};
+use crate::kernel::kernel::{move_current_process_to_waiting_for_condition, signal_condition};
 use log::trace;
 use std::cell::RefCell;
 use std::future::Future;

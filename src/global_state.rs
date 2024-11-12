@@ -1,4 +1,4 @@
-use crate::room_state::room_states::{with_room_states, RoomStates};
+use crate::room_states::room_states::{with_room_states, RoomStates};
 use js_sys::JsString;
 use log::{error, trace};
 use screeps::{raw_memory, MEMORY_SIZE_LIMIT};

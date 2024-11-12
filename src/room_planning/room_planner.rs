@@ -16,27 +16,40 @@ use crate::geometry::rect::{ball, bounding_rect, room_rect, Rect};
 use crate::geometry::room_xy::RoomXYUtils;
 use crate::profiler::measure_time;
 use crate::random::random;
-use crate::room_planner::packed_tile_structures::MainStructureType;
-use crate::room_planner::plan::{Plan, PlanScore, PlannedControllerData, PlannedMineralData, PlannedSourceData};
-use crate::room_planner::planned_tile::{BasePart, PlannedTile};
-use crate::room_planner::stamps::{core_stamp, labs_stamp};
-use crate::room_planner::RoomPlannerError::{
-    ControllerNotFound, PlanGenerationFinished, RampartPlacementFailure, ResourceNotFound, RoadConnectionFailure,
-    StructurePlacementFailure, UnreachableResource,
-};
-use crate::room_state::packed_terrain::PackedTerrain;
-use crate::room_state::RoomState;
+use crate::room_planning::packed_tile_structures::MainStructureType;
+use crate::room_planning::plan::{Plan, PlanScore, PlannedControllerData, PlannedMineralData, PlannedSourceData};
+use crate::room_planning::planned_tile::{BasePart, PlannedTile};
+use crate::room_planning::stamps::{core_stamp, labs_stamp};
+use crate::room_states::packed_terrain::PackedTerrain;
+use crate::room_states::room_state::RoomState;
 use crate::towers::tower_attack_power;
 use crate::u;
 use derive_more::Constructor;
 use log::{debug, error};
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::StructureType::{
-    Container, Extension, Extractor, Lab, Link, Nuker, Observer, Rampart, Road, Spawn, Storage, Tower,
+    Container,
+    Extension,
+    Extractor,
+    Lab,
+    Link,
+    Nuker,
+    Observer,
+    Rampart,
+    Road,
+    Spawn,
+    Storage,
+    Tower,
 };
 use screeps::Terrain::{Plain, Swamp, Wall};
 use screeps::{
-    RoomName, RoomXY, StructureType, CREEP_RANGED_ACTION_RANGE, ROOM_SIZE, TOWER_FALLOFF_RANGE, TOWER_OPTIMAL_RANGE,
+    RoomName,
+    RoomXY,
+    StructureType,
+    CREEP_RANGED_ACTION_RANGE,
+    ROOM_SIZE,
+    TOWER_FALLOFF_RANGE,
+    TOWER_OPTIMAL_RANGE,
 };
 use std::cmp::{max, min, Reverse};
 use std::collections::BTreeMap;
@@ -45,12 +58,6 @@ use std::fmt::{Debug, Formatter};
 use std::iter::{empty, once};
 use num_traits::clamp;
 use thiserror::Error;
-
-pub mod packed_tile_structures;
-pub mod plan;
-pub mod plan_rooms;
-pub mod planned_tile;
-pub mod stamps;
 
 pub const MIN_RAMPART_RCL: u8 = 5;
 pub const SOURCE_AND_CONTROLLER_ROAD_RCL: u8 = 3;
@@ -87,6 +94,7 @@ pub enum RoomPlannerError {
     #[error("plan generation already finished")]
     PlanGenerationFinished,
 }
+use RoomPlannerError::*;
 
 #[derive(Copy, Clone, Debug, Constructor)]
 struct RoadTarget {
@@ -109,8 +117,8 @@ struct RoadParameters {
 
 pub struct RoomPlanner {
     fast_mode: bool,
-    tries_count: u16,
-    plans_count: u16,
+    pub tries_count: u16,
+    pub plans_count: u16,
 
     room_name: RoomName,
     controller_xy: RoomXY,
@@ -299,10 +307,10 @@ impl RoomPlanner {
     pub fn is_finished(&self) -> bool {
         self.core_centers_stack.is_empty()
             || self.core_centers_stack.len() == 1
-                && self.core_rotations_stack.len() == 1
-                && self.labs_dists_stack.len() == 1
-                && self.labs_top_left_corners_stack.len() == 1
-                && self.labs_rotations_stack.len() == 1
+            && self.core_rotations_stack.len() == 1
+            && self.labs_dists_stack.len() == 1
+            && self.labs_top_left_corners_stack.len() == 1
+            && self.labs_rotations_stack.len() == 1
     }
 
     pub fn init_core_centers(&mut self) -> Result<(), Box<dyn Error>> {
@@ -313,8 +321,8 @@ impl RoomPlanner {
                 (&self.controller_dm, CONTROLLER_DIST_WEIGHT),
                 (&self.mineral_dm, MINERAL_DIST_WEIGHT),
             ]
-            .into_iter()
-            .chain(self.source_dms.iter().map(|dm| (dm, SOURCE_DIST_WEIGHT)));
+                .into_iter()
+                .chain(self.source_dms.iter().map(|dm| (dm, SOURCE_DIST_WEIGHT)));
             for (dm, weight) in resource_dms_and_weights {
                 preliminary_sum.update(|xy, value| {
                     let dm_value = dm.get(xy);
@@ -504,17 +512,17 @@ impl RoomPlanner {
                 lab_corner_xy.try_add_diff((-3, 3 * dy.signum())),
                 lab_corner_xy.try_add_diff((3, 3 * dy.signum())),
             ]
-            .iter()
-            .filter_map(|wrapped_xy| wrapped_xy.ok())
-            .collect::<Vec<_>>()
+                .iter()
+                .filter_map(|wrapped_xy| wrapped_xy.ok())
+                .collect::<Vec<_>>()
         } else {
             [
                 lab_corner_xy.try_add_diff((3 * dx.signum(), -3)),
                 lab_corner_xy.try_add_diff((3 * dx.signum(), 3)),
             ]
-            .iter()
-            .filter_map(|wrapped_xy| wrapped_xy.ok())
-            .collect::<Vec<_>>()
+                .iter()
+                .filter_map(|wrapped_xy| wrapped_xy.ok())
+                .collect::<Vec<_>>()
         }
     }
 
@@ -533,13 +541,13 @@ impl RoomPlanner {
                 && self.dt_l1.get(labs_rect.top_left.add_diff((2, 1))) >= 2
                 && self.dt_l1.get(labs_rect.top_left.add_diff((2, 2))) >= 2
                 && labs_rect.corners().iter().copied().all(|xy| {
-                    self.exit_rampart_distances.get(xy) >= 4
-                        && (core_center.dist(xy) >= 4
-                            || core_center.dist(xy) == 3 && {
-                                let core_center_diff = core_center.sub(xy);
-                                min(core_center_diff.0.abs(), core_center_diff.1.abs()) >= 2
-                            })
+                self.exit_rampart_distances.get(xy) >= 4
+                    && (core_center.dist(xy) >= 4
+                    || core_center.dist(xy) == 3 && {
+                    let core_center_diff = core_center.sub(xy);
+                    min(core_center_diff.0.abs(), core_center_diff.1.abs()) >= 2
                 })
+            })
         }
     }
 
@@ -599,28 +607,28 @@ impl RoomPlanner {
             false,
             BasePart::Interior,
         ))
-        .chain(once(RoadParameters::new(
-            spawns.clone(),
-            self.controller_xy,
-            3,
-            1,
-            1.0,
-            true,
-            BasePart::Interior,
-        )))
-        .chain(once(RoadParameters::new(
-            vec![self.storage_xy],
-            self.mineral_xy,
-            1,
-            1,
-            2.0,
-            true,
-            BasePart::ProtectedIfInside,
-        )))
-        .chain(self.source_xys.iter().map(|&source_xy| {
-            RoadParameters::new(spawns.clone(), source_xy, 1, 1, 1.0, true, BasePart::ProtectedIfInside)
-        }))
-        .collect::<Vec<_>>();
+            .chain(once(RoadParameters::new(
+                spawns.clone(),
+                self.controller_xy,
+                3,
+                1,
+                1.0,
+                true,
+                BasePart::Interior,
+            )))
+            .chain(once(RoadParameters::new(
+                vec![self.storage_xy],
+                self.mineral_xy,
+                1,
+                1,
+                2.0,
+                true,
+                BasePart::ProtectedIfInside,
+            )))
+            .chain(self.source_xys.iter().map(|&source_xy| {
+                RoadParameters::new(spawns.clone(), source_xy, 1, 1, 1.0, true, BasePart::ProtectedIfInside)
+            }))
+            .collect::<Vec<_>>();
         let work_xys = self.connect_with_roads(&road_parameters, false, 0)?;
 
         // debug!("Base parts:\n{}", self.planned_tiles.map(|_, tile| tile.base_part() as u8));
@@ -795,7 +803,7 @@ impl RoomPlanner {
             sqrt_target_scaling,
             dist_tolerance,
         )
-        .ok_or(RoadConnectionFailure)?;
+            .ok_or(RoadConnectionFailure)?;
 
         for (path, params) in paths.iter().zip(roads_parameters) {
             // The first tile is source and is skipped. The last tile is skipped and reserved.
@@ -1482,7 +1490,7 @@ impl RoomPlanner {
             empty(),
             interior.iter().filter_map(|(xy, interior)| (!interior).then_some(xy)),
         )
-        .map(|xy, dist| if self.terrain.get(xy) == Wall { 0 } else { dist });
+            .map(|xy, dist| if self.terrain.get(xy) == Wall { 0 } else { dist });
 
         debug!("Placed the main ramparts.");
 
@@ -1568,7 +1576,7 @@ impl RoomPlanner {
                     && self.interior_dm.get(xy) > CREEP_RANGED_ACTION_RANGE
                     && self.terrain.get(xy) != Wall
                     && xy.around().any(|near| !self.planned_tiles.get(near).is_empty()))
-                .then_some(xy)
+                    .then_some(xy)
             })
             .collect::<Vec<_>>();
 
@@ -1595,7 +1603,7 @@ impl RoomPlanner {
                 (self.interior_dm.get(xy) > CREEP_RANGED_ACTION_RANGE
                     && self.planned_tiles.get(xy).grown()
                     && self.planned_tiles.get(xy).structures().main() == Extension.try_into().unwrap())
-                .then_some(xy)
+                    .then_some(xy)
             })
             .collect::<Vec<_>>();
         extensions.reverse();
@@ -1659,8 +1667,8 @@ impl RoomPlanner {
             // Covering some parts in ranged attack range outside or inside the base with ramparts.
             if interior_dist <= CREEP_RANGED_ACTION_RANGE
                 && (base_part == BasePart::Protected
-                    || base_part == BasePart::Interior
-                    || interior_dist > 0 && base_part == BasePart::ProtectedIfInside)
+                || base_part == BasePart::Interior
+                || interior_dist > 0 && base_part == BasePart::ProtectedIfInside)
             {
                 self.planned_tiles
                     .merge_structure(xy, Rampart, BasePart::Outside, false)?;
@@ -1974,11 +1982,11 @@ impl RoomPlanner {
 
 #[cfg(test)]
 mod tests {
-    use crate::room_planner::RoomPlanner;
-    use crate::room_state::{ControllerData, MineralData, RoomState, SourceData};
     use screeps::ResourceType::Keanium;
     use screeps::Terrain::Wall;
     use screeps::{ObjectId, RoomName, ROOM_SIZE};
+    use crate::room_planning::room_planner::RoomPlanner;
+    use crate::room_states::room_state::{ControllerData, MineralData, RoomState, SourceData};
 
     #[test]
     fn test_generate_some_plan() {

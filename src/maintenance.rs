@@ -1,8 +1,8 @@
 use crate::kernel::sleep::sleep;
-use crate::kernel::{current_priority, kill_tree, schedule};
+use crate::kernel::kernel::{current_priority, kill_tree, schedule};
 use crate::mining::mine_source;
 use crate::priorities::SPAWNING_CREEPS_PRIORITY;
-use crate::room_state::room_states::with_room_state;
+use crate::room_states::room_states::with_room_state;
 use log::{debug, info};
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::{game, RoomName};
@@ -11,7 +11,7 @@ use crate::consts::FAR_FUTURE;
 use crate::economy::update_eco_config::update_eco_config;
 use crate::filling_spawns::fill_spawns;
 use crate::hauling::haul_resources::haul_resources;
-use crate::spawning::spawning::{spawn_room_creeps, update_spawn_list};
+use crate::spawning::spawn_room_creeps::{spawn_room_creeps, update_spawn_list};
 use crate::u;
 use crate::upgrade_controller::upgrade_controller;
 

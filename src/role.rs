@@ -1,5 +1,5 @@
 use screeps::Part;
-use crate::room_state::RoomResources;
+use crate::room_states::room_state::RoomResources;
 
 pub trait Role {
     fn body(resources: &RoomResources) -> Vec<Part>;

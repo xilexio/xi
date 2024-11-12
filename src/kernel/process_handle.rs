@@ -1,4 +1,4 @@
-use crate::kernel::move_current_process_to_awaiting;
+use crate::kernel::kernel::move_current_process_to_awaiting;
 use crate::kernel::process::PId;
 use derive_more::Constructor;
 use std::cell::RefCell;

@@ -8,7 +8,7 @@ use crate::hauling::issuing_requests::schedule_store;
 use crate::kernel::sleep::sleep;
 use crate::kernel::wait_until_some::wait_until_some;
 use crate::priorities::BUILDER_SPAWN_PRIORITY;
-use crate::room_state::room_states::with_room_state;
+use crate::room_states::room_states::with_room_state;
 use crate::spawning::spawn_pool::{SpawnPool, SpawnPoolOptions};
 use crate::spawning::spawn_schedule::{PreferredSpawn, SpawnRequest};
 use crate::travel::{travel, TravelSpec};

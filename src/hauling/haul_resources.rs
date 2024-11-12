@@ -5,7 +5,7 @@ use crate::game_tick::game_tick;
 use crate::geometry::room_xy::RoomXYUtils;
 use crate::kernel::sleep::sleep;
 use crate::priorities::HAULER_SPAWN_PRIORITY;
-use crate::room_state::room_states::with_room_state;
+use crate::room_states::room_states::with_room_state;
 use crate::travel::{travel, TravelSpec};
 use crate::u;
 use log::debug;

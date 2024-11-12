@@ -1,7 +1,7 @@
 use log::trace;
 use screeps::RoomName;
 use crate::kernel::sleep::sleep;
-use crate::room_state::room_states::with_room_state;
+use crate::room_states::room_states::with_room_state;
 use crate::u;
 
 pub async fn loop_until_structures_change<F>(room_name: RoomName, interval: u32, mut f: F)
