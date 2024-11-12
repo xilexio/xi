@@ -2,7 +2,7 @@ use screeps::{RawObjectId, Resource, ResourceType};
 use wasm_bindgen::JsCast;
 use crate::creeps::CreepRef;
 use crate::errors::XiError;
-use crate::game_tick::game_tick;
+use crate::utils::game_tick::game_tick;
 use crate::kernel::sleep::sleep;
 use crate::utils::api_wrappers::erased_object_by_id;
 

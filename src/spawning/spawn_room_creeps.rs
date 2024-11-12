@@ -1,5 +1,5 @@
 use crate::creeps::register_creep;
-use crate::game_tick::game_tick;
+use crate::utils::game_tick::game_tick;
 use crate::kernel::kernel::schedule;
 use crate::kernel::sleep::sleep;
 use crate::priorities::CREEP_REGISTRATION_PRIORITY;

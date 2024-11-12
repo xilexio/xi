@@ -1,6 +1,6 @@
 use crate::kernel::sleep::sleep;
 use crate::kernel::kernel::{current_priority, kill_tree, schedule};
-use crate::mining::mine_source;
+use crate::room_maintenance::mining::mine_source;
 use crate::priorities::SPAWNING_CREEPS_PRIORITY;
 use crate::room_states::room_states::with_room_state;
 use log::{debug, info};
@@ -9,11 +9,11 @@ use screeps::{game, RoomName};
 use crate::construction::build_structures::build_structures;
 use crate::consts::FAR_FUTURE;
 use crate::economy::update_eco_config::update_eco_config;
-use crate::filling_spawns::fill_spawns;
+use crate::room_maintenance::filling_spawns::fill_spawns;
 use crate::hauling::haul_resources::haul_resources;
 use crate::spawning::spawn_room_creeps::{spawn_room_creeps, update_spawn_list};
 use crate::u;
-use crate::upgrade_controller::upgrade_controller;
+use crate::room_maintenance::upgrade_controller::upgrade_controller;
 
 /// Each tick, schedule or kill processes to maintain a room.
 pub async fn maintain_rooms() {
@@ -108,7 +108,7 @@ async fn maintain_room(room_name: RoomName) {
 
         // Update stats and decide on resource distribution within the room.
         schedule(
-            &format!("update_resource_distribution{}", room_name),
+            &format!("update_eco_config{}", room_name),
             current_priority() - 2,
             update_eco_config(room_name)
         );

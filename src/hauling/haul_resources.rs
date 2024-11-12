@@ -1,7 +1,7 @@
 use crate::creeps::creep::{CreepBody, CreepRole};
 use crate::creeps::CreepRef;
 use crate::errors::XiError;
-use crate::game_tick::game_tick;
+use crate::utils::game_tick::game_tick;
 use crate::geometry::room_xy::RoomXYUtils;
 use crate::kernel::sleep::sleep;
 use crate::priorities::HAULER_SPAWN_PRIORITY;

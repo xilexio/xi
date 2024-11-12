@@ -15,7 +15,7 @@ use crate::economy::cost_approximation::energy_balance_and_cpu_cost;
 use crate::geometry::rect::{ball, bounding_rect, room_rect, Rect};
 use crate::geometry::room_xy::RoomXYUtils;
 use crate::profiler::measure_time;
-use crate::random::random;
+use crate::utils::random::random;
 use crate::room_planning::packed_tile_structures::MainStructureType;
 use crate::room_planning::plan::{Plan, PlanScore, PlannedControllerData, PlannedMineralData, PlannedSourceData};
 use crate::room_planning::planned_tile::{BasePart, PlannedTile};

@@ -8,22 +8,17 @@ use js_sys::JsString;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 mod algorithms;
-mod blueprint;
 mod config;
 mod construction;
 mod consts;
 mod fresh_number;
 mod game_loop;
-mod game_tick;
 mod geometry;
 mod global_state;
 mod kernel;
 mod logging;
-mod maintenance;
 mod priorities;
 mod profiler;
-mod random;
-mod role;
 mod room_planning;
 mod room_states;
 mod spawning;
@@ -32,13 +27,10 @@ mod utils;
 mod visualization;
 mod travel;
 mod errors;
-mod mining;
 mod hauling;
-mod filling_spawns;
-mod reserved_creep;
 mod creeps;
-mod upgrade_controller;
 mod economy;
+mod room_maintenance;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]

@@ -1,4 +1,4 @@
-use crate::random::random;
+use crate::utils::random::random;
 use num_traits::Pow;
 use rustc_hash::FxHashMap;
 

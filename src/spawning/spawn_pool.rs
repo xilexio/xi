@@ -1,5 +1,5 @@
 use crate::creeps::{find_idle_creep, CreepRef};
-use crate::game_tick::game_tick;
+use crate::utils::game_tick::game_tick;
 use crate::kernel::process_handle::ProcessHandle;
 use crate::kernel::kernel::{current_process_wrapped_meta, kill, schedule};
 use crate::travel::{travel, TravelSpec};
@@ -9,7 +9,7 @@ use screeps::RoomName;
 use std::cell::RefCell;
 use std::future::Future;
 use std::rc::Rc;
-use crate::reserved_creep::ReservedCreep;
+use crate::spawning::reserved_creep::ReservedCreep;
 use crate::spawning::scheduling_creeps::{cancel_scheduled_creep, schedule_creep};
 use crate::spawning::spawn_schedule::{SpawnPromise, SpawnRequest};
 

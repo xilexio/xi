@@ -1,5 +1,5 @@
 use crate::algorithms::matrix_common::MatrixCommon;
-use crate::game_tick::first_tick;
+use crate::utils::game_tick::first_tick;
 use crate::kernel::kernel::should_finish;
 use crate::kernel::sleep::{sleep, sleep_until};
 use crate::room_states::room_states::for_each_owned_room;

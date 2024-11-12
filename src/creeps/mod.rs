@@ -2,7 +2,7 @@ use crate::creeps::creep::{Creep, CreepRole};
 use crate::fresh_number::fresh_number_if_some;
 use crate::geometry::room_xy::RoomXYUtils;
 use crate::kernel::sleep::sleep;
-use crate::reserved_creep::{MaybeReservedCreep, ReservedCreep};
+use crate::spawning::reserved_creep::{MaybeReservedCreep, ReservedCreep};
 use crate::u;
 use creep::CreepBody;
 use log::{info, warn};

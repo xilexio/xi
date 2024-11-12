@@ -1,4 +1,4 @@
-use crate::game_tick::game_tick;
+use crate::utils::game_tick::game_tick;
 use crate::u;
 
 #[derive(Debug)]

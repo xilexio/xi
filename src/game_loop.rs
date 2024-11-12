@@ -1,9 +1,9 @@
 use js_sys::Date;
 use crate::config::{FIRST_MEMORY_SAVE_TICK, LOG_LEVEL, MEMORY_SAVE_INTERVAL};
 use crate::construction::place_construction_sites::place_construction_sites;
-use crate::game_tick::{first_tick, game_tick};
+use crate::utils::game_tick::{first_tick, game_tick};
 use crate::global_state::{load_global_state, save_global_state};
-use crate::maintenance::maintain_rooms;
+use crate::room_maintenance::maintenance::maintain_rooms;
 use crate::priorities::{CLEANUP_CREEPS_PRIORITY, PLACING_CONSTRUCTION_SITES_PRIORITY, MOVE_CREEPS_PRIORITY, ROOM_MAINTENANCE_PRIORITY, ROOM_PLANNING_PRIORITY, ROOM_SCANNING_PRIORITY, VISUALIZATIONS_PRIORITY};
 use crate::room_planning::plan_rooms::plan_rooms;
 use crate::room_states::scan_rooms::scan_rooms;

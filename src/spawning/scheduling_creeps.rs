@@ -4,7 +4,7 @@ use std::rc::Rc;
 use screeps::RoomName;
 use crate::errors::XiError;
 use crate::errors::XiError::SpawnRequestTickInThePast;
-use crate::game_tick::game_tick;
+use crate::utils::game_tick::game_tick;
 use crate::spawning::spawn_schedule::{with_spawn_schedule, SpawnEvent, SpawnPromise, SpawnPromiseRef, SpawnRequest};
 
 /// Schedule a creep to be spawned within given tick and resource constraints.

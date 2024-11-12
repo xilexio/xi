@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use log::LevelFilter::*;
-use crate::game_tick::game_tick;
+use crate::utils::game_tick::game_tick;
 
 thread_local! {
     static LOG: RefCell<Vec<String>> = RefCell::new(Vec::new());

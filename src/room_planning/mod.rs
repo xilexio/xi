@@ -4,3 +4,4 @@ pub mod plan_rooms;
 pub mod planned_tile;
 pub mod stamps;
 pub mod room_planner;
+mod blueprint;
