@@ -1,3 +1,4 @@
+use crate::utils::map_utils::MapUtils;
 use log::debug;
 use rustc_hash::FxHashMap;
 use crate::hauling::issuing_requests::schedule_store;
@@ -15,25 +16,23 @@ use crate::utils::priority::Priority;
 /// Keeps spawns filled by requesting haulers to fill them.
 pub async fn fill_spawns(room_name: RoomName) {
     loop {
-        // TODO Maybe do not drop all store requests, just the ones that changed?
         let mut spawn_store_request_ids = FxHashMap::default();
         let mut extension_store_request_ids = FxHashMap::default();
 
+        // TODO Maybe don't drop all store requests on change, just the ones that changed?
         loop_until_structures_change(room_name, 4, || {
             with_room_state(room_name, |room_state| {
                 for spawn_data in room_state.spawns.iter() {
-                    if let Some(request_id) = schedule_missing_energy_store(room_name, spawn_data.id) {
-                        spawn_store_request_ids.insert(spawn_data.id, request_id);
-                    } else {
-                        spawn_store_request_ids.remove(&spawn_data.id);
-                    }
+                    spawn_store_request_ids.insert_or_remove(
+                        spawn_data.id,
+                        schedule_missing_energy_store(room_name, spawn_data.id)
+                    );
                 }
                 for extension_data in room_state.extensions.iter() {
-                    if let Some(request_id) = schedule_missing_energy_store(room_name, extension_data.id) {
-                        extension_store_request_ids.insert(extension_data.id, request_id);
-                    } else {
-                        extension_store_request_ids.remove(&extension_data.id);
-                    }
+                    extension_store_request_ids.insert_or_remove(
+                        extension_data.id,
+                        schedule_missing_energy_store(room_name, extension_data.id)
+                    );
                 }
             });
 

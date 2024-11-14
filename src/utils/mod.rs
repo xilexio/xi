@@ -15,3 +15,4 @@ pub mod uid;
 pub mod resource_decay;
 pub mod random;
 pub mod game_tick;
+pub mod map_utils;
