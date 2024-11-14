@@ -24,7 +24,7 @@ use crate::utils::result_utils::ResultUtils;
 /// haulers. One or more withdraw event is paired with one or more store events. There are special
 /// withdraw and store events for the storage which may not be paired with one another.
 pub async fn haul_resources(room_name: RoomName) {
-    let mut base_spawn_request = u!(with_room_state(room_name, |room_state| {
+    let base_spawn_request = u!(with_room_state(room_name, |room_state| {
         // Any spawn is good.
         // TODO Remove directions reserved for the fast filler.
         let preferred_spawns = room_state
@@ -46,7 +46,7 @@ pub async fn haul_resources(room_name: RoomName) {
         }
     }));
 
-    let mut spawn_pools = Vec::new();
+    let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, SpawnPoolOptions::default());
     
     loop {
         let (haulers_required, hauler_body) = wait_until_some(|| with_room_state(room_name, |room_state| {
@@ -57,50 +57,39 @@ pub async fn haul_resources(room_name: RoomName) {
                     (config.haulers_required, config.hauler_body.clone())
                 })
         }).flatten()).await;
+        spawn_pool.target_number_of_creeps = haulers_required;
+        spawn_pool.base_spawn_request.body = hauler_body.clone();
 
-        // TODO Not spawning the replacement creep when the number of required haulers is lower than
-        //      the number of existing spawn pools. Instead of maintaining a few spawn pools, this
-        //      should be a single spawn pool handling multiple creeps.
-        if spawn_pools.len() < haulers_required as usize {
-            // TODO Update the spawn pool hauler body each time it changes.
-            base_spawn_request.body = hauler_body;
-            spawn_pools.push(SpawnPool::new(room_name, base_spawn_request.clone(), SpawnPoolOptions::default()));
-        }
+        // TODO Measuring number of idle creeps and trying to minimize their number while
+        //      fulfilling all requests. To this end, keeping track of fulfillment of requests,
+        //      how big is the backlog, etc.
+        spawn_pool.with_spawned_creeps(|creep_ref| async move {
+            let carry_capacity = u!(creep_ref.borrow_mut().store()).get_capacity(None);
 
-        for spawn_pool in spawn_pools.iter_mut() {
-            // TODO Having a configurable lower and upper limit of the number of creeps and possibly
-            //      total relevant body parts.
-            // TODO Measuring number of idle creeps and trying to minimize their number while
-            //      fulfilling all requests. To this end, keeping track of fulfillment of requests,
-            //      how big is the backlog, etc.
-            spawn_pool.with_spawned_creep(|creep_ref| async move {
-                let carry_capacity = u!(creep_ref.borrow_mut().store()).get_capacity(None);
+            loop {
+                debug!(
+                    "{} searching for withdraw/pickup and store requests.",
+                    creep_ref.borrow().name
+                );
 
-                loop {
-                    debug!(
-                        "{} searching for withdraw/pickup and store requests.",
-                        creep_ref.borrow().name
-                    );
+                let maybe_matching_requests = find_matching_requests(
+                    room_name,
+                    u!(creep_ref.borrow_mut().pos()),
+                    carry_capacity
+                );
 
-                    let maybe_matching_requests = find_matching_requests(
-                        room_name,
-                        u!(creep_ref.borrow_mut().pos()),
-                        carry_capacity
-                    );
+                if let Some(matching_requests) = maybe_matching_requests {
+                    let result = fulfill_requests(&creep_ref, matching_requests).await;
 
-                    if let Some(matching_requests) = maybe_matching_requests {
-                        let result = fulfill_requests(&creep_ref, matching_requests).await;
-
-                        if let Err(e) = result {
-                            debug!("Error when hauling: {:?}.", e);
-                            sleep(1).await;
-                        }
-                    } else {
+                    if let Err(e) = result {
+                        debug!("Error when hauling: {:?}.", e);
                         sleep(1).await;
                     }
+                } else {
+                    sleep(1).await;
                 }
-            });
-        }
+            }
+        });
 
         sleep(1).await;
     }

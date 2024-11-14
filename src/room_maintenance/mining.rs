@@ -81,7 +81,7 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
             // TODO Body should depend on max extension fill and also on current resources. Later, also on statistics
             //      about energy income, but this applies mostly before the storage is online.
             // Keeping a miner spawned and mining with it.
-            spawn_pool.with_spawned_creep(|creep_ref| {
+            spawn_pool.with_spawned_creeps(|creep_ref| {
                 let travel_spec = travel_spec.clone();
                 async move {
                     // TODO The problem is that we want to await travel, then await digging, etc., not check everything

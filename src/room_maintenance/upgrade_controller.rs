@@ -63,7 +63,7 @@ pub async fn upgrade_controller(room_name: RoomName) {
     let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, spawn_pool_options);
 
     loop {
-        spawn_pool.with_spawned_creep(|creep_ref| {
+        spawn_pool.with_spawned_creeps(|creep_ref| {
             let travel_spec = travel_spec.clone();
             async move {
                 let capacity = u!(creep_ref.borrow_mut().store()).get_capacity(None);

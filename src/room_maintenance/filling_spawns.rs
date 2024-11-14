@@ -24,11 +24,15 @@ pub async fn fill_spawns(room_name: RoomName) {
                 for spawn_data in room_state.spawns.iter() {
                     if let Some(request_id) = schedule_missing_energy_store(room_name, spawn_data.id) {
                         spawn_store_request_ids.insert(spawn_data.id, request_id);
+                    } else {
+                        spawn_store_request_ids.remove(&spawn_data.id);
                     }
                 }
                 for extension_data in room_state.extensions.iter() {
                     if let Some(request_id) = schedule_missing_energy_store(room_name, extension_data.id) {
                         extension_store_request_ids.insert(extension_data.id, request_id);
+                    } else {
+                        extension_store_request_ids.remove(&extension_data.id);
                     }
                 }
             });

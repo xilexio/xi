@@ -88,7 +88,7 @@ pub async fn build_structures(room_name: RoomName) {
                     break;
                 }
                 
-                u!(spawn_pool.as_mut()).with_spawned_creep(|creep_ref| async move {
+                u!(spawn_pool.as_mut()).with_spawned_creeps(|creep_ref| async move {
                     let capacity = u!(creep_ref.borrow_mut().store()).get_capacity(None);
                     let creep_id = u!(creep_ref.borrow_mut().screeps_id());
                     let build_energy_consumption = u!(creep_ref.borrow_mut().build_energy_consumption());

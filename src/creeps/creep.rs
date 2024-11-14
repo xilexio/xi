@@ -1,13 +1,14 @@
 use std::cmp::max;
 use std::fmt::{Display, Formatter};
 use crate::travel::TravelState;
-use crate::u;
+use crate::{log_err, u};
 use screeps::{game, Part, BodyPart, Position, ResourceType, SharedCreepProperties, Source, Withdrawable, Resource, Transferable, RoomObject, Store, HasPosition, ObjectId, MaybeHasId, StructureController, ConstructionSite, CREEP_CLAIM_LIFE_TIME, CREEP_LIFE_TIME, CREEP_SPAWN_TIME, HARVEST_POWER, UPGRADE_CONTROLLER_POWER, BUILD_POWER, CARRY_CAPACITY, MOVE_COST_PLAIN, MOVE_COST_ROAD, MOVE_POWER, MoveToOptions, PolyStyle};
 use screeps::Part::{Carry, Claim, Move, Work};
 use derive_more::Constructor;
 use serde::{Deserialize, Serialize};
 use crate::errors::XiError;
 use crate::errors::XiError::*;
+use crate::utils::cold::cold;
 use crate::utils::single_tick_cache::SingleTickCache;
 use crate::utils::unchecked_transferable::UncheckedTransferable;
 use crate::utils::unchecked_withdrawable::UncheckedWithdrawable;
@@ -119,9 +120,15 @@ impl Creep {
 
     /// Zero indicates a dead creep.
     pub fn ticks_to_live(&mut self) -> u32 {
-        match self.screeps_obj() {
+        let obj = self.screeps_obj();
+        match obj {
             Ok(creep) => creep.ticks_to_live().unwrap_or(0),
-            Err(_) => 0,
+            Err(CreepDead) => 0,
+            Err(_) => {
+                cold();
+                log_err!(obj);
+                0
+            }
         }
     }
 
