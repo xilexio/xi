@@ -110,14 +110,14 @@ async fn fulfill_requests(creep_ref: &CreepRef, mut matching_requests: MatchingR
             if withdraw_request.pickupable {
                 debug!(
                     "{} picking up {} {} from {}.",
-                    creep_ref.borrow().name, withdraw_request.resource_type, withdraw_request.amount, withdraw_request.target
+                    creep_ref.borrow().name, withdraw_request.amount, withdraw_request.resource_type, withdraw_request.target
                 );
                 pickup_when_able(creep_ref, withdraw_request.target).await?;
                 matching_requests.withdraw_requests.pop();
             } else {
                 debug!(
                     "{} transferring {} {} from {}.",
-                    creep_ref.borrow().name, withdraw_request.resource_type, withdraw_request.amount, withdraw_request.target
+                    creep_ref.borrow().name, withdraw_request.amount, withdraw_request.resource_type, withdraw_request.target
                 );
                 withdraw_when_able(creep_ref, withdraw_request.target, withdraw_request.resource_type, Some(withdraw_request.amount)).await?;
                 matching_requests.withdraw_requests.pop();
@@ -125,11 +125,11 @@ async fn fulfill_requests(creep_ref: &CreepRef, mut matching_requests: MatchingR
             
             Ok(())
         }.await;
-        
-        
+
         if result.is_err() {
-            result.warn_if_err("Error while fulfilling a withdraw request.");
+            result.warn_if_err("Error while fulfilling a withdraw request");
             matching_requests.withdraw_requests.push((request_id, withdraw_request));
+            return result;
         }
     }
 
@@ -143,8 +143,8 @@ async fn fulfill_requests(creep_ref: &CreepRef, mut matching_requests: MatchingR
             // Creep may die on the way.
             travel(creep_ref, store_travel_spec).await?;
             debug!(
-                "{} transferring {} {} to {}.",
-                creep_ref.borrow().name, store_request.resource_type, store_request.amount, store_request.target
+                "{} storing {} {} in {}.",
+                creep_ref.borrow().name, store_request.amount, store_request.resource_type, store_request.target
             );
             transfer_when_able(creep_ref, store_request.target, ResourceType::Energy, None).await?;
             matching_requests.store_requests.pop();
@@ -152,7 +152,7 @@ async fn fulfill_requests(creep_ref: &CreepRef, mut matching_requests: MatchingR
         }.await;
         
         if result.is_err() {
-            result.warn_if_err("Error while fulfilling a withdraw request.");
+            result.warn_if_err("Error while fulfilling a withdraw request");
             matching_requests.store_requests.push((request_id, store_request));
         }
         
