@@ -17,7 +17,7 @@ use std::task::Poll;
 use crate::utils::priority::Priority;
 use crate::utils::uid::UId;
 
-const DEBUG: bool = true;
+const DEBUG: bool = false;
 
 /// A singleton executor and reactor. To work correctly, only one Kernel may be used at a time and it must be used
 /// from one thread.

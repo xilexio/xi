@@ -44,7 +44,6 @@ pub(crate) struct SpawnEvent {
     pub promise: SpawnPromiseRef,
     pub energy_cost: u32,
     pub spawn_duration: u32,
-    pub end_tick: Option<u32>,
 }
 
 /// A promise to spawn a creep. It can be used to check the progress, whether the spawning was
@@ -60,7 +59,7 @@ pub struct SpawnPromise {
 
 impl SpawnPromise {
     pub fn new() -> Self {
-        SpawnPromise {
+        Self {
             id: UId::new(),
             spawn_id: None,
             spawn_end_tick: None,

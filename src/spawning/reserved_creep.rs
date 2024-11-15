@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
-use log::debug;
+use log::trace;
 use rustc_hash::FxHashSet;
 use crate::creeps::creep::{Creep, CreepRole};
 use crate::creeps::CreepRef;
@@ -35,7 +35,7 @@ impl ReservedCreep {
     pub fn new(creep_ref: CreepRef) -> Self {
         with_reserved_creeps(|reserved_creeps| {
             let creep = creep_ref.borrow();
-            debug!("Reserving creep {}.", creep.name);
+            trace!("Reserving creep {}.", creep.name);
             // TODO This assertion has failed after spawning a creep.
             a!(!reserved_creeps.contains(&(creep.role, creep.number)));
             reserved_creeps.insert((creep.role, creep.number));
@@ -71,7 +71,7 @@ impl Drop for ReservedCreep {
     fn drop(&mut self) {
         with_reserved_creeps(|reserved_creeps| {
             let creep = self.creep_ref.borrow();
-            debug!("Dropping reservation for creep {}.", creep.name);
+            trace!("Dropping reservation for creep {}.", creep.name);
             a!(reserved_creeps.remove(&(creep.role, creep.number)));
         })
     }

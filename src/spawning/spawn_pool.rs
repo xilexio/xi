@@ -67,7 +67,7 @@ pub struct SpawnPoolElement {
 #[derive(Debug)]
 pub enum MaybeSpawned {
     Spawned(ReservedCreep),
-    Spawning(Rc<RefCell<SpawnPromise>>),
+    Spawning(SpawnRequest, Rc<RefCell<SpawnPromise>>),
 }
 
 impl Drop for SpawnPool {
@@ -83,7 +83,7 @@ impl Drop for SpawnPool {
 
         for mut element in self.current_creeps_and_processes.drain(..) {
             // Cancelling scheduled spawns.
-            if let Some(MaybeSpawned::Spawning(prespawned_creep)) = element.prespawned_creep.take() {
+            if let Some(MaybeSpawned::Spawning(_, prespawned_creep)) = element.prespawned_creep.take() {
                 cancel_scheduled_creep(self.room_name, prespawned_creep);
             }
 
@@ -160,7 +160,7 @@ impl SpawnPool {
                     // to remove.
                     let remove_process = element.prespawned_creep.as_ref().map_or(true, |pc| match pc {
                         MaybeSpawned::Spawned(_) => false,
-                        MaybeSpawned::Spawning(promise) => promise.borrow().cancelled || promise.borrow().spawn_end_tick.is_none(),
+                        MaybeSpawned::Spawning(_, promise) => promise.borrow().cancelled || promise.borrow().spawn_end_tick.is_none(),
                     });
                     if remove_process {
                         element.respawn = false;
@@ -294,7 +294,7 @@ impl SpawnPoolElement {
                         );
                     }
                 }
-                MaybeSpawned::Spawning(spawn_promise) => {
+                MaybeSpawned::Spawning(spawn_request, spawn_promise) => {
                     let mut borrowed_spawn_promise  = spawn_promise.borrow_mut();
                     if borrowed_spawn_promise.cancelled {
                         // The spawn request was cancelled (externally).
@@ -318,11 +318,37 @@ impl SpawnPoolElement {
                             "A prespawned {} creep from the spawn pool has spawned.",
                             base_spawn_request.role
                         );
-                    } else if !self.respawn && borrowed_spawn_promise.spawn_end_tick.is_none() {
-                        // Cancelling the scheduled prespawned creep. Removing it will happen
-                        // in subsequent tick.
-                        trace!("Cancelling the prespawn request for {}.",base_spawn_request.role);
-                        cancel_scheduled_creep(room_name, spawn_promise.clone());
+                    } else {
+                        let mut cancel = false;
+                        if !self.respawn && borrowed_spawn_promise.spawn_end_tick.is_none() {
+                            // Cancelling the scheduled prespawned creep. Removing it will happen
+                            // in subsequent tick.
+                            trace!("Cancelling the prespawn request for {}.", base_spawn_request.role);
+                            cancel = true;
+
+                        } else if self.respawn && self.current_creep_and_process.is_none() {
+                            // The case when the current creep has prematurely died or before the first
+                            // creep has spawned. To differentiate it from the creep being scheduled
+                            // to spawn now, but not having a spawn timer, the max preferred tick is
+                            // checked.
+                            if borrowed_spawn_promise.spawn_end_tick.is_none() && spawn_request.tick.0 > game_tick() {
+                                trace!(
+                                    "Cancelling the prespawn request for {} because it is not scheduled to spawn now.",
+                                    base_spawn_request.role
+                                );
+                                cancel = true;
+                            }
+                        }
+                        
+                        if cancel {
+                            // Removing the scheduled creep immediately.
+                            // In the case of too late schedule, it enables rescheduling it this
+                            // tick.
+                            drop(borrowed_spawn_promise);
+                            if let Some(MaybeSpawned::Spawning(_, spawn_promise)) = self.prespawned_creep.take() {
+                                cancel_scheduled_creep(room_name, spawn_promise);
+                            }
+                        }
                     }
                 }
             }
@@ -344,9 +370,8 @@ impl SpawnPoolElement {
                             base_spawn_request.role,
                             &base_spawn_request.body,
                             travel_spec.as_ref().map(|travel_spec| travel_spec.target.xy()),
-                        ).map(|creep| {
+                        ).inspect(|creep| {
                             debug!("Found idle {} creep.", base_spawn_request.role);
-                            creep
                         })
                     } else {
                         // At this point, `respawn` is false, there is no current process and there
@@ -414,9 +439,9 @@ impl SpawnPoolElement {
             }
 
             // Scheduling the creep.
-            let spawn_promise = u!(schedule_creep(room_name, spawn_request));
+            let spawn_promise = u!(schedule_creep(room_name, spawn_request.clone()));
             // TODO Some other process may reserve this creep using find_idle_creeps immediately, need to prevent that.
-            self.prespawned_creep = Some(MaybeSpawned::Spawning(spawn_promise));
+            self.prespawned_creep = Some(MaybeSpawned::Spawning(spawn_request, spawn_promise));
             debug!(
                 "Scheduled a prespawn of {} creep from the spawn pool.",
                 base_spawn_request.role
@@ -430,7 +455,7 @@ impl SpawnPoolElement {
             MaybeSpawned::Spawned(creep) => {
                 creep.as_ref().borrow_mut().ticks_to_live()
             },
-            MaybeSpawned::Spawning(promise) => {
+            MaybeSpawned::Spawning(_, promise) => {
                 promise
                     .borrow()
                     .creep

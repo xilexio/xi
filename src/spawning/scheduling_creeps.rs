@@ -10,27 +10,26 @@ use crate::spawning::spawn_schedule::{with_spawn_schedule, SpawnEvent, SpawnProm
 /// Schedule a creep to be spawned within given tick and resource constraints.
 pub fn schedule_creep(room_name: RoomName, request: SpawnRequest) -> Result<SpawnPromiseRef, XiError> {
     with_spawn_schedule(room_name, move |room_spawn_schedule| {
-        let spawn_promise = SpawnPromise::new();
-        let id = spawn_promise.id;
-
         let current_tick = game_tick();
         let preferred_spawn_start_tick = request.tick.0;
 
         if preferred_spawn_start_tick < current_tick {
             return Err(SpawnRequestTickInThePast);
         }
-
+        
         // Create a SpawnEvent and add it to the schedule.
-        let spawn_promise_ref = Rc::new(RefCell::new(spawn_promise));
         let energy_cost = request.body.energy_cost();
         let spawn_duration = request.body.spawn_duration();
+        
+        let spawn_promise = SpawnPromise::new();
+        let id = spawn_promise.id;
+        let spawn_promise_ref = Rc::new(RefCell::new(spawn_promise));
 
         let spawn_event = SpawnEvent {
             request,
             promise: spawn_promise_ref.clone(),
             energy_cost,
             spawn_duration,
-            end_tick: None,
         };
 
         room_spawn_schedule
