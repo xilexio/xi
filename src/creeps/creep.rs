@@ -268,6 +268,10 @@ impl CreepBody {
     pub fn upgrade_energy_usage(&self) -> u32 {
         self.count_parts(Work) * UPGRADE_CONTROLLER_POWER
     }
+    
+    pub fn energy_harvest_power(&self) -> u32 {
+        self.count_parts(Work) * HARVEST_POWER
+    }
 }
 
 impl From<Vec<BodyPart>> for CreepBody {

@@ -2,7 +2,7 @@ use crate::creeps::{find_idle_creep, CreepRef};
 use crate::utils::game_tick::game_tick;
 use crate::kernel::process_handle::ProcessHandle;
 use crate::kernel::kernel::{current_process_wrapped_meta, kill, schedule};
-use crate::travel::{travel, TravelSpec};
+use crate::travel::{predicted_travel_ticks, travel, TravelSpec};
 use crate::{a, u};
 use log::{debug, trace};
 use screeps::RoomName;
@@ -419,11 +419,19 @@ impl SpawnPoolElement {
             if let Some((current_creep, _)) = self.current_creep_and_process.as_ref() {
                 // The prespawning case.
                 let creep_death_tick = game_tick() + current_creep.borrow_mut().ticks_to_live();
+                let preferred_spawn_pos = spawn_request.preferred_spawns[0].pos;
                 // TODO Cache this, maybe just by moving out of the scope of the loop.
                 let creep_travel_ticks = travel_spec
                     .as_ref()
                     .map(|travel_spec| {
-                        0 // TODO
+                        predicted_travel_ticks(
+                            preferred_spawn_pos,
+                            travel_spec.target,
+                            1,
+                            travel_spec.range,
+                            &spawn_request.body,
+                            false // TODO
+                        )
                     })
                     .unwrap_or(0);
 

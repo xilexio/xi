@@ -41,6 +41,7 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                     id: spawn_data.id,
                     directions: Vec::new(),
                     extra_cost: 0,
+                    pos: Position::new(spawn_data.xy.x, spawn_data.xy.y, room_name)
                 })
                 .collect::<Vec<_>>();
 
@@ -67,13 +68,17 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
             range: 0,
         };
 
-        let spawn_pool_options = SpawnPoolOptions::default().travel_spec(Some(travel_spec.clone()));
-        let miner_body = wait_until_some(|| with_room_state(room_name, |room_state| {
+        let (miners_required_per_source, miner_body) = wait_until_some(|| with_room_state(room_name, |room_state| {
             room_state
                 .eco_config
                 .as_ref()
-                .map(|config| config.miner_body.clone())
+                .map(|config| {
+                    (config.miners_required_per_source, config.miner_body.clone())
+                })
         }).flatten()).await;
+        let spawn_pool_options = SpawnPoolOptions::default()
+            .travel_spec(Some(travel_spec.clone()))
+            .target_number_of_creeps(miners_required_per_source);
         base_spawn_request.body = miner_body;
         let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, spawn_pool_options);
 

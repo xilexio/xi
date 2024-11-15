@@ -29,6 +29,7 @@ pub async fn upgrade_controller(room_name: RoomName) {
                 id: spawn_data.id,
                 directions: Vec::new(),
                 extra_cost: 0,
+                pos: Position::new(spawn_data.xy.x, spawn_data.xy.y, room_name)
             })
             .collect::<Vec<_>>();
 

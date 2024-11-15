@@ -10,7 +10,7 @@ use crate::travel::{travel, TravelSpec};
 use crate::u;
 use log::debug;
 use screeps::StructureType::Storage;
-use screeps::{ResourceType, RoomName};
+use screeps::{Position, ResourceType, RoomName};
 use crate::creeps::actions::{pickup_when_able, transfer_when_able, withdraw_when_able};
 use crate::hauling::matching_requests::{find_matching_requests, MatchingRequests};
 use crate::hauling::store_anywhere_or_drop::store_anywhere_or_drop;
@@ -34,6 +34,7 @@ pub async fn haul_resources(room_name: RoomName) {
                 id: spawn_data.id,
                 directions: Vec::new(),
                 extra_cost: 0,
+                pos: Position::new(spawn_data.xy.x, spawn_data.xy.y, room_name)
             })
             .collect::<Vec<_>>();
 
@@ -180,6 +181,7 @@ fn hauler_spawn_request(room_name: RoomName) -> SpawnRequest {
                         id: spawn_data.id,
                         directions: Vec::new(),
                         extra_cost: 0,
+                        pos: Position::new(spawn_data.xy.x, spawn_data.xy.y, room_name)
                     },
                 )
             })

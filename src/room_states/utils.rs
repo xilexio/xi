@@ -11,7 +11,7 @@ where
     let mut structures_broadcast = u!(with_room_state(room_name, |room_state| {
         room_state.structures_broadcast.clone_not_primed()
     }));
-    
+
     trace!("Beginning a loop until structures change.");
 
     // TODO when the check is true, it will always be true this tick.
@@ -22,6 +22,6 @@ where
 
         sleep(interval).await;
     }
-    
+
     trace!("Structures changed. Finishing the loop.");
 }

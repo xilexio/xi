@@ -58,9 +58,20 @@ pub fn travel(creep_ref: &CreepRef, travel_spec: TravelSpec) -> Broadcast<Result
     }
 }
 
-pub fn predicted_travel_ticks(source: Position, target: Position, start_range: u8, range: u8, body: &CreepBody) -> u32 {
-    // TODO
-    42
+/// Best effort estimate how many ticks it takes to travel `start_range` tiles from source to
+/// `range` from target with a creep with given `body`. Takes into consideration if roads are
+/// expected or not.
+pub fn predicted_travel_ticks(
+    source: Position,
+    target: Position,
+    start_range: u8,
+    range: u8,
+    body: &CreepBody,
+    road: bool
+) -> u32 {
+    let dist = (source.get_range_to(target) + 1).saturating_sub((start_range + range) as u32);
+    let ticks_per_tile = body.ticks_per_tile(road);
+    dist * ticks_per_tile
 }
 
 pub async fn move_creeps() {

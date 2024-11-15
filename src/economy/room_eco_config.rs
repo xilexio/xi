@@ -14,11 +14,13 @@ use crate::u;
 /// as well as composition of creeps.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RoomEcoConfig {
-    /// The number of haulers that should be spawned at the moment.
+    /// The number of haulers that should be currently spawned.
     pub haulers_required: u32,
     /// The body of a hauler.
     pub hauler_body: CreepBody,
 
+    /// The number of miners that should be spawned per each source in the room.
+    pub miners_required_per_source: u32,
     /// The body of a miner to spawn for each room source.
     pub miner_body: CreepBody,
 
@@ -102,7 +104,8 @@ impl RoomEcoConfig {
 
         // Miner uses energy only on its body.
         let miner_body = Self::miner_body(spawn_energy_capacity);
-        let miners_required = number_of_sources;
+        let miners_required_per_source = (single_source_energy_income / miner_body.energy_harvest_power() as f32).ceil() as u32;
+        let miners_required = miners_required_per_source * number_of_sources;
         let total_miner_body_energy_usage = miners_required as f32 * miner_body.body_energy_usage() * body_cost_multiplier;
         let total_mining_energy_usage = total_miner_body_energy_usage;
         let mining_hauling_throughput = total_miner_body_energy_usage * avg_source_spawn_dist;
@@ -192,6 +195,7 @@ impl RoomEcoConfig {
         Self {
             haulers_required,
             hauler_body,
+            miners_required_per_source,
             miner_body,
             upgraders_required,
             upgrader_body,

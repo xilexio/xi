@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 use rustc_hash::FxHashMap;
-use screeps::{Direction, ObjectId, RoomName, StructureSpawn};
+use screeps::{Direction, ObjectId, Position, RoomName, StructureSpawn};
 use crate::creeps::creep::{CreepBody, CreepRole};
 use crate::creeps::CreepRef;
 use crate::utils::priority::Priority;
@@ -90,4 +90,6 @@ pub struct PreferredSpawn {
     pub directions: Vec<Direction>,
     /// Extra energy cost incurred by selecting this spawn.
     pub extra_cost: u32,
+    /// Position of the spawn.
+    pub pos: Position,
 }
