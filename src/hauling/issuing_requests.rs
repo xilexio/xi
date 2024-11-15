@@ -1,6 +1,7 @@
 use rustc_hash::FxHashMap;
 use screeps::{ObjectId, Position, RawObjectId, Resource, ResourceType, RoomName, Transferable, Withdrawable};
 use std::cell::RefCell;
+use std::fmt::Display;
 use log::debug;
 use crate::utils::priority::Priority;
 use crate::utils::uid::UId;
@@ -146,6 +147,47 @@ impl Drop for StoreRequestHandle {
                 schedule.store_requests.remove(&self.id);
             }
         });
+    }
+}
+
+impl Display for RawWithdrawRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let pos_str = self
+            .pos
+            .as_ref()
+            .map(|pos| format!("{}/{}", pos.room_name(), pos.xy()))
+            .unwrap_or("?".into());
+        write!(
+            f,
+            "{}, {} {} ({:?}), P{}, from {} (pickup: {})",
+            pos_str,
+            self.resource_type,
+            self.amount,
+            self.amount_change,
+            self.priority,
+            self.target,
+            self.pickupable
+        )
+    }
+}
+
+impl Display for RawStoreRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let pos_str = self
+            .pos
+            .as_ref()
+            .map(|pos| format!("{}/{}", pos.room_name(), pos.xy()))
+            .unwrap_or("?".into());
+        write!(
+            f,
+            "{}, {} {} ({:?}), P{}, to {}",
+            pos_str,
+            self.resource_type,
+            self.amount,
+            self.amount_change,
+            self.priority,
+            self.target
+        )
     }
 }
 

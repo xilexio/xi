@@ -21,6 +21,7 @@ pub async fn fill_spawns(room_name: RoomName) {
         // TODO Maybe don't drop all store requests on change, just the ones that changed?
         loop_until_structures_change(room_name, 4, || {
             with_room_state(room_name, |room_state| {
+                // TODO When the request is already underway, don't schedule another one.
                 for spawn_data in room_state.spawns.iter() {
                     let handle = schedule_missing_energy_store(
                         room_name,

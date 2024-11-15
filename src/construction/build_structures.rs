@@ -40,8 +40,6 @@ pub async fn build_structures(room_name: RoomName) {
 
     // TODO Handle prioritizing energy for the upgrading - always upgrade enough to prevent
     //      the room from downgrading, but only upgrade more if there is energy to spare.
-    let spawn_pool_options = SpawnPoolOptions::default();
-
     loop {
         // TODO pick construction site with highest priority
         // TODO spawn a builder
@@ -62,13 +60,18 @@ pub async fn build_structures(room_name: RoomName) {
 
         if let Some(cs_data) = cs_data {
             // Initializing the spawn pool.
-            let builder_body = wait_until_some(|| with_room_state(room_name, |room_state| {
+            // TODO Move the pool outside and just configure the number of creeps to zero when not needed.
+            let (builders_required, builder_body) = wait_until_some(|| with_room_state(room_name, |room_state| {
                 room_state
                     .eco_config
                     .as_ref()
-                    .map(|config| config.builder_body.clone())
+                    .map(|config| {
+                        (config.builders_required, config.builder_body.clone())
+                    })
             }).flatten()).await;
             base_spawn_request.body = builder_body;
+            let spawn_pool_options = SpawnPoolOptions::default()
+                .target_number_of_creeps(builders_required);
             let mut spawn_pool = Some(SpawnPool::new(room_name, base_spawn_request.clone(), spawn_pool_options.clone()));
 
             loop {

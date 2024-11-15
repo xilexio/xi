@@ -58,7 +58,7 @@ pub async fn haul_resources(room_name: RoomName) {
                 })
         }).flatten()).await;
         spawn_pool.target_number_of_creeps = haulers_required;
-        spawn_pool.base_spawn_request.body = hauler_body.clone();
+        spawn_pool.base_spawn_request.body = hauler_body;
 
         // TODO Measuring number of idle creeps and trying to minimize their number while
         //      fulfilling all requests. To this end, keeping track of fulfillment of requests,
@@ -152,7 +152,7 @@ async fn fulfill_requests(creep_ref: &CreepRef, mut matching_requests: MatchingR
         }.await;
         
         if result.is_err() {
-            result.warn_if_err("Error while fulfilling a withdraw request");
+            result.warn_if_err("Error while fulfilling a store request");
             matching_requests.store_requests.push((request_id, store_request));
         }
         

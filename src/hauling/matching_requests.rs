@@ -3,7 +3,9 @@ use log::trace;
 use screeps::{Position, RoomName};
 use crate::hauling::issuing_requests::{with_haul_requests, RawStoreRequest, RawWithdrawRequest, RequestId};
 use crate::hauling::issuing_requests::RequestAmountChange::Increase;
-use crate::u;
+use crate::{local_trace, u};
+
+const DEBUG: bool = true;
 
 /// Not taking into consideration picking up decaying resources under this amount.
 const MIN_DECAYING_AMOUNT: u32 = 100;
@@ -19,12 +21,14 @@ impl Drop for MatchingRequests {
     fn drop(&mut self) {
         for (id, withdraw_request) in self.withdraw_requests.drain(..) {
             with_haul_requests(withdraw_request.room_name, |schedule| {
+                local_trace!("Rescheduling dropped withdraw request {}.", withdraw_request);
                 schedule.withdraw_requests.insert(id, withdraw_request);
             });
         }
 
         for (id, store_request) in self.store_requests.drain(..) {
             with_haul_requests(store_request.room_name, |schedule| {
+                local_trace!("Rescheduling dropped store request {}.", store_request);
                 schedule.store_requests.insert(id, store_request);
             });
         }
@@ -38,9 +42,17 @@ pub fn find_matching_requests(room_name: RoomName, creep_pos: Position, creep_ca
     // TODO Do not pick up small amounts if it is under capacity and expected to increase later
     //      unless really needed.
     with_haul_requests(room_name, |schedule| {
-        trace!("find_matching_requests({}, {}, {})", room_name, creep_pos, creep_capacity);
-        trace!("withdraw_requests: {:?}", schedule.withdraw_requests);
-        trace!("store_requests: {:?}", schedule.store_requests);
+        if DEBUG {
+            trace!("Finding matching requests in {} for pos {} and capacity {}.", room_name, creep_pos, creep_capacity);
+            trace!("Available withdraw requests:");
+            for request in schedule.withdraw_requests.values() {
+                trace!("* {}", request);
+            }
+            trace!("Available store requests:");
+            for request in schedule.store_requests.values() {
+                trace!("* {}", request);
+            }
+        }
 
         if schedule.withdraw_requests.is_empty() || schedule.store_requests.is_empty() {
             return None;

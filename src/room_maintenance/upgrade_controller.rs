@@ -17,7 +17,7 @@ use crate::utils::priority::Priority;
 use crate::utils::result_utils::ResultUtils;
 
 pub async fn upgrade_controller(room_name: RoomName) {
-    let (mut base_spawn_request, controller_id, work_pos) = u!(with_room_state(room_name, |room_state| {
+    let (base_spawn_request, controller_id, work_pos) = u!(with_room_state(room_name, |room_state| {
         let controller_data = u!(room_state.controller);
         let work_xy = u!(controller_data.work_xy);
 
@@ -53,16 +53,20 @@ pub async fn upgrade_controller(room_name: RoomName) {
     //      the room from downgrading, but only upgrade more if there is energy to spare.
     let spawn_pool_options = SpawnPoolOptions::default()
         .travel_spec(Some(travel_spec.clone()));
-    let upgrader_body = wait_until_some(|| with_room_state(room_name, |room_state| {
-            room_state
-                .eco_config
-                .as_ref()
-                .map(|config| config.upgrader_body.clone())
-        }).flatten()).await;
-    base_spawn_request.body = upgrader_body;
     let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, spawn_pool_options);
 
     loop {
+        let (upgraders_required, upgrader_body) = wait_until_some(|| with_room_state(room_name, |room_state| {
+            room_state
+                .eco_config
+                .as_ref()
+                .map(|config| {
+                    (config.upgraders_required, config.upgrader_body.clone())
+                })
+        }).flatten()).await;
+        spawn_pool.target_number_of_creeps = upgraders_required;
+        spawn_pool.base_spawn_request.body = upgrader_body;
+        
         spawn_pool.with_spawned_creeps(|creep_ref| {
             let travel_spec = travel_spec.clone();
             async move {
