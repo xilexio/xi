@@ -1,7 +1,8 @@
 use log::{trace, warn};
 use screeps::{Position, ResourceType, RoomName, CREEP_RANGED_ACTION_RANGE};
 use screeps::game::get_object_by_id_typed;
-use crate::creeps::creep::{CreepBody, CreepRole};
+use crate::creeps::creep_role::CreepRole;
+use crate::creeps::creep_body::CreepBody;
 use crate::hauling::issuing_requests::RequestAmountChange::NoChange;
 use crate::hauling::issuing_requests::StoreRequest;
 use crate::hauling::issuing_requests::schedule_store;

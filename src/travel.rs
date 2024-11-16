@@ -9,7 +9,7 @@ use screeps::Position;
 use crate::creeps::creep::Creep;
 use crate::errors::XiError;
 use crate::errors::XiError::CreepDead;
-use crate::creeps::creep::CreepBody;
+use crate::creeps::creep_body::CreepBody;
 
 #[derive(Debug)]
 pub struct TravelState {

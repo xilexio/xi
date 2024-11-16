@@ -5,10 +5,13 @@ use screeps::{ENERGY_REGEN_TIME, SOURCE_ENERGY_CAPACITY};
 use screeps::Part::{Carry, Move, Work};
 use screeps::StructureType::{Spawn, Storage};
 use serde::{Deserialize, Serialize};
-use crate::creeps::creep::CreepBody;
+use crate::creeps::creep_body::CreepBody;
+use crate::creeps::creep_role::CreepRole::{Hauler, Miner};
 use crate::room_planning::room_planner::SOURCE_AND_CONTROLLER_ROAD_RCL;
 use crate::room_states::room_state::RoomState;
 use crate::u;
+
+const MIN_SAFE_LAST_CREEP_TTL: u32 = 300;
 
 /// Structure containing parameters for the room economy that decide the distribution of resources
 /// as well as composition of creeps.
@@ -33,16 +36,15 @@ pub struct RoomEcoConfig {
     pub builders_required: u32,
     /// The body of a builder.
     pub builder_body: CreepBody,
-
-    /// Whether the room is out of essential creeps needed to sustain spawning other creeps and
-    /// needs to be cold booted.
-    pub cold_boot: bool,
 }
 
 impl RoomEcoConfig {
     // TODO Take previous room eco and other stats and adjust the values according to actual usage.
     // TODO Also include spawn occupation in the calculation, particularly at low RCL.
     pub fn new(room_state: &RoomState) -> Self {
+        let miner_stats = u!(room_state.eco_stats.as_ref()).creep_stats(Miner);
+        let hauler_stats = u!(room_state.eco_stats.as_ref()).creep_stats(Hauler);
+
         let spawn_energy = room_state.resources.spawn_energy_capacity;
         let spawn_energy_capacity = room_state.resources.spawn_energy_capacity;
 
@@ -52,7 +54,7 @@ impl RoomEcoConfig {
         let energy_income = number_of_sources as f32 * single_source_energy_income;
 
         // Hauler uses energy only on its body.
-        let hauler_body = Self::hauler_body(spawn_energy_capacity);
+        let mut hauler_body = Self::hauler_body(spawn_energy_capacity);
         let base_hauler_body_energy_usage = hauler_body.body_energy_usage();
 
         let roads_used = room_state.rcl >= SOURCE_AND_CONTROLLER_ROAD_RCL;
@@ -103,8 +105,25 @@ impl RoomEcoConfig {
         let mut total_hauling_throughput = 0f32;
 
         // Miner uses energy only on its body.
-        let miner_body = Self::miner_body(spawn_energy_capacity);
-        let miners_required_per_source = (single_source_energy_income / miner_body.energy_harvest_power() as f32).ceil() as u32;
+        // TODO Link mining.
+        let mut miner_body = Self::miner_body(spawn_energy_capacity, true);
+        // When the room is out of essential creeps needed to sustain spawning other creeps, it
+        // cannot just spawn any creep of any size.
+        // Note that there is no need to prevent spawning of other creeps since they have smaller
+        // priority anyway.
+        // TODO Do something when all miners are low on TTL.
+        let small_miner_required = miner_stats.number_of_creeps == 0
+            && hauler_stats.number_of_creeps == 0
+            && spawn_energy < miner_body.energy_cost() + hauler_body.energy_cost();
+        if small_miner_required {
+            // TODO Link mining.
+            miner_body = Self::miner_body(0, true);
+        }
+        let miners_required_per_source = if small_miner_required {
+            1
+        } else {
+            (single_source_energy_income / miner_body.energy_harvest_power() as f32).ceil() as u32
+        };
         let miners_required = miners_required_per_source * number_of_sources;
         let total_miner_body_energy_usage = miners_required as f32 * miner_body.body_energy_usage() * body_cost_multiplier;
         let total_mining_energy_usage = total_miner_body_energy_usage;
@@ -171,21 +190,51 @@ impl RoomEcoConfig {
         let storage_hauling_throughput = 0f32;
         energy_balance -= storage_energy_usage;
 
+        // When the room is out of essential creeps needed to sustain spawning other creeps, it
+        // cannot just spawn any creep of any size.
+        let small_hauler_required = hauler_stats.number_of_creeps == 0
+            && spawn_energy < hauler_body.energy_cost();
+        if small_hauler_required {
+            hauler_body = Self::hauler_body(0);
+        }
+        // When there are no miners, do not spawn any new haulers.
+        // TODO Unless there is energy to spare in the storage.
+        let no_haulers_required = miner_stats.number_of_creeps == 0 && spawn_energy < miner_body.energy_cost();
         // Computing the fraction of a hauler that remains unused. Also, adding some extra fraction
         // for safety buffer.
         let haulers_required_exact = total_hauling_throughput / hauler_throughput;
         let extra_haulers_exact = 0.5;
-        let haulers_required = (haulers_required_exact + extra_haulers_exact).ceil() as u32;
+        let haulers_required = if no_haulers_required {
+            0
+        } else if small_hauler_required {
+            1
+        } else {
+            (haulers_required_exact + extra_haulers_exact).ceil() as u32
+        };
         let extra_haulers = haulers_required as f32 - haulers_required_exact;
         let hauling_extra_energy_usage = extra_haulers * base_hauler_body_energy_usage * body_cost_multiplier;
         let extra_haulers_hauling_throughput = hauling_extra_energy_usage * avg_source_spawn_dist;
 
+        if let Some(eco_stats) = room_state.eco_stats.as_ref() {
+            info!("Current creeps:");
+            for &role in eco_stats.creep_stats_by_role.keys() {
+                let role_stats = eco_stats.creep_stats(role);
+                info!(
+                    "* {}: {} creeps, {} with prespawned, max TTL {}, {} with prespawned",
+                    role,
+                    role_stats.number_of_active_creeps,
+                    role_stats.number_of_creeps,
+                    role_stats.max_active_creep_ttl,
+                    role_stats.max_creep_ttl
+                );
+            }
+        }
         info!("Energy income: {:.2}E/t", energy_income);
-        info!("Energy usage allocation and hauling throughput required (incl. hauling costs):");
-        info!("* Mining:    {:.2}E/t (on {} creeps), {:.2}R/t", total_mining_energy_usage, miners_required, mining_hauling_throughput);
-        info!("* Building:  {:.2}E/t ({:.2}E/t on {} creeps), {:.2}R/t", total_building_energy_usage, building_creep_energy_usage, builders_required, building_hauling_throughput);
-        info!("* Upgrading: {:.2}E/t ({:.2}E/t on {} creeps), {:.2}R/t", total_upgrading_energy_usage, upgrading_creep_energy_usage, upgraders_required, upgrading_hauling_throughput);
-        info!("* Hauling:   {:.2}E/t (on avg. {:.2} idle creeps), {:.2}R/t", hauling_extra_energy_usage, extra_haulers, extra_haulers_hauling_throughput);
+        info!("Energy usage allocation, hauling throughput required (incl. hauling costs) and body:");
+        info!("* Mining:    {:.2}E/t (on {} creeps), {:.2}R/t, {}", total_mining_energy_usage, miners_required, mining_hauling_throughput, miner_body);
+        info!("* Building:  {:.2}E/t ({:.2}E/t on {} creeps), {:.2}R/t, {}", total_building_energy_usage, building_creep_energy_usage, builders_required, building_hauling_throughput, builder_body);
+        info!("* Upgrading: {:.2}E/t ({:.2}E/t on {} creeps), {:.2}R/t, {}", total_upgrading_energy_usage, upgrading_creep_energy_usage, upgraders_required, upgrading_hauling_throughput, upgrader_body);
+        info!("* Hauling:   {:.2}E/t (on avg. {:.2} idle creeps), {:.2}R/t, {}", hauling_extra_energy_usage, extra_haulers, extra_haulers_hauling_throughput, hauler_body);
         info!("* Storage:   {:.2}E/t (on haulers), {:.2}R/t", storage_energy_usage, storage_hauling_throughput);
         info!("Haulers: {}", haulers_required);
         info!("Construction sites: {} (total {}E needed)", room_state.construction_site_queue.len(), total_construction_site_energy_needed);
@@ -201,12 +250,14 @@ impl RoomEcoConfig {
             upgrader_body,
             builders_required,
             builder_body,
-            cold_boot: false,
         }
     }
 
     pub fn hauler_body(spawn_energy: u32) -> CreepBody {
-        let parts = if spawn_energy >= 550 {
+        let parts = if spawn_energy == 0 {
+            // Smallest possible hauler.
+            vec![Carry, Move]
+        } else if spawn_energy >= 550 {
             repeat([Carry, Move]).take(5).flatten().collect::<Vec<_>>()
         } else {
             vec![Carry, Move, Carry, Move, Carry, Move]
@@ -215,11 +266,21 @@ impl RoomEcoConfig {
         CreepBody::new(parts)
     }
 
-    pub fn miner_body(spawn_energy: u32) -> CreepBody {
-        let parts = if spawn_energy >= 550 {
-            vec![Work, Work, Work, Work, Work, Move]
+    pub fn miner_body(spawn_energy: u32, drop_mining: bool) -> CreepBody {
+        let parts = if spawn_energy == 0 {
+            if drop_mining {
+                // Smallest possible drop miner.
+                vec![Move, Work]
+            } else {
+                // Smallest possible link miner.
+                vec![Move, Carry, Work]
+            }
+        } else if spawn_energy >= 550 && drop_mining {
+            vec![Work, Work, Work, Work, Move, Work]
+        } else if drop_mining {
+            vec![Move, Work, Move, Work]
         } else {
-            vec![Work, Work, Move, Move]
+            vec![Work, Move, Carry, Work]
         };
 
         CreepBody::new(parts)

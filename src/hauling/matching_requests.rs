@@ -37,8 +37,13 @@ impl Drop for MatchingRequests {
 
 /// Finds one or more withdraw requests and one or more store requests for given room (responsible
 /// for providing the hauler) that are the current best option for a hauler with given position and
-/// capacity to fulfull.
-pub fn find_matching_requests(room_name: RoomName, creep_pos: Position, creep_capacity: u32) -> Option<MatchingRequests> {
+/// capacity to fulfill.
+pub fn find_matching_requests(
+    room_name: RoomName,
+    creep_pos: Position,
+    creep_capacity: u32,
+    carried_energy: u32
+) -> Option<MatchingRequests> {
     // TODO Do not pick up small amounts if it is under capacity and expected to increase later
     //      unless really needed.
     with_haul_requests(room_name, |schedule| {

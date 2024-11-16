@@ -5,6 +5,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::StructureType::{Extension, Spawn};
 use screeps::{find, game, HasId, HasPosition, Mineral, ObjectId, OwnedStructureProperties, Position, ResourceType, RoomName, Source, StructureController};
 use screeps::ResourceType::Energy;
+use crate::economy::room_eco_stats::RoomEcoStats;
 use crate::errors::XiError;
 use crate::room_states::room_state::{ControllerData, MineralData, RoomDesignation, RoomResources, RoomState, SourceData, StructureData};
 
@@ -149,7 +150,14 @@ pub fn update_room_state_from_scan(room_name: RoomName, force_update: bool, stat
             spawn_energy: room.energy_available(),
             spawn_energy_capacity: room.energy_capacity_available(),
             storage_energy: room.storage().map_or(0, |storage| storage.store().get(Energy).unwrap_or(0)),
+        };
+        
+        if state.eco_stats.is_none() {
+            state.eco_stats = Some(RoomEcoStats::default());
         }
+    } else {
+        state.eco_stats.take();
+        state.eco_config.take();
     }
     
     Ok(())

@@ -1,9 +1,9 @@
-use crate::creeps::creep::CreepRole;
+use crate::creeps::creep_role::CreepRole;
 use crate::hauling::issuing_requests::schedule_pickup;
 use crate::kernel::sleep::sleep;
 use crate::priorities::MINER_SPAWN_PRIORITY;
 use crate::room_states::room_states::with_room_state;
-use crate::creeps::creep::CreepBody;
+use crate::creeps::creep_body::CreepBody;
 use crate::travel::{travel, TravelSpec};
 use crate::u;
 use crate::utils::result_utils::ResultUtils;

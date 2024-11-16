@@ -1,10 +1,10 @@
-use crate::creeps::creep::{Creep, CreepRole};
+use crate::creeps::creep::Creep;
 use crate::fresh_number::fresh_number_if_some;
 use crate::geometry::room_xy::RoomXYUtils;
 use crate::kernel::sleep::sleep;
 use crate::spawning::reserved_creep::{MaybeReservedCreep, ReservedCreep};
 use crate::u;
-use creep::CreepBody;
+use creep_body::CreepBody;
 use log::{info, warn};
 use regex::Regex;
 use rustc_hash::FxHashMap;
@@ -12,9 +12,12 @@ use screeps::{game, RoomName, RoomXY};
 use std::cell::RefCell;
 use std::ops::DerefMut;
 use std::rc::Rc;
+use creep_role::CreepRole;
 
 pub mod creep;
 pub mod actions;
+pub mod creep_body;
+pub mod creep_role;
 
 pub type CreepRef = Rc<RefCell<Creep>>;
 

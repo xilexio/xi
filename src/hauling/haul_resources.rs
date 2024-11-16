@@ -1,4 +1,4 @@
-use crate::creeps::creep::{CreepBody, CreepRole};
+use crate::creeps::creep_role::CreepRole;
 use crate::creeps::CreepRef;
 use crate::errors::XiError;
 use crate::utils::game_tick::game_tick;
@@ -12,12 +12,15 @@ use log::debug;
 use screeps::StructureType::Storage;
 use screeps::{Position, ResourceType, RoomName};
 use crate::creeps::actions::{pickup_when_able, transfer_when_able, withdraw_when_able};
+use crate::creeps::creep_body::CreepBody;
 use crate::hauling::matching_requests::{find_matching_requests, MatchingRequests};
 use crate::hauling::store_anywhere_or_drop::store_anywhere_or_drop;
 use crate::kernel::wait_until_some::wait_until_some;
 use crate::spawning::spawn_pool::{SpawnPool, SpawnPoolOptions};
 use crate::spawning::spawn_schedule::{PreferredSpawn, SpawnRequest};
 use crate::utils::result_utils::ResultUtils;
+
+const DEBUG: bool = true;
 
 /// Execute hauling of resources of haulers assigned to given room.
 /// Withdraw and store requests are registered in the system and the system assigns them to fre
@@ -72,11 +75,21 @@ pub async fn haul_resources(room_name: RoomName) {
                     "{} searching for withdraw/pickup and store requests.",
                     creep_ref.borrow().name
                 );
+                let store = u!(creep_ref.borrow_mut().store());
+                let carried_energy = store.get_used_capacity(Some(ResourceType::Energy));
+                if DEBUG {
+                    let store = u!(creep_ref.borrow_mut().store());
+                    debug!("Current store:");
+                    for resource_type in store.store_types() {
+                        debug!("* {}: {}", resource_type, store.get_used_capacity(Some(resource_type)));
+                    }
+                }
 
                 let maybe_matching_requests = find_matching_requests(
                     room_name,
                     u!(creep_ref.borrow_mut().pos()),
-                    carry_capacity
+                    carry_capacity,
+                    carried_energy
                 );
 
                 if let Some(matching_requests) = maybe_matching_requests {

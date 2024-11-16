@@ -10,9 +10,12 @@ use std::cell::RefCell;
 use std::cmp::max;
 use std::future::Future;
 use std::rc::Rc;
+use crate::economy::room_eco_stats::RoomCreepStats;
+use crate::room_states::room_states::with_room_state;
 use crate::spawning::reserved_creep::ReservedCreep;
 use crate::spawning::scheduling_creeps::{cancel_scheduled_creep, schedule_creep};
 use crate::spawning::spawn_schedule::{SpawnPromise, SpawnRequest};
+use crate::utils::uid::UId;
 
 #[derive(Debug, Clone)]
 pub struct SpawnPoolOptions {
@@ -49,7 +52,10 @@ impl SpawnPoolOptions {
 /// constantly spawned and prespawned in a room, executing given future using `with_spawned_creeps`.
 #[derive(Debug)]
 pub struct SpawnPool {
+    id: UId,
     room_name: RoomName,
+    /// The template spawn request used to spawn creeps. Only the tick is changed in the actual
+    /// request. Everything but the role may be modified.
     pub base_spawn_request: SpawnRequest,
     pub travel_spec: Option<TravelSpec>,
     pub target_number_of_creeps: u32,
@@ -91,6 +97,14 @@ impl Drop for SpawnPool {
                 kill(current_process, ());
             }
         }
+
+        with_room_state(self.room_name, |room_state| {
+            if let Some(room_eco_stats) = room_state.eco_stats.as_mut() {
+                if let Some(role_stats) = room_eco_stats.creep_stats_by_role.get_mut(&self.base_spawn_request.role) {
+                    role_stats.remove(&self.id);
+                }
+            }
+        });
     }
 }
 
@@ -101,6 +115,7 @@ impl SpawnPool {
         options: SpawnPoolOptions
     ) -> Self {
         Self {
+            id: UId::new(),
             room_name,
             base_spawn_request,
             travel_spec: options.travel_spec,
@@ -229,6 +244,35 @@ impl SpawnPool {
             element.respawn || element.prespawned_creep.is_some() || element.current_creep_and_process.is_some()
         });
         a!(respawning_creeps_and_processes >= self.target_number_of_creeps as usize);
+        
+        with_room_state(self.room_name, |room_state| {
+            if let Some(room_eco_stats) = room_state.eco_stats.as_mut() {
+                room_eco_stats
+                    .creep_stats_by_role
+                    .entry(self.base_spawn_request.role)
+                    .or_default()
+                    .insert(self.id, self.stats());
+            }
+        });
+    }
+    
+    pub fn stats(&self) -> RoomCreepStats {
+        let mut stats = RoomCreepStats::default();
+        
+        for element in self.current_creeps_and_processes.iter() {
+            if let Some((current_creep, _)) = element.current_creep_and_process.as_ref() {
+                stats.number_of_active_creeps += 1;
+                stats.max_active_creep_ttl = max(stats.max_active_creep_ttl, current_creep.borrow_mut().ticks_to_live());
+            }
+            if let Some(MaybeSpawned::Spawned(creep_ref)) = element.prespawned_creep.as_ref() {
+                stats.number_of_creeps += 1;
+                stats.max_creep_ttl = max(stats.max_creep_ttl, creep_ref.borrow_mut().ticks_to_live());
+            }
+        }
+        stats.number_of_creeps += stats.number_of_active_creeps;
+        stats.max_creep_ttl = max(stats.max_active_creep_ttl, stats.max_creep_ttl);
+        
+        stats
     }
 }
 

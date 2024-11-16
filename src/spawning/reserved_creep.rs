@@ -2,9 +2,10 @@ use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
 use log::trace;
 use rustc_hash::FxHashSet;
-use crate::creeps::creep::{Creep, CreepRole};
+use crate::creeps::creep::Creep;
 use crate::creeps::CreepRef;
 use crate::a;
+use crate::creeps::creep_role::CreepRole;
 
 thread_local! {
     static RESERVED_CREEPS: RefCell<FxHashSet<(CreepRole, u32)>> = RefCell::new(FxHashSet::default());
