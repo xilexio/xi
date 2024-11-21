@@ -16,7 +16,7 @@ use crate::hauling::requests::HaulRequestKind::PickupRequest;
 use crate::hauling::requests::RequestAmountChange::Increase;
 use crate::hauling::scheduling_hauls::schedule_haul;
 use crate::kernel::wait_until_some::wait_until_some;
-use crate::room_states::utils::loop_until_structures_change;
+use crate::room_states::utils::run_future_until_structures_change;
 use crate::spawning::spawn_pool::{SpawnPool, SpawnPoolOptions};
 use crate::spawning::spawn_schedule::{PreferredSpawn, SpawnRequest};
 use crate::utils::priority::Priority;
@@ -26,7 +26,7 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
     loop {
         // Computing a schema for spawn request that will later have its tick intervals modified.
         // Also computing travel time for prespawning.
-        let (mut base_spawn_request, source_data, work_pos) = u!(with_room_state(room_name, |room_state| {
+        let (base_spawn_request, source_data, work_pos) = u!(with_room_state(room_name, |room_state| {
             let source_data = room_state.sources[source_ix];
 
             let work_xy = u!(source_data.work_xy);
@@ -69,95 +69,98 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
             range: 0,
         };
 
-        let (miners_required_per_source, miner_body) = wait_until_some(|| with_room_state(room_name, |room_state| {
-            room_state
-                .eco_config
-                .as_ref()
-                .map(|config| {
-                    (config.miners_required_per_source, config.miner_body.clone())
-                })
-        }).flatten()).await;
         let spawn_pool_options = SpawnPoolOptions::default()
-            .travel_spec(Some(travel_spec.clone()))
-            .target_number_of_creeps(miners_required_per_source);
-        base_spawn_request.body = miner_body;
+            .travel_spec(Some(travel_spec.clone()));
         let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, spawn_pool_options);
 
-        loop_until_structures_change(room_name, 1, || {
-            // TODO Body should depend on max extension fill and also on current resources. Later, also on statistics
-            //      about energy income, but this applies mostly before the storage is online.
-            // Keeping a miner spawned and mining with it.
-            spawn_pool.with_spawned_creeps(|creep_ref| {
-                let travel_spec = travel_spec.clone();
-                async move {
-                    // TODO The problem is that we want to await travel, then await digging, etc., not check everything
-                    //      each tick.
-                    // TODO Make it so that this async will run as long as the creep exists and be killed when it does not.
+        run_future_until_structures_change(room_name, async move {
+            loop {
+                let (miners_required_per_source, miner_body) = wait_until_some(|| with_room_state(room_name, |room_state| {
+                    room_state
+                        .eco_config
+                        .as_ref()
+                        .map(|config| {
+                            (config.miners_required_per_source, config.miner_body.clone())
+                        })
+                }).flatten()).await;
+                spawn_pool.target_number_of_creeps = miners_required_per_source;
+                spawn_pool.base_spawn_request.body = miner_body;
 
-                    let miner = creep_ref.as_ref();
-                    let ticks_to_live = creep_ref.borrow_mut().ticks_to_live();
-                    let energy_per_tick = creep_ref.borrow_mut().energy_harvest_power();
-                    
-                    // Moving towards the location.
-                    if let Err(err) = travel(&creep_ref, travel_spec.clone()).await {
-                        warn!("Miner could not reach its destination: {err}");
-                        // Trying next tick (if the creep didn't die).
-                        sleep(1).await;
-                    }
+                // TODO Body should depend on max extension fill and also on current resources. Later, also on statistics
+                //      about energy income, but this applies mostly before the storage is online.
+                // Keeping a miner spawned and mining with it.
+                spawn_pool.with_spawned_creeps(|creep_ref| {
+                    let travel_spec = travel_spec.clone();
+                    async move {
+                        // TODO The problem is that we want to await travel, then await digging, etc., not check everything
+                        //      each tick.
+                        // TODO Make it so that this async will run as long as the creep exists and be killed when it does not.
 
-                    let mut pickup_request = None;
+                        let miner = creep_ref.as_ref();
+                        let ticks_to_live = creep_ref.borrow_mut().ticks_to_live();
+                        let energy_per_tick = creep_ref.borrow_mut().energy_harvest_power();
 
-                    // Mining. We do not have to check that the miner exists, since it is done in with_spawned_creep.
-                    loop {
-                        let source = u!(get_object_by_id_typed(&source_data.id));
-                        if source.energy() > 0 {
-                            creep_ref.borrow_mut()
-                                .harvest(&source)
-                                .warn_if_err("Failed to mine the source");
+                        // Moving towards the location.
+                        if let Err(err) = travel(&creep_ref, travel_spec.clone()).await {
+                            warn!("Miner could not reach its destination: {err}");
+                            // Trying next tick (if the creep didn't die).
                             sleep(1).await;
-                        } else if creep_ref.borrow_mut().ticks_to_live() < source.ticks_to_regeneration().unwrap_or(FAR_FUTURE) {
-                            // If the miner does not exist by the time source regenerates, kill it.
-                            debug!("Miner {} has insufficient ticks to live. Killing it.", miner.borrow().name);
-                            creep_ref.borrow_mut().suicide().warn_if_err("Failed to kill the miner.");
-                            // TODO Store the energy first.
-                            break;
-                        } else {
-                            // The source is exhausted for now, so sleeping until it is regenerated.
-                            sleep(source.ticks_to_regeneration().unwrap_or(1)).await;
                         }
 
-                        // Transporting the energy in a way depending on room plan.
-                        if let Some(link_id) = source_data.link_id {
-                            // TODO
-                            // Storing the energy into the link and sending it if the next batch would not fit.
-                        } else if let Some(container_id) = source_data.container_id {
-                            // TODO
-                            // Ordering a hauler to get energy from the container.
-                        } else {
-                            // Drop mining.
-                            if let Some(dropped_energy) = u!(work_pos.look_for(ENERGY)).first() {
-                                let amount = dropped_energy.amount();
-                                let mut new_pickup_request = HaulRequest::new(
-                                    PickupRequest,
-                                    room_name,
-                                    ResourceType::Energy,
-                                    dropped_energy.id(),
-                                    work_pos
-                                );
-                                new_pickup_request.amount = amount;
-                                new_pickup_request.amount_change = Increase;
-                                new_pickup_request.decay = decay_per_tick(amount);
-                                new_pickup_request.priority = Priority(100);
-                                
-                                // Ordering a hauler to get dropped energy, updating the existing request.
-                                pickup_request = Some(schedule_haul(new_pickup_request, pickup_request.take()));
+                        let mut pickup_request = None;
+
+                        // Mining. We do not have to check that the miner exists, since it is done in with_spawned_creep.
+                        loop {
+                            let source = u!(get_object_by_id_typed(&source_data.id));
+                            if source.energy() > 0 {
+                                creep_ref.borrow_mut()
+                                    .harvest(&source)
+                                    .warn_if_err("Failed to mine the source");
+                                sleep(1).await;
+                            } else if creep_ref.borrow_mut().ticks_to_live() < source.ticks_to_regeneration().unwrap_or(FAR_FUTURE) {
+                                // If the miner does not exist by the time source regenerates, kill it.
+                                debug!("Miner {} has insufficient ticks to live. Killing it.", miner.borrow().name);
+                                creep_ref.borrow_mut().suicide().warn_if_err("Failed to kill the miner.");
+                                // TODO Store the energy first.
+                                break;
+                            } else {
+                                // The source is exhausted for now, so sleeping until it is regenerated.
+                                sleep(source.ticks_to_regeneration().unwrap_or(1)).await;
+                            }
+
+                            // Transporting the energy in a way depending on room plan.
+                            if let Some(link_id) = source_data.link_id {
+                                // TODO
+                                // Storing the energy into the link and sending it if the next batch would not fit.
+                            } else if let Some(container_id) = source_data.container_id {
+                                // TODO
+                                // Ordering a hauler to get energy from the container.
+                            } else {
+                                // Drop mining.
+                                if let Some(dropped_energy) = u!(work_pos.look_for(ENERGY)).first() {
+                                    let amount = dropped_energy.amount();
+                                    let mut new_pickup_request = HaulRequest::new(
+                                        PickupRequest,
+                                        room_name,
+                                        ResourceType::Energy,
+                                        dropped_energy.id(),
+                                        work_pos
+                                    );
+                                    new_pickup_request.amount = amount;
+                                    new_pickup_request.amount_change = Increase;
+                                    new_pickup_request.decay = decay_per_tick(amount);
+                                    new_pickup_request.priority = Priority(100);
+
+                                    // Ordering a hauler to get dropped energy, updating the existing request.
+                                    pickup_request = Some(schedule_haul(new_pickup_request, pickup_request.take()));
+                                }
                             }
                         }
                     }
-                }
-            });
-            
-            true
+                });
+                
+                sleep(1).await;
+            }
         }).await;
     }
 }

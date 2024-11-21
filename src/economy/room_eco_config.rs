@@ -45,7 +45,7 @@ impl RoomEcoConfig {
         let miner_stats = u!(room_state.eco_stats.as_ref()).creep_stats(Miner);
         let hauler_stats = u!(room_state.eco_stats.as_ref()).creep_stats(Hauler);
 
-        let spawn_energy = room_state.resources.spawn_energy_capacity;
+        let spawn_energy = room_state.resources.spawn_energy;
         let spawn_energy_capacity = room_state.resources.spawn_energy_capacity;
 
         let number_of_sources = room_state.sources.len() as u32;
@@ -229,6 +229,7 @@ impl RoomEcoConfig {
                 );
             }
         }
+        info!("Spawn energy: {}/{}", spawn_energy, spawn_energy_capacity);
         info!("Energy income: {:.2}E/t", energy_income);
         info!("Energy usage allocation, hauling throughput required (incl. hauling costs) and body:");
         info!("* Mining:    {:.2}E/t (on {} creeps), {:.2}R/t, {}", total_mining_energy_usage, miners_required, mining_hauling_throughput, miner_body);
