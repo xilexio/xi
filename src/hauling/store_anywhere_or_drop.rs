@@ -7,7 +7,11 @@ pub async fn store_anywhere_or_drop(creep_ref: &CreepRef) -> Result<(), XiError>
     let creep_store = creep_ref.borrow_mut().store()?;
 
     for resource_type in creep_store.store_types() {
-        drop_when_able(creep_ref, resource_type, None).await?;
+        drop_when_able(
+            creep_ref,
+            resource_type,
+            creep_store.get_used_capacity(Some(resource_type))
+        ).await?;
     }
 
     Ok(())

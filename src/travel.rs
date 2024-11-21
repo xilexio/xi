@@ -45,7 +45,7 @@ impl Display for TravelSpec {
 
 pub fn travel(creep_ref: &CreepRef, travel_spec: TravelSpec) -> Broadcast<Result<Position, XiError>> {
     let mut creep = creep_ref.borrow_mut();
-    trace!("Creep {} travelling to {}", creep.name, travel_spec);
+    trace!("Creep {} travelling to {}.", creep.name, travel_spec);
     creep.travel_state.spec = Some(travel_spec);
     if let Some(creep_pos) = creep_arrival_pos(&mut creep) {
         creep.travel_state.arrived = true;

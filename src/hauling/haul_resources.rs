@@ -13,7 +13,8 @@ use screeps::StructureType::Storage;
 use screeps::{Position, ResourceType, RoomName};
 use crate::creeps::actions::{pickup_when_able, transfer_when_able, withdraw_when_able};
 use crate::creeps::creep_body::CreepBody;
-use crate::hauling::matching_requests::{find_matching_requests, MatchingRequests};
+use crate::hauling::requests::HaulRequestKind::PickupRequest;
+use crate::hauling::reserving_requests::{find_matching_requests, ReservedRequests};
 use crate::hauling::store_anywhere_or_drop::store_anywhere_or_drop;
 use crate::kernel::wait_until_some::wait_until_some;
 use crate::spawning::spawn_pool::{SpawnPool, SpawnPoolOptions};
@@ -63,6 +64,26 @@ pub async fn haul_resources(room_name: RoomName) {
         }).flatten()).await;
         spawn_pool.target_number_of_creeps = haulers_required;
         spawn_pool.base_spawn_request.body = hauler_body;
+        
+        /* TODO This should not be needed. For now, let it break.
+        with_haul_requests(room_name, |haul_requests| {
+            haul_requests.withdraw_requests.retain(|_, request| {
+                if request.borrow().kind != PickupRequest {
+                    // TODO Not checking every single withdraw request as change in structures can
+                    //      handle the rest.
+                    true
+                } else if erased_object_by_id(request.borrow().target).is_err() {
+                    // Setting the request to not require any more resources.
+                    // This combined with removing it from the map is exactly what cancelling
+                    // request does.
+                    request.borrow_mut().amount = 0;
+                    false
+                } else {
+                    true
+                }
+            });
+        });
+        */
 
         // TODO Measuring number of idle creeps and trying to minimize their number while
         //      fulfilling all requests. To this end, keeping track of fulfillment of requests,
@@ -109,65 +130,72 @@ pub async fn haul_resources(room_name: RoomName) {
     }
 }
 
-async fn fulfill_requests(creep_ref: &CreepRef, mut matching_requests: MatchingRequests) -> Result<(), XiError> {
+async fn fulfill_requests(creep_ref: &CreepRef, mut reserved_requests: ReservedRequests) -> Result<(), XiError> {
     // TODO This only works for singleton withdraw and store requests.
-    if let Some((request_id, withdraw_request)) = matching_requests.withdraw_requests.pop() {
+    if let Some(mut withdraw_request) = reserved_requests.withdraw_requests.pop() {
         let withdraw_travel_spec = TravelSpec {
-            target: u!(withdraw_request.pos),
+            target: withdraw_request.request.borrow().pos,
             range: 1,
         };
 
         let result: Result<(), XiError> = async {
             // Creep may die on the way.
             travel(creep_ref, withdraw_travel_spec).await?;
+            let target = withdraw_request.request.borrow().target;
+            let resource_type = withdraw_request.request.borrow().resource_type;
 
-            if withdraw_request.pickupable {
+            if withdraw_request.request.borrow().kind == PickupRequest {
                 debug!(
                     "{} picking up {} {} from {}.",
-                    creep_ref.borrow().name, withdraw_request.amount, withdraw_request.resource_type, withdraw_request.target
+                    creep_ref.borrow().name, withdraw_request.amount, resource_type, target
                 );
-                pickup_when_able(creep_ref, withdraw_request.target).await?;
-                matching_requests.withdraw_requests.pop();
+                pickup_when_able(creep_ref, target).await?;
             } else {
                 debug!(
                     "{} transferring {} {} from {}.",
-                    creep_ref.borrow().name, withdraw_request.amount, withdraw_request.resource_type, withdraw_request.target
+                    creep_ref.borrow().name, withdraw_request.amount, resource_type, target
                 );
-                withdraw_when_able(creep_ref, withdraw_request.target, withdraw_request.resource_type, Some(withdraw_request.amount)).await?;
-                matching_requests.withdraw_requests.pop();
+                withdraw_when_able(creep_ref, target, resource_type, withdraw_request.amount).await?;
             }
+            
+            withdraw_request.complete();
             
             Ok(())
         }.await;
 
         if result.is_err() {
             result.warn_if_err("Error while fulfilling a withdraw request");
-            matching_requests.withdraw_requests.push((request_id, withdraw_request));
+            reserved_requests.withdraw_requests.push(withdraw_request);
             return result;
         }
     }
 
-    if let Some((request_id, store_request)) = matching_requests.store_requests.pop() {
+    if let Some(mut store_request) = reserved_requests.store_requests.pop() {
         let store_travel_spec = TravelSpec {
-            target: u!(store_request.pos),
+            target: store_request.request.borrow().pos,
             range: 1,
         };
 
         let result = async {
             // Creep may die on the way.
             travel(creep_ref, store_travel_spec).await?;
+            let target = store_request.request.borrow().target;
+            let resource_type = store_request.request.borrow().resource_type;
+
             debug!(
                 "{} storing {} {} in {}.",
-                creep_ref.borrow().name, store_request.amount, store_request.resource_type, store_request.target
+                creep_ref.borrow().name, store_request.amount, resource_type, target
             );
-            transfer_when_able(creep_ref, store_request.target, ResourceType::Energy, None).await?;
-            matching_requests.store_requests.pop();
+            transfer_when_able(creep_ref, target, resource_type, store_request.amount).await?;
+            
+            store_request.complete();
+            
             Ok(())
         }.await;
         
         if result.is_err() {
             result.warn_if_err("Error while fulfilling a store request");
-            matching_requests.store_requests.push((request_id, store_request));
+            reserved_requests.store_requests.push(store_request);
         }
         
         match result {

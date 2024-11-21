@@ -7,11 +7,11 @@ use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::task::{Context, Poll, Wake, Waker};
-use crate::kernel::cid::CId;
+use crate::kernel::condition::CId;
 use crate::utils::priority::Priority;
 use crate::utils::uid::UId;
 
-pub type PId = UId;
+pub type PId = UId<'P'>;
 
 /// Metadata of the process and resources reserved by it.
 #[derive(Debug)]
@@ -29,9 +29,9 @@ pub struct ProcessMeta {
 impl Display for ProcessMeta {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if let Some(parent_pid) = self.parent_pid {
-            write!(f, "P{}-{} ({}/P{})", self.pid, self.name, self.priority, parent_pid)
+            write!(f, "{}-{} ({}/{})", self.pid, self.name, self.priority, parent_pid)
         } else {
-            write!(f, "P{}-{} ({})", self.pid, self.name, self.priority)
+            write!(f, "{}-{} ({})", self.pid, self.name, self.priority)
         }
     }
 }

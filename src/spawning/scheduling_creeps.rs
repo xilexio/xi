@@ -13,7 +13,7 @@ pub fn schedule_creep(room_name: RoomName, request: SpawnRequest) -> Result<Spaw
         let current_tick = game_tick();
         let preferred_spawn_start_tick = request.tick.0;
 
-        if preferred_spawn_start_tick < current_tick {
+        if request.tick.1 < current_tick {
             return Err(SpawnRequestTickInThePast);
         }
         

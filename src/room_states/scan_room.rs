@@ -1,6 +1,6 @@
-use log::{debug, trace};
+use log::debug;
 use crate::room_states::room_states::map_and_replace_room_state;
-use crate::{local_trace, u};
+use crate::{local_debug, u};
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::StructureType::{Extension, Spawn};
 use screeps::{find, game, HasId, HasPosition, Mineral, ObjectId, OwnedStructureProperties, Position, ResourceType, RoomName, Source, StructureController};
@@ -18,7 +18,7 @@ pub fn scan_room(room_name: RoomName, force_update: bool) -> Result<(), XiError>
 }
 
 pub fn update_room_state_from_scan(room_name: RoomName, force_update: bool, state: &mut RoomState) -> Result<(), XiError> {
-    local_trace!("Scanning room {} with force_update={}.", room_name, force_update);
+    local_debug!("Scanning room {} with force_update={}.", room_name, force_update);
     let room = match game::rooms().get(room_name) {
         Some(room) => room,
         None => Err(XiError::RoomVisibilityError)?,
@@ -49,7 +49,7 @@ pub fn update_room_state_from_scan(room_name: RoomName, force_update: bool, stat
             link_xy,
         });
     };
-    local_trace!("Room designation: {:?}", state.designation);
+    local_debug!("Room designation: {:?}", state.designation);
     state.sources = Vec::new();
     for source in room.find(find::SOURCES, None) {
         let id: ObjectId<Source> = source.id();

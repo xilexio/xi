@@ -1,11 +1,10 @@
 use crate::utils::game_tick::game_tick;
 use crate::kernel::kernel::move_current_process_to_sleeping;
 use derive_more::Constructor;
-use log::trace;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use crate::local_trace;
+use crate::local_debug;
 
 const DEBUG: bool = false;
 
@@ -19,14 +18,14 @@ impl Future for Sleep {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         if game_tick() >= self.wake_up_tick {
-            local_trace!(
+            local_debug!(
                 "Sleep ready because game_time {} >= {} wake_up_tick.",
                 game_tick(),
                 self.wake_up_tick
             );
             Poll::Ready(())
         } else {
-            local_trace!(
+            local_debug!(
                 "Sleep pending because game_time {} < {} wake_up_tick.",
                 game_tick(),
                 self.wake_up_tick

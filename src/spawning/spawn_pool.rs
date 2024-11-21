@@ -48,11 +48,13 @@ impl SpawnPoolOptions {
     }
 }
 
+pub type WId = UId<'W'>;
+
 /// A pool of dynamically configurable number of creeps with dynamically configurable body being
 /// constantly spawned and prespawned in a room, executing given future using `with_spawned_creeps`.
 #[derive(Debug)]
 pub struct SpawnPool {
-    id: UId,
+    id: WId,
     room_name: RoomName,
     /// The template spawn request used to spawn creeps. Only the tick is changed in the actual
     /// request. Everything but the role may be modified.
@@ -115,7 +117,7 @@ impl SpawnPool {
         options: SpawnPoolOptions
     ) -> Self {
         Self {
-            id: UId::new(),
+            id: WId::new(),
             room_name,
             base_spawn_request,
             travel_spec: options.travel_spec,
@@ -480,19 +482,24 @@ impl SpawnPoolElement {
                     .unwrap_or(0);
 
                 let min_preferred_tick = creep_death_tick - creep_travel_ticks;
-                let max_preferred_tick = min_preferred_tick + base_spawn_request.tick.1
-                    - base_spawn_request.tick.0;
+                // TODO Implement the margin properly even if creep_travel_ticks exceeeds base tick
+                //      range.
+                let max_preferred_tick = max(
+                    game_tick() + 100,
+                    min_preferred_tick + base_spawn_request.tick.1 - base_spawn_request.tick.0
+                );
                 spawn_request.tick = (min_preferred_tick, max_preferred_tick);
             } else {
                 // The case with spawning as fast as possible.
                 let min_preferred_tick = game_tick();
+                // TODO Implement the margin properly.
                 let max_preferred_tick = min_preferred_tick + 200;
                 spawn_request.tick = (min_preferred_tick, max_preferred_tick);
             }
 
             // Scheduling the creep.
             let spawn_promise = u!(schedule_creep(room_name, spawn_request.clone()));
-            // TODO Some other process may reserve this creep using find_idle_creeps immediately, need to prevent that.
+            // TODO Some other process may reserve this creep using find_idle_creep immediately after spawn, need to prevent that.
             self.prespawned_creep = Some(MaybeSpawned::Spawning(spawn_request, spawn_promise));
             debug!(
                 "Scheduled a prespawn of {} creep from the spawn pool.",

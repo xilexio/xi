@@ -5,7 +5,9 @@ use std::future::Future;
 use std::pin::Pin;
 use std::rc::Rc;
 use std::task::{Context, Poll};
-use crate::kernel::cid::CId;
+use crate::utils::uid::UId;
+
+pub type CId = UId<'C'>;
 
 /// A generic condition to wait on. Can be awaited until `condition.signal(value)` is called.
 #[derive(Debug, Clone)]

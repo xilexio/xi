@@ -1,3 +1,4 @@
+/// Generic priority. Higher is more important.
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(transparent)]
 pub struct Priority(pub u8);
@@ -30,6 +31,6 @@ impl std::ops::Add<u8> for Priority {
 
 impl std::fmt::Display for Priority {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
+        write!(f, "!{}", self.0)
     }
 }

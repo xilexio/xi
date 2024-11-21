@@ -1,11 +1,10 @@
 use crate::utils::game_tick::game_tick;
-use crate::kernel::cid::CId;
 use crate::kernel::process::{PId, Process, WrappedProcessMeta};
 use crate::kernel::process_handle::ProcessHandle;
 use crate::kernel::runnable::Runnable;
 use crate::utils::cold::cold;
 use crate::utils::multi_map_utils::{MultiMapUtils, OrderedMultiMapUtils};
-use crate::{a, local_trace, u};
+use crate::{a, local_debug, u};
 use log::{error, trace};
 use parking_lot::lock_api::MappedMutexGuard;
 use parking_lot::{Mutex, MutexGuard, RawMutex};
@@ -14,8 +13,8 @@ use screeps::game;
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::task::Poll;
+use crate::kernel::condition::CId;
 use crate::utils::priority::Priority;
-use crate::utils::uid::UId;
 
 const DEBUG: bool = false;
 
@@ -67,7 +66,7 @@ where
 {
     let mut kern = kernel();
 
-    let pid = UId::new();
+    let pid = PId::new();
     let parent_pid = kern.current_process_meta.as_ref().map(|meta| meta.borrow().pid);
     let process = Process::new(name.into(), pid, parent_pid, priority, future);
 
@@ -85,7 +84,7 @@ where
 /// Kills the process. Can be mildly expensive under some circumstances.
 /// Only a process that has not finished or returned yet may be killed.
 pub fn kill<T>(process_handle: ProcessHandle<T>, result: T) {
-    local_trace!("Killing P{}.", process_handle.pid);
+    local_debug!("Killing {}.", process_handle.pid);
 
     process_handle.result.replace(Some(result));
 
@@ -100,7 +99,7 @@ pub fn kill<T>(process_handle: ProcessHandle<T>, result: T) {
 /// or its children themselves.
 // TODO Processes whose parents are already finished but given process is an ancestors will not be killed.
 pub fn kill_tree<T>(process_handle: ProcessHandle<T>, result: T) {
-    local_trace!("Killing tree of P{}.", process_handle.pid);
+    local_debug!("Killing tree of {}.", process_handle.pid);
 
     let mut killed_pids = FxHashSet::default();
     let mut awaiting_pids = FxHashSet::default();
@@ -126,7 +125,7 @@ pub fn kill_tree<T>(process_handle: ProcessHandle<T>, result: T) {
     }
 
     for pid in killed_pids {
-        local_trace!("Killing P{}.", pid);
+        local_debug!("Killing {}.", pid);
         awaiting_pids.remove(&pid);
         kill_without_result_or_cleanup(pid);
     }
@@ -143,11 +142,11 @@ fn kill_without_result_or_cleanup(pid: PId) {
     let mut kern = kernel();
     // None indicates the process has finished already.
     if let Some(removed_meta) = kern.meta_by_pid.remove(&pid) {
-        local_trace!("Removing meta of process P{}.", pid);
+        local_debug!("Removing meta of process {}.", pid);
         let meta = removed_meta.borrow();
         let process = if let Some(wake_up_tick) = meta.wake_up_tick {
             drop(meta);
-            local_trace!("Process P{} was awaiting tick {}.", pid, wake_up_tick);
+            local_debug!("Process {} was awaiting tick {}.", pid, wake_up_tick);
             let vec_with_process = u!(kern.sleeping_processes.get_mut(&wake_up_tick));
             let process = u!(vec_with_process
                 .extract_if(|process| process.borrow_meta().pid == pid).next()
@@ -158,7 +157,7 @@ fn kill_without_result_or_cleanup(pid: PId) {
             process
         } else if let Some(awaited_pid) = meta.awaited_pid {
             drop(meta);
-            local_trace!("Process P{} was awaiting P{}.", pid, awaited_pid);
+            local_debug!("Process {} was awaiting {}.", pid, awaited_pid);
             let vec_with_process = u!(kern.awaiting_processes.get_mut(&awaited_pid));
             let process = u!(vec_with_process
                 .extract_if(|process| process.borrow_meta().pid == pid).next()
@@ -169,7 +168,7 @@ fn kill_without_result_or_cleanup(pid: PId) {
             process
         } else if let Some(awaited_cid) = meta.awaited_cid {
             drop(meta);
-            local_trace!("Process P{} was awaiting condition C{}.", pid, awaited_cid);
+            local_debug!("Process {} was awaiting condition {}.", pid, awaited_cid);
             let vec_with_process = u!(kern.condition_processes.get_mut(&awaited_cid));
             let process = u!(vec_with_process
                 .extract_if(|process| process.borrow_meta().pid == pid).next()
@@ -181,7 +180,7 @@ fn kill_without_result_or_cleanup(pid: PId) {
         } else {
             let priority = meta.priority;
             drop(meta);
-            local_trace!("Process P{} was not awaiting anything.", pid);
+            local_debug!("Process {} was not awaiting anything.", pid);
             // Fail on unwrap means that the process was neither awaiting anything nor active,
             // which should never happen.
             let vec_with_process = u!(kern.active_processes_by_priorities.get_mut(&priority));
@@ -196,7 +195,7 @@ fn kill_without_result_or_cleanup(pid: PId) {
 
         trace!("Killed {}.", process);
     } else {
-        local_trace!("Meta of process P{} was already removed.", pid);
+        local_debug!("Meta of process {} was already removed.", pid);
     }
 }
 
@@ -221,15 +220,15 @@ pub fn run_processes() {
 
                 if let Some(awaited_process_pid) = meta.awaited_pid {
                     drop(meta);
-                    local_trace!("{} waiting for P{}.", process, awaited_process_pid);
+                    local_debug!("{} waiting for {}.", process, awaited_process_pid);
                     kern.awaiting_processes.push_or_insert(awaited_process_pid, process);
                 } else if let Some(wake_up_tick) = meta.wake_up_tick {
                     drop(meta);
-                    local_trace!("{} sleeping until {}.", process, wake_up_tick);
+                    local_debug!("{} sleeping until {}.", process, wake_up_tick);
                     kern.sleeping_processes.push_or_insert(wake_up_tick, process);
                 } else if let Some(awaited_cid) = meta.awaited_cid {
                     drop(meta);
-                    local_trace!("{} waiting for {}.", process, awaited_cid);
+                    local_debug!("{} waiting for {}.", process, awaited_cid);
                     kern.condition_processes.push_or_insert(awaited_cid, process);
                 } else {
                     error!("{} is pending but not waiting for anything.", process)

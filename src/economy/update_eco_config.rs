@@ -12,6 +12,6 @@ pub async fn update_eco_config(room_name: RoomName) {
             room_state.eco_config = Some(RoomEcoConfig::new(room_state));
         });
 
-        sleep(20).await;
+        sleep(5).await;
     }
 }

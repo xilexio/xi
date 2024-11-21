@@ -1,5 +1,4 @@
 use crate::creeps::creep_role::CreepRole;
-use crate::hauling::issuing_requests::schedule_pickup;
 use crate::kernel::sleep::sleep;
 use crate::priorities::MINER_SPAWN_PRIORITY;
 use crate::room_states::room_states::with_room_state;
@@ -12,8 +11,10 @@ use screeps::game::get_object_by_id_typed;
 use screeps::look::ENERGY;
 use screeps::{HasId, Position, ResourceType, RoomName};
 use crate::consts::FAR_FUTURE;
-use crate::hauling::issuing_requests::RequestAmountChange::Increase;
-use crate::hauling::issuing_requests::WithdrawRequest;
+use crate::hauling::requests::HaulRequest;
+use crate::hauling::requests::HaulRequestKind::PickupRequest;
+use crate::hauling::requests::RequestAmountChange::Increase;
+use crate::hauling::scheduling_hauls::schedule_haul;
 use crate::kernel::wait_until_some::wait_until_some;
 use crate::room_states::utils::loop_until_structures_change;
 use crate::spawning::spawn_pool::{SpawnPool, SpawnPoolOptions};
@@ -104,7 +105,7 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                         sleep(1).await;
                     }
 
-                    let mut pickup_id = None;
+                    let mut pickup_request = None;
 
                     // Mining. We do not have to check that the miner exists, since it is done in with_spawned_creep.
                     loop {
@@ -136,21 +137,20 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                             // Drop mining.
                             if let Some(dropped_energy) = u!(work_pos.look_for(ENERGY)).first() {
                                 let amount = dropped_energy.amount();
-                                let withdraw_request = WithdrawRequest {
+                                let mut new_pickup_request = HaulRequest::new(
+                                    PickupRequest,
                                     room_name,
-                                    target: dropped_energy.id(),
-                                    pos: Some(work_pos),
-                                    resource_type: ResourceType::Energy,
-                                    amount,
-                                    amount_change: Increase,
-                                    decay: decay_per_tick(amount),
-                                    // amount_per_tick: energy_per_tick,
-                                    // max_amount: min(1000, source.energy() + dropped_energy.amount()),
-                                    priority: Priority(100),
-                                    // preferred_tick: (0, 0),
-                                };
+                                    ResourceType::Energy,
+                                    dropped_energy.id(),
+                                    work_pos
+                                );
+                                new_pickup_request.amount = amount;
+                                new_pickup_request.amount_change = Increase;
+                                new_pickup_request.decay = decay_per_tick(amount);
+                                new_pickup_request.priority = Priority(100);
+                                
                                 // Ordering a hauler to get dropped energy, updating the existing request.
-                                pickup_id = Some(schedule_pickup(withdraw_request, pickup_id.take()));
+                                pickup_request = Some(schedule_haul(new_pickup_request, pickup_request.take()));
                             }
                         }
                     }

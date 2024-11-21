@@ -17,6 +17,8 @@ use screeps::{
 use std::collections::Bound;
 use crate::spawning::spawn_schedule::{with_spawn_schedule, PreferredSpawn, SpawnEvent};
 
+const DEBUG: bool = true;
+
 /// Issue the intents to spawn creeps in given room according to the schedule.
 /// Handle the case with insufficient resources and other events preventing spawning.
 pub fn spawn_room_creeps(room_name: RoomName) {
@@ -42,6 +44,21 @@ pub fn spawn_room_creeps(room_name: RoomName) {
             .iter()
             .filter_map(|(&spawn_id, value)| value.is_none().then_some(spawn_id))
             .collect::<FxHashSet<_>>();
+        
+        if DEBUG {
+            debug!(
+                "Room {} has {} idle spawns and {} current spawn events. Current spawns:",
+                room_name, idle_spawns.len(), room_spawn_schedule.current_spawns.len()
+            );
+            for current_spawn in room_spawn_schedule.current_spawns.values() {
+                debug!(
+                    "* {}, {}, {}",
+                    current_spawn.request.role,
+                    current_spawn.request.body,
+                    current_spawn.request.priority
+                );
+            }
+        }
 
         if !idle_spawns.is_empty() {
             // Iterate over the current spawns in priority (and ID) order, where the highest number

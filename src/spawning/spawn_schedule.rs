@@ -31,10 +31,10 @@ where
 #[derive(Default)]
 pub(crate) struct RoomSpawnSchedule {
     /// Future spawns ordered by preferred tick.
-    pub future_spawns: BTreeMap<u32, FxHashMap<UId, SpawnEvent>>,
+    pub future_spawns: BTreeMap<u32, FxHashMap<SId, SpawnEvent>>,
     /// Current spawns ordered by priority. Usually empty unless there are insufficient resources
     /// to spawn a creep.
-    pub current_spawns: BTreeMap<(Priority, UId), SpawnEvent>,
+    pub current_spawns: BTreeMap<(Priority, SId), SpawnEvent>,
     /// Spawn events for creeps currently being spawned.
     pub spawns_in_progress: FxHashMap<ObjectId<StructureSpawn>, Option<SpawnEvent>>,
 }
@@ -47,11 +47,13 @@ pub(crate) struct SpawnEvent {
     pub spawn_duration: u32,
 }
 
+pub type SId = UId<'S'>;
+
 /// A promise to spawn a creep. It can be used to check the progress, whether the spawning was
 /// cancelled or to get the creep after it was spawned.
 #[derive(Debug)]
 pub struct SpawnPromise {
-    pub id: UId,
+    pub id: SId,
     pub spawn_id: Option<ObjectId<StructureSpawn>>,
     pub spawn_end_tick: Option<u32>,
     pub cancelled: bool,
@@ -61,7 +63,7 @@ pub struct SpawnPromise {
 impl SpawnPromise {
     pub fn new() -> Self {
         Self {
-            id: UId::new(),
+            id: SId::new(),
             spawn_id: None,
             spawn_end_tick: None,
             cancelled: false,

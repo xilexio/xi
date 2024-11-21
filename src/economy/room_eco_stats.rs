@@ -1,14 +1,14 @@
 use std::cmp::max;
 use rustc_hash::FxHashMap;
 use crate::creeps::creep_role::CreepRole;
-use crate::utils::uid::UId;
+use crate::spawning::spawn_pool::WId;
 
 /// A structure gathering energy, transportation throughput and other statistics to decide on
 /// the distribution of resources in the room, e.g., on the number of haulers, upgraders, etc.
 #[derive(Debug, Default)]
 pub struct RoomEcoStats {
     /// Statistics for creeps in the room, separately for each creep role and spawn pool.
-    pub creep_stats_by_role: FxHashMap<CreepRole, FxHashMap<UId, RoomCreepStats>>,
+    pub creep_stats_by_role: FxHashMap<CreepRole, FxHashMap<WId, RoomCreepStats>>,
 }
 
 #[derive(Debug, Default)]

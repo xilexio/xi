@@ -3,9 +3,9 @@ use screeps::{Position, ResourceType, RoomName};
 use screeps::game::get_object_by_id_typed;
 use crate::creeps::creep_role::CreepRole;
 use crate::creeps::creep_body::CreepBody;
-use crate::hauling::issuing_requests::RequestAmountChange::NoChange;
-use crate::hauling::issuing_requests::StoreRequest;
-use crate::hauling::issuing_requests::schedule_store;
+use crate::hauling::requests::HaulRequest;
+use crate::hauling::requests::HaulRequestKind::StoreRequest;
+use crate::hauling::scheduling_hauls::schedule_haul;
 use crate::kernel::sleep::sleep;
 use crate::kernel::wait_until_some::wait_until_some;
 use crate::priorities::UPGRADER_SPAWN_PRIORITY;
@@ -82,7 +82,7 @@ pub async fn upgrade_controller(room_name: RoomName) {
                     sleep(1).await;
                 }
 
-                let mut store_request_id = None;
+                let mut store_request = None;
 
                 loop {
                     // This can only fail if the creep died, but then this process would be killed.
@@ -94,22 +94,22 @@ pub async fn upgrade_controller(room_name: RoomName) {
                             .warn_if_err("Failed to upgrade the controller");
 
                         // TODO Handle cancellation by drop (when creep dies).
-                        store_request_id = None;
-                    } else if store_request_id.is_none() {
+                        store_request = None;
+                    } else if store_request.is_none() {
                         // TODO Request the energy in advance.
                         // TODO Use a container.
                         // TODO Use link.
-                        let store_request = StoreRequest {
+                        let mut new_store_request = HaulRequest::new(
+                            StoreRequest,
                             room_name,
-                            target: creep_id,
-                            resource_type: ResourceType::Energy,
-                            pos: Some(work_pos),
-                            amount: capacity,
-                            amount_change: NoChange,
-                            priority: Priority(40),
-                        };
+                            ResourceType::Energy,
+                            creep_id,
+                            work_pos
+                        );
+                        new_store_request.amount = capacity;
+                        new_store_request.priority = Priority(40);
                         
-                        store_request_id = Some(schedule_store(store_request, None));
+                        store_request = Some(schedule_haul(new_store_request, store_request.take()));
                     }
 
                     sleep(1).await;

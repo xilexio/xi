@@ -123,6 +123,7 @@ pub fn register_creep(role: CreepRole) -> CreepRef {
 }
 
 /// Finds a creep free to be assigned to any task.
+/// Any alive creep can be returned, even a currently spawning one.
 pub fn find_idle_creep(
     room_name: RoomName,
     role: CreepRole,
