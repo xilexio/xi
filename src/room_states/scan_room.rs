@@ -5,8 +5,10 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::StructureType::{Extension, Spawn};
 use screeps::{find, game, HasId, HasPosition, Mineral, ObjectId, OwnedStructureProperties, Position, ResourceType, RoomName, Source, StructureController};
 use screeps::ResourceType::Energy;
+use screeps::Terrain::Wall;
 use crate::economy::room_eco_stats::RoomEcoStats;
 use crate::errors::XiError;
+use crate::geometry::room_xy::RoomXYUtils;
 use crate::room_states::room_state::{ControllerData, MineralData, RoomDesignation, RoomResources, RoomState, SourceData, StructureData};
 
 const DEBUG: bool = true;
@@ -50,22 +52,27 @@ pub fn update_room_state_from_scan(room_name: RoomName, force_update: bool, stat
         });
     };
     local_debug!("Room designation: {:?}", state.designation);
+    // TODO Only needed the first time.
+    state.terrain = u!(game::map::get_room_terrain(room_name)).into();
     state.sources = Vec::new();
     for source in room.find(find::SOURCES, None) {
         let id: ObjectId<Source> = source.id();
         let xy = source.pos().xy();
-        let mut work_xy = None;
-        if state.designation == RoomDesignation::Owned {
-            work_xy = state
+        let work_xy = (state.designation == RoomDesignation::Owned).then(|| {
+            state
                 .plan
                 .as_ref()
-                .map(|plan| u!(plan.sources.iter().find(|source_data| source_data.source_xy == xy)).work_xy);
-        }
+                .map(|plan| u!(plan.sources.iter().find(|source_data| source_data.source_xy == xy)).work_xy)
+        }).flatten();
+        let drop_mining_xys = (state.designation == RoomDesignation::Owned).then(|| {
+            xy.around().filter(|&xy| state.terrain.get(xy) != Wall).collect()
+        }).unwrap_or_default();
         // TODO container_id, link_xy, link_id
         state.sources.push(SourceData {
             id,
             xy,
             work_xy,
+            drop_mining_xys,
             container_id: None,
             link_xy: None,
             link_id: None,
@@ -81,8 +88,6 @@ pub fn update_room_state_from_scan(room_name: RoomName, force_update: bool, stat
             mineral_type,
         });
     }
-    // TODO Only needed the first time.
-    state.terrain = u!(game::map::get_room_terrain(room_name)).into();
     let mut structures = FxHashMap::default();
     let mut structures_changed = force_update;
     for structure in room.find(find::STRUCTURES, None) {

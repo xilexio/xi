@@ -84,11 +84,14 @@ pub struct ControllerData {
     pub link_xy: Option<RoomXY>,
 }
 
-#[derive(Deserialize, Serialize, Copy, Clone, Debug, Constructor)]
+#[derive(Deserialize, Serialize, Clone, Debug, Constructor)]
 pub struct SourceData {
     pub id: ObjectId<Source>,
     pub xy: RoomXY,
+    /// The main work position that is next to a link or over a container.
     pub work_xy: Option<RoomXY>,
+    /// The work positions available when drop mining.
+    pub drop_mining_xys: Vec<RoomXY>,
     pub container_id: Option<ObjectId<StructureContainer>>,
     pub link_xy: Option<RoomXY>,
     pub link_id: Option<ObjectId<StructureLink>>,

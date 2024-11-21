@@ -24,10 +24,10 @@ use crate::utils::resource_decay::decay_per_tick;
 
 pub async fn mine_source(room_name: RoomName, source_ix: usize) {
     loop {
-        // Computing a schema for spawn request that will later have its tick intervals modified.
+        // Computing a template for spawn request that will later have its tick intervals modified.
         // Also computing travel time for prespawning.
         let (base_spawn_request, source_data, work_pos) = u!(with_room_state(room_name, |room_state| {
-            let source_data = room_state.sources[source_ix];
+            let source_data = room_state.sources[source_ix].clone();
 
             let work_xy = u!(source_data.work_xy);
             let work_pos = Position::new(work_xy.x, work_xy.y, room_name);
@@ -86,19 +86,11 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                 spawn_pool.target_number_of_creeps = miners_required_per_source;
                 spawn_pool.base_spawn_request.body = miner_body;
 
-                // TODO Body should depend on max extension fill and also on current resources. Later, also on statistics
-                //      about energy income, but this applies mostly before the storage is online.
-                // Keeping a miner spawned and mining with it.
+                // Keeping a miner or multiple miners spawned and mining.
                 spawn_pool.with_spawned_creeps(|creep_ref| {
                     let travel_spec = travel_spec.clone();
                     async move {
-                        // TODO The problem is that we want to await travel, then await digging, etc., not check everything
-                        //      each tick.
-                        // TODO Make it so that this async will run as long as the creep exists and be killed when it does not.
-
                         let miner = creep_ref.as_ref();
-                        let ticks_to_live = creep_ref.borrow_mut().ticks_to_live();
-                        let energy_per_tick = creep_ref.borrow_mut().energy_harvest_power();
 
                         // Moving towards the location.
                         if let Err(err) = travel(&creep_ref, travel_spec.clone()).await {
