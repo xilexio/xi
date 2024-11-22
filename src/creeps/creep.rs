@@ -29,7 +29,7 @@ use crate::creeps::creep_role::CreepRole;
 use crate::errors::XiError;
 use crate::errors::XiError::*;
 use crate::hauling::transfers::register_transfer;
-use crate::utils::api_wrappers::erased_object_by_id;
+use crate::utils::get_object_by_id::erased_object_by_id;
 use crate::utils::cold::cold;
 use crate::utils::game_tick::game_tick;
 use crate::utils::single_tick_cache::SingleTickCache;

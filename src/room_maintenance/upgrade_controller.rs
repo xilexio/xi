@@ -1,8 +1,9 @@
 use log::warn;
-use screeps::{Position, ResourceType, RoomName};
+use screeps::{ResourceType, RoomName};
 use screeps::game::get_object_by_id_typed;
 use crate::creeps::creep_role::CreepRole;
 use crate::creeps::creep_body::CreepBody;
+use crate::geometry::room_xy::RoomXYUtils;
 use crate::hauling::requests::HaulRequest;
 use crate::hauling::requests::HaulRequestKind::StoreRequest;
 use crate::hauling::scheduling_hauls::schedule_haul;
@@ -30,7 +31,7 @@ pub async fn upgrade_controller(room_name: RoomName) {
                 id: spawn_data.id,
                 directions: Vec::new(),
                 extra_cost: 0,
-                pos: Position::new(spawn_data.xy.x, spawn_data.xy.y, room_name)
+                pos: spawn_data.xy.to_pos(room_name),
             })
             .collect::<Vec<_>>();
 
@@ -42,7 +43,7 @@ pub async fn upgrade_controller(room_name: RoomName) {
             tick: (0, 0),
         };
 
-        (base_spawn_request, controller_data.id, Position::new(work_xy.x, work_xy.y, room_name))
+        (base_spawn_request, controller_data.id, work_xy.to_pos(room_name))
     }));
 
     // Travel spec for the upgrader. Will not change unless structures change.

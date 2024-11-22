@@ -1992,8 +1992,8 @@ mod tests {
     fn test_generate_some_plan() {
         let mut room_state = RoomState::new(RoomName::new("W3N3").unwrap());
         room_state.sources = vec![
-            SourceData::new(ObjectId::from_packed(1010), (10, 10).try_into().unwrap(), None, None, None, None),
-            SourceData::new(ObjectId::from_packed(3030), (30, 30).try_into().unwrap(), None, None, None, None),
+            SourceData::new(ObjectId::from_packed(1010), (10, 10).try_into().unwrap(), None, Vec::new(), None, None, None),
+            SourceData::new(ObjectId::from_packed(3030), (30, 30).try_into().unwrap(), None, Vec::new(), None, None, None),
         ];
         room_state.mineral = Some(MineralData::new(
             ObjectId::from_packed(1030),

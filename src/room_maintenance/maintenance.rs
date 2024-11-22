@@ -1,6 +1,6 @@
 use crate::kernel::sleep::sleep;
 use crate::kernel::kernel::{current_priority, kill_tree, schedule};
-use crate::room_maintenance::mining::mine_source;
+use crate::room_maintenance::mine_source::mine_source;
 use crate::priorities::SPAWNING_CREEPS_PRIORITY;
 use crate::room_states::room_states::with_room_state;
 use log::{debug, info};

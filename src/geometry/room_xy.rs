@@ -2,7 +2,15 @@ use crate::geometry::direction::OFFSET_BY_DIRECTION;
 use crate::geometry::rect::{ball, Rect};
 use crate::geometry::room_coordinate::RoomCoordinateUtils;
 use enum_iterator::all;
-use screeps::{Direction, OutOfBoundsError, RoomCoordinate, RoomXY, ROOM_SIZE};
+use screeps::{
+    Direction,
+    OutOfBoundsError,
+    Position,
+    RoomCoordinate,
+    RoomName,
+    RoomXY,
+    ROOM_SIZE
+};
 use std::cmp::{max, min};
 
 pub trait RoomXYUtils
@@ -26,6 +34,8 @@ where
     fn direction_to(self, target: Self) -> Option<Direction>;
 
     fn dist(self, other: Self) -> u8;
+
+    fn to_pos(self, room_name: RoomName) -> Position;
 }
 
 impl RoomXYUtils for RoomXY {
@@ -144,6 +154,10 @@ impl RoomXYUtils for RoomXY {
             (self.x.u8() as i8 - other.x.u8() as i8).abs(),
             (self.y.u8() as i8 - other.y.u8() as i8).abs(),
         ) as u8
+    }
+
+    fn to_pos(self, room_name: RoomName) -> Position {
+        Position::new(self.x, self.y, room_name)
     }
 }
 

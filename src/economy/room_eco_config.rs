@@ -7,6 +7,7 @@ use screeps::StructureType::{Spawn, Storage};
 use serde::{Deserialize, Serialize};
 use crate::creeps::creep_body::CreepBody;
 use crate::creeps::creep_role::CreepRole::{Hauler, Miner};
+use crate::geometry::room_xy::RoomXYUtils;
 use crate::room_planning::room_planner::SOURCE_AND_CONTROLLER_ROAD_RCL;
 use crate::room_states::room_state::RoomState;
 use crate::u;
@@ -61,7 +62,7 @@ impl RoomEcoConfig {
 
         let hauler_throughput = hauler_body.hauling_throughput(roads_used) / 2.0;
 
-        let controller_work_pos = room_state.xy_to_pos(u!(u!(room_state.controller).work_xy));
+        let controller_work_pos = u!(u!(room_state.controller).work_xy).to_pos(room_state.room_name);
 
         let mut body_cost_multiplier = 1f32;
         // Average distance from storage or sources to the controller work_xy.
@@ -80,7 +81,7 @@ impl RoomEcoConfig {
                     .sources
                     .iter()
                     .map(|source_data| {
-                        let source_work_pos = room_state.xy_to_pos(u!(source_data.work_xy));
+                        let source_work_pos = u!(source_data.work_xy).to_pos(room_state.room_name);
                         source_work_pos.get_range_to(spawn_pos) as f32
                     })
                     .sum::<f32>();
@@ -94,7 +95,7 @@ impl RoomEcoConfig {
                 .sources
                 .iter()
                 .map(|source_data| {
-                    let source_work_pos = room_state.xy_to_pos(u!(source_data.work_xy));
+                    let source_work_pos = u!(source_data.work_xy).to_pos(room_state.room_name);
                     source_work_pos.get_range_to(controller_work_pos)
                 })
                 .sum::<u32>();

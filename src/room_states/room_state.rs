@@ -9,6 +9,7 @@ use js_sys::{Object, Reflect};
 use crate::creeps::CreepRef;
 use crate::economy::room_eco_config::RoomEcoConfig;
 use crate::economy::room_eco_stats::RoomEcoStats;
+use crate::geometry::room_xy::RoomXYUtils;
 use crate::kernel::broadcast::Broadcast;
 use crate::room_planning::plan::Plan;
 use crate::room_planning::room_planner::RoomPlanner;
@@ -88,7 +89,7 @@ pub struct ControllerData {
 pub struct SourceData {
     pub id: ObjectId<Source>,
     pub xy: RoomXY,
-    /// The main work position that is next to a link or over a container.
+    /// The main work position that is next to a link and over a container.
     pub work_xy: Option<RoomXY>,
     /// The work positions available when drop mining.
     pub drop_mining_xys: Vec<RoomXY>,
@@ -192,11 +193,7 @@ impl RoomState {
     /// If there is more than one, an arbitrary one is chosen.
     pub fn structure_pos(&self, structure_type: StructureType) -> Option<Position> {
         self.structure_xy(structure_type)
-            .map(|xy| Position::new(xy.x, xy.y, self.room_name))
-    }
-
-    pub fn xy_to_pos(&self, xy: RoomXY) -> Position {
-        Position::new(xy.x, xy.y, self.room_name)
+            .map(|xy| xy.to_pos(self.room_name))
     }
 }
 

@@ -5,7 +5,7 @@ use crate::creeps::CreepRef;
 use crate::errors::XiError;
 use crate::utils::game_tick::game_tick;
 use crate::kernel::sleep::sleep;
-use crate::utils::api_wrappers::erased_object_by_id;
+use crate::utils::get_object_by_id::erased_object_by_id;
 
 // This module contains creep actions combined with waiting if not possible in the same tick.
 

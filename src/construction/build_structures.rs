@@ -1,8 +1,9 @@
 use log::{trace, warn};
-use screeps::{Position, ResourceType, RoomName, CREEP_RANGED_ACTION_RANGE};
+use screeps::{ResourceType, RoomName, CREEP_RANGED_ACTION_RANGE};
 use screeps::game::get_object_by_id_typed;
 use crate::creeps::creep_role::CreepRole;
 use crate::creeps::creep_body::CreepBody;
+use crate::geometry::room_xy::RoomXYUtils;
 use crate::hauling::requests::HaulRequest;
 use crate::hauling::requests::HaulRequestKind::StoreRequest;
 use crate::hauling::scheduling_hauls::schedule_haul;
@@ -27,7 +28,7 @@ pub async fn build_structures(room_name: RoomName) {
                 id: spawn_data.id,
                 directions: Vec::new(),
                 extra_cost: 0,
-                pos: Position::new(spawn_data.xy.x, spawn_data.xy.y, room_name)
+                pos: spawn_data.xy.to_pos(room_name),
             })
             .collect::<Vec<_>>();
 
@@ -103,7 +104,7 @@ pub async fn build_structures(room_name: RoomName) {
 
                     // Travelling to the construction site.
                     let travel_spec = TravelSpec {
-                        target: Position::new(cs_data.xy.x, cs_data.xy.y, room_name),
+                        target: cs_data.xy.to_pos(room_name),
                         range: CREEP_RANGED_ACTION_RANGE,
                     };
 

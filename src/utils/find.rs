@@ -1,9 +1,10 @@
 use screeps::look::STRUCTURES;
-use screeps::{Position, RoomName, RoomXY, StructureObject, StructureType};
+use screeps::{RoomName, RoomXY, StructureObject, StructureType};
+use crate::geometry::room_xy::RoomXYUtils;
 use crate::u;
 
 pub fn get_structure(room_name: RoomName, xy: RoomXY, structure_type: StructureType) -> Option<StructureObject> {
-    let pos = Position::new(xy.x, xy.y, room_name);
+    let pos = xy.to_pos(room_name);
     let tile_structures = u!(pos.look_for(STRUCTURES));
     tile_structures
         .into_iter()

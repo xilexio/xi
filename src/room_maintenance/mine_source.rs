@@ -9,8 +9,9 @@ use crate::utils::result_utils::ResultUtils;
 use log::{debug, warn};
 use screeps::game::get_object_by_id_typed;
 use screeps::look::ENERGY;
-use screeps::{HasId, Position, ResourceType, RoomName};
+use screeps::{HasId, ResourceType, RoomName};
 use crate::consts::FAR_FUTURE;
+use crate::geometry::room_xy::RoomXYUtils;
 use crate::hauling::requests::HaulRequest;
 use crate::hauling::requests::HaulRequestKind::PickupRequest;
 use crate::hauling::requests::RequestAmountChange::Increase;
@@ -22,17 +23,23 @@ use crate::spawning::spawn_schedule::{PreferredSpawn, SpawnRequest};
 use crate::utils::priority::Priority;
 use crate::utils::resource_decay::decay_per_tick;
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum MiningKind {
+    DropMining,
+    ContainerMining,
+    LinkMining,
+}
+
 pub async fn mine_source(room_name: RoomName, source_ix: usize) {
     loop {
         // Computing a template for spawn request that will later have its tick intervals modified.
-        // Also computing travel time for prespawning.
-        let (base_spawn_request, source_data, work_pos) = u!(with_room_state(room_name, |room_state| {
+        // Also computing travel spec. The working location (and hence travel spec) depends on the
+        // kind of mining. Link and container mining are implemented only for single 5W+ creeps,
+        // one per source in which the miner is staying in the planned work_xy.
+        // Drop mining is implemented with dynamic travel for multiple creeps of any size to any
+        // field neighboring the source.
+        let (base_spawn_request, source_data) = u!(with_room_state(room_name, |room_state| {
             let source_data = room_state.sources[source_ix].clone();
-
-            let work_xy = u!(source_data.work_xy);
-            let work_pos = Position::new(work_xy.x, work_xy.y, room_name);
-            // TODO container id in source_data
-            // TODO link id in source_data (not necessarily xy)
 
             // TODO
             let preferred_spawns = room_state
@@ -42,13 +49,13 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                     id: spawn_data.id,
                     directions: Vec::new(),
                     extra_cost: 0,
-                    pos: Position::new(spawn_data.xy.x, spawn_data.xy.y, room_name)
+                    pos: spawn_data.xy.to_pos(room_name),
                 })
                 .collect::<Vec<_>>();
 
             // TODO
             let best_spawn_xy = u!(room_state.spawns.first()).xy;
-            let best_spawn_pos = Position::new(best_spawn_xy.x, best_spawn_xy.y, room_name);
+            let best_spawn_pos = best_spawn_xy.to_pos(room_name);
 
             // let travel_ticks = predicted_travel_ticks(best_spawn_pos, work_pos, 1, 0, &body);
 
@@ -60,13 +67,25 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                 tick: (0, 0),
             };
 
-            (base_spawn_request, source_data, work_pos)
+            (base_spawn_request, source_data)
         }));
-
+        
+        let mining_kind = match (source_data.link_id, source_data.container_id) {
+            (Some(_), None) => MiningKind::LinkMining,
+            (_, Some(_)) => MiningKind::ContainerMining,
+            (None, None) => MiningKind::DropMining,
+        };
+        
         // Travel spec for the miner. Will not change unless structures change.
-        let travel_spec = TravelSpec {
-            target: work_pos,
-            range: 0,
+        let travel_spec = match mining_kind {
+            MiningKind::DropMining => TravelSpec {
+                target: source_data.xy.to_pos(room_name),
+                range: 1,
+            },
+            _ => TravelSpec {
+                target: u!(source_data.work_xy).to_pos(room_name),
+                range: 0,
+            },
         };
 
         let spawn_pool_options = SpawnPoolOptions::default()
@@ -93,7 +112,7 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                         let miner = creep_ref.as_ref();
 
                         // Moving towards the location.
-                        if let Err(err) = travel(&creep_ref, travel_spec.clone()).await {
+                        while let Err(err) = travel(&creep_ref, travel_spec.clone()).await {
                             warn!("Miner could not reach its destination: {err}");
                             // Trying next tick (if the creep didn't die).
                             sleep(1).await;
@@ -101,7 +120,8 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
 
                         let mut pickup_request = None;
 
-                        // Mining. We do not have to check that the miner exists, since it is done in with_spawned_creep.
+                        // Mining. We do not have to check that the miner exists, since it is done
+                        // by the spawn pool.
                         loop {
                             let source = u!(get_object_by_id_typed(&source_data.id));
                             if source.energy() > 0 {
@@ -121,30 +141,36 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                             }
 
                             // Transporting the energy in a way depending on room plan.
-                            if let Some(link_id) = source_data.link_id {
-                                // TODO
-                                // Storing the energy into the link and sending it if the next batch would not fit.
-                            } else if let Some(container_id) = source_data.container_id {
-                                // TODO
-                                // Ordering a hauler to get energy from the container.
-                            } else {
-                                // Drop mining.
-                                if let Some(dropped_energy) = u!(work_pos.look_for(ENERGY)).first() {
-                                    let amount = dropped_energy.amount();
-                                    let mut new_pickup_request = HaulRequest::new(
-                                        PickupRequest,
-                                        room_name,
-                                        ResourceType::Energy,
-                                        dropped_energy.id(),
-                                        work_pos
-                                    );
-                                    new_pickup_request.amount = amount;
-                                    new_pickup_request.amount_change = Increase;
-                                    new_pickup_request.decay = decay_per_tick(amount);
-                                    new_pickup_request.priority = Priority(100);
-
-                                    // Ordering a hauler to get dropped energy, updating the existing request.
-                                    pickup_request = Some(schedule_haul(new_pickup_request, pickup_request.take()));
+                            match mining_kind {
+                                MiningKind::DropMining => {
+                                    let creep_pos = u!(creep_ref.borrow_mut().pos());
+                                    if let Some(dropped_energy) = u!(creep_pos.look_for(ENERGY)).first() {
+                                        let amount = dropped_energy.amount();
+                                        let mut new_pickup_request = HaulRequest::new(
+                                            PickupRequest,
+                                            room_name,
+                                            ResourceType::Energy,
+                                            dropped_energy.id(),
+                                            creep_pos
+                                        );
+                                        new_pickup_request.amount = amount;
+                                        new_pickup_request.amount_change = Increase;
+                                        new_pickup_request.decay = decay_per_tick(amount);
+                                        new_pickup_request.priority = Priority(100);
+    
+                                        // Ordering a hauler to get dropped energy, updating the existing request.
+                                        pickup_request = Some(schedule_haul(new_pickup_request, pickup_request.take()));
+                                    }
+                                }
+                                MiningKind::ContainerMining => {
+                                    let container_id = u!(source_data.container_id);
+                                    // TODO
+                                    // Ordering a hauler to get energy from the container.
+                                }
+                                MiningKind::LinkMining => {
+                                    let link_id = u!(source_data.link_id);
+                                    // TODO
+                                    // Storing the energy into the link and sending it if the next batch would not fit.
                                 }
                             }
                         }

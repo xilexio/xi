@@ -1,4 +1,6 @@
+#![allow(unknown_lints)]
 #![allow(incomplete_features)]
+#![allow(enum_variant_names)]
 #![feature(async_closure)]
 #![feature(btree_cursors)]
 #![feature(btree_extract_if)]

@@ -1,4 +1,4 @@
 pub mod maintenance;
 mod filling_spawns;
-mod mining;
+mod mine_source;
 mod upgrade_controller;
