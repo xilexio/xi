@@ -6,7 +6,7 @@ use crate::hauling::requests::{
     HaulRequestHandle,
     HaulRequestRef
 };
-use crate::hauling::requests::HaulRequestKind::StoreRequest;
+use crate::hauling::requests::HaulRequestKind::DepositRequest;
 use crate::local_debug;
 
 const DEBUG: bool = true;
@@ -26,8 +26,8 @@ pub fn schedule_haul(mut request: HaulRequest, mut replaced_haul_request_handle:
     
     let request_ref = with_haul_requests(request.room_name, |haul_requests| {
         let id = request.id();
-        let container = if request.kind == StoreRequest {
-            &mut haul_requests.store_requests
+        let container = if request.kind == DepositRequest {
+            &mut haul_requests.deposit_requests
         } else {
             &mut haul_requests.withdraw_requests
         };
@@ -71,8 +71,8 @@ pub(crate) fn cancel_haul_request(request: HaulRequestRef) {
     with_haul_requests(borrowed_request.room_name, |haul_requests| {
         // TODO Cancelling haul that is already in progress.
         match borrowed_request.kind {
-            StoreRequest => {
-                haul_requests.store_requests.remove(&borrowed_request.id());
+            DepositRequest => {
+                haul_requests.deposit_requests.remove(&borrowed_request.id());
             },
             _ => {
                 haul_requests.withdraw_requests.remove(&borrowed_request.id());

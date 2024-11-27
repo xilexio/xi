@@ -1,34 +1,20 @@
+use log::warn;
 use rustc_hash::FxHashMap;
-use crate::travel::TravelState;
+use crate::travel::travel_state::TravelState;
 use crate::{log_err, u};
-use screeps::{
-    game,
-    ConstructionSite,
-    HasPosition,
-    MaybeHasId,
-    MoveToOptions,
-    ObjectId,
-    PolyStyle,
-    Position,
-    RawObjectId,
-    Resource,
-    ResourceType,
-    SharedCreepProperties,
-    Source,
-    Store,
-    StructureController,
-    Transferable,
-    Withdrawable,
-    BUILD_POWER,
-    HARVEST_POWER,
-    UPGRADE_CONTROLLER_POWER,
-};
+use screeps::{game, ConstructionSite, Direction, HasId, HasPosition, MaybeHasId, MoveToOptions, ObjectId, PolyStyle, Position, RawObjectId, Resource, ResourceType, SharedCreepProperties, Source, StructureController, Transferable, Withdrawable, BUILD_POWER, HARVEST_POWER, UPGRADE_CONTROLLER_POWER};
 use screeps::Part::Work;
 use crate::creeps::creep_body::CreepBody;
 use crate::creeps::creep_role::CreepRole;
 use crate::errors::XiError;
 use crate::errors::XiError::*;
-use crate::hauling::transfers::register_transfer;
+use crate::hauling::transfers::{
+    get_free_capacity_with_object,
+    get_used_capacities_with_object,
+    get_used_capacity_with_object,
+    register_transfer,
+    TransferStage
+};
 use crate::utils::get_object_by_id::erased_object_by_id;
 use crate::utils::cold::cold;
 use crate::utils::game_tick::game_tick;
@@ -98,6 +84,10 @@ impl Creep {
         let options = MoveToOptions::default().visualize_path_style(PolyStyle::default());
         self.screeps_obj()?.move_to_with_options(pos, Some(options)).or(Err(CreepMoveToFailed))
     }
+    
+    pub fn move_direction(&mut self, direction: Direction) -> Result<(), XiError> {
+        self.screeps_obj()?.move_direction(direction).or(Err(CreepMoveToFailed))
+    }
 
     pub fn pos(&mut self) -> Result<Position, XiError> {
         Ok(self.screeps_obj()?.pos())
@@ -138,45 +128,76 @@ impl Creep {
         }
     }
 
-    pub fn withdraw<T>(&mut self, target_id: ObjectId<T>, target: &T, resource_type: ResourceType, amount: u32) -> Result<(), XiError>
+    pub fn withdraw<T>(&mut self, target_id: ObjectId<T>, target: &T, resource_type: ResourceType, amount: u32, limited_transfer: bool) -> Result<(), XiError>
     where
         T: Withdrawable,
     {
-        self.screeps_obj()?.withdraw(target, resource_type, Some(amount)).or(Err(CreepWithdrawFailed))?;
+        if let Err(e) = self.screeps_obj()?.withdraw(target, resource_type, limited_transfer.then_some(amount)) {
+            warn!(
+                "Creep {} withdraw of {} {} from {} failed: {:?}.",
+                self.name,
+                amount,
+                resource_type,
+                target_id,
+                e
+            );
+            return Err(CreepWithdrawFailed);
+        }
+        
         register_transfer(target_id.into(), resource_type, -(amount as i32));
         register_transfer(self.screeps_id()?.into(), resource_type, amount as i32);
         self.last_withdraw_tick = game_tick();
         Ok(())
     }
 
-    pub fn unchecked_withdraw(&mut self, target_id: RawObjectId, resource_type: ResourceType, amount: u32) -> Result<(), XiError> {
+    pub fn unchecked_withdraw(&mut self, target_id: RawObjectId, resource_type: ResourceType, amount: u32, limited_transfer: bool) -> Result<(), XiError> {
         let target = erased_object_by_id(target_id)?;
         let unchecked_target = UncheckedWithdrawable(&target);
-        self.withdraw(target_id.into(), &unchecked_target, resource_type, amount)
+        self.withdraw(target_id.into(), &unchecked_target, resource_type, amount, limited_transfer)
     }
 
     pub fn pickup(&mut self, target: &Resource) -> Result<(), XiError> {
         // TODO Register the change within this creep and the pile.
-        self.screeps_obj()?.pickup(target).or(Err(CreepPickupFailed))?;
+        if let Err(e) = self.screeps_obj()?.pickup(target) {
+            warn!(
+                "Creep {} pickup of {} failed: {:?}.",
+                self.name,
+                target.id(),
+                e
+            );
+            return Err(CreepPickupFailed);
+        }
+        
         self.last_pickup_tick = game_tick();
         Ok(())
     }
 
-    pub fn transfer<T>(&mut self, target_id: ObjectId<T>, target: &T, resource_type: ResourceType, amount: u32) -> Result<(), XiError>
+    pub fn transfer<T>(&mut self, target_id: ObjectId<T>, target: &T, resource_type: ResourceType, amount: u32, limited_transfer: bool) -> Result<(), XiError>
     where
         T: Transferable
     {
-        self.screeps_obj()?.transfer(target, resource_type, Some(amount)).or(Err(CreepTransferFailed))?;
+        if let Err(e) = self.screeps_obj()?.transfer(target, resource_type, limited_transfer.then_some(amount)) {
+            warn!(
+                "Creep {} transfer of {} {} to {} failed: {:?}.",
+                self.name,
+                amount,
+                resource_type,
+                target_id,
+                e
+            );
+            return Err(CreepTransferFailed);
+        }
+        
         register_transfer(target_id.into(), resource_type, amount as i32);
         register_transfer(self.screeps_id()?.into(), resource_type, -(amount as i32));
         self.last_transfer_tick = game_tick();
         Ok(())
     }
 
-    pub fn unchecked_transfer(&mut self, target_id: RawObjectId, resource_type: ResourceType, amount: u32) -> Result<(), XiError> {
+    pub fn unchecked_transfer(&mut self, target_id: RawObjectId, resource_type: ResourceType, amount: u32, limited_transfer: bool) -> Result<(), XiError> {
         let target = erased_object_by_id(target_id)?;
         let unchecked_target = UncheckedTransferable(&target);
-        self.transfer(target_id.into(), &unchecked_target, resource_type, amount)
+        self.transfer(target_id.into(), &unchecked_target, resource_type, amount, limited_transfer)
     }
 
     pub fn drop(&mut self, resource_type: ResourceType, amount: u32) -> Result<(), XiError> {
@@ -193,35 +214,28 @@ impl Creep {
         self.screeps_obj()?.build(construction_site).or(Err(CreepBuildFailed))
     }
 
-    pub fn store(&mut self) -> Result<Store, XiError> {
-        Ok(self.screeps_obj()?.store())
-    }
-    
     // Store wrappers
     
     pub fn carry_capacity(&mut self) -> Result<u32, XiError> {
         Ok(self.screeps_obj()?.store().get_capacity(None))
     }
     
-    pub fn used_capacity(&mut self, resource_type: Option<ResourceType>) -> Result<u32, XiError> {
-        let used = self.screeps_obj()?.store().get_used_capacity(resource_type);
-        // TODO
-        Ok(used as u32)
+    pub fn used_capacity(&mut self, resource_type: Option<ResourceType>, transfer_stage: TransferStage) -> Result<u32, XiError> {
+        let id = self.screeps_id()?;
+        let obj = self.screeps_obj()?;
+        Ok(get_used_capacity_with_object(obj, id, resource_type, transfer_stage))
     }
     
-    pub fn free_capacity(&mut self) -> Result<u32, XiError> {
-        // TODO
-        Ok(self.screeps_obj()?.store().get_free_capacity(None) as u32)
+    pub fn free_capacity(&mut self, transfer_stage: TransferStage) -> Result<u32, XiError> {
+        let id = self.screeps_id()?;
+        let obj = self.screeps_obj()?;
+        Ok(get_free_capacity_with_object(obj, id, None, transfer_stage))
     }
     
-    pub fn capacity_usage(&mut self) -> Result<FxHashMap<ResourceType, u32>, XiError> {
-        // TODO Transfers in progress.
-        let store = self.screeps_obj()?.store();
-        Ok(store
-            .store_types()
-            .into_iter()
-            .map(|resource_type| (resource_type, store.get_used_capacity(Some(resource_type))))
-            .collect())
+    pub fn used_capacities(&mut self, transfer_stage: TransferStage) -> Result<FxHashMap<ResourceType, u32>, XiError> {
+        let id = self.screeps_id()?;
+        let obj = self.screeps_obj()?;
+        Ok(get_used_capacities_with_object(obj, id, transfer_stage))
     }
 
     // Statistics

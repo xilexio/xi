@@ -27,12 +27,12 @@ mod spawning;
 mod towers;
 mod utils;
 mod visualization;
-mod travel;
 mod errors;
 mod hauling;
 mod creeps;
 mod economy;
 mod room_maintenance;
+mod travel;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]

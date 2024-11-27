@@ -11,18 +11,32 @@ use HaulRequestKind::*;
 
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub enum HaulRequestKind {
+    /// Request to withdraw or pickup some resource from the target to the hauler.
     WithdrawRequest,
-    PickupRequest,
-    StoreRequest,
+    /// Request to transfer some resource from the hauler to the target.
+    DepositRequest,
+}
+
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub enum HaulRequestTargetKind {
+    /// Permanent storage.
+    StorageTarget,
+    /// A creep that can move, so the position is approximate.
+    CreepTarget,
+    /// A resource pile.
+    PickupTarget,
+    /// A regular immovable room object, e.g., structure, tombstone.
+    /// It can also be a permanent storage when the storage is low on some resource.
+    RegularTarget,
 }
 
 #[derive(Default)]
 pub(crate) struct RoomHaulRequests {
     pub withdraw_requests: FxHashMap<HaulRequestId, HaulRequestRef>,
-    pub store_requests: FxHashMap<HaulRequestId, HaulRequestRef>,
+    pub deposit_requests: FxHashMap<HaulRequestId, HaulRequestRef>,
 }
 
-/// There can be only one haul request per withdrawal/store, per object, per resource type.
+/// There can be only one haul request per withdrawal/deposit, per object, per resource type.
 pub type HaulRequestId = (RawObjectId, ResourceType);
 
 /// Generic haul request, both for withdrawing and storing.
@@ -32,11 +46,13 @@ pub(crate) struct HaulRequest {
     /// Name of the room responsible for providing the hauler.
     pub(crate) room_name: RoomName,
     pub(crate) target: RawObjectId,
+    pub(crate) target_kind: HaulRequestTargetKind,
+    pub(crate) limited_transfer: bool,
     pub(crate) resource_type: ResourceType,
     /// Best effort information on the position of the target.
     /// May change if the target is moving (e.g., creep).
     pub pos: Position,
-    /// The amount of resource to be withdrawn of stored. When zero, the request is fulfilled.
+    /// The amount of resource to be withdrawn or deposited. When zero, the request is fulfilled.
     pub amount: u32,
     /// How will the amount change in the near future.
     pub amount_change: RequestAmountChange,
@@ -44,8 +60,8 @@ pub(crate) struct HaulRequest {
     pub decay: u32,
     /// Priority 
     pub priority: Priority,
-    /// The amount that is reserved to be withdrawn or stored. May exceed `amount` if the `amount`
-    /// has decreased.
+    /// The amount that is reserved to be withdrawn or deposited.
+    /// May exceed `amount` if the `amount` has decreased.
     pub(crate) reserved_amount: u32,
 }
 
@@ -104,7 +120,7 @@ impl Drop for HaulRequestHandle {
 impl Display for HaulRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.kind {
-            StoreRequest => {
+            DepositRequest => {
                 write!(
                     f,
                     "({},{},{}), {}/{} {} ({:?}), {}, to {}",
@@ -145,12 +161,16 @@ impl HaulRequest {
         room_name: RoomName,
         resource_type: ResourceType,
         target: ObjectId<T>,
+        target_kind: HaulRequestTargetKind,
+        limited_transfer: bool,
         pos: Position
     ) -> Self {
         HaulRequest {
             kind,
             room_name,
             target: target.into(),
+            target_kind,
+            limited_transfer,
             pos,
             resource_type,
             amount: 0,

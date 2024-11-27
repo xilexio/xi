@@ -6,7 +6,8 @@ use screeps::game::get_object_by_id_typed;
 use screeps::{HasId, HasPosition, HasStore, ObjectId, ResourceType, RoomName, Transferable};
 use wasm_bindgen::{JsCast, JsValue};
 use crate::hauling::requests::{HaulRequest, HaulRequestHandle};
-use crate::hauling::requests::HaulRequestKind::StoreRequest;
+use crate::hauling::requests::HaulRequestKind::DepositRequest;
+use crate::hauling::requests::HaulRequestTargetKind::RegularTarget;
 use crate::hauling::scheduling_hauls::schedule_haul;
 use crate::hauling::transfers::get_free_capacity;
 use crate::hauling::transfers::TransferStage::AfterAllTransfers;
@@ -64,15 +65,17 @@ where
         debug!("Scheduling haul of missing {missing_energy} energy for {id} in {room_name}.");
         // The previous store request is replaced by this one.
         let mut store_request = HaulRequest::new(
-            StoreRequest,
+            DepositRequest,
             room_name,
             ResourceType::Energy,
             id,
+            RegularTarget,
+            false,
             obj.pos()
         );
-        store_request.amount = missing_energy as u32;
+        store_request.amount = missing_energy;
         // TODO Far away extensions less important.
-        store_request.priority = Priority(1);
+        store_request.priority = Priority(100);
         Some(schedule_haul(store_request, replaced_request_handle))
     } else {
         None

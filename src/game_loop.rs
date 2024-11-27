@@ -14,7 +14,7 @@ use crate::creeps::cleanup_creeps;
 use crate::kernel::kernel::{run_processes, schedule, wake_up_sleeping_processes};
 use crate::kernel::sleep::sleep;
 use crate::logging::init_logging;
-use crate::travel::move_creeps;
+use crate::travel::travel::move_creeps;
 use crate::utils::priority::Priority;
 
 pub fn setup() {

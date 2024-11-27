@@ -2,7 +2,7 @@ use crate::creeps::{find_idle_creep, CreepRef};
 use crate::utils::game_tick::game_tick;
 use crate::kernel::process_handle::ProcessHandle;
 use crate::kernel::kernel::{current_process_wrapped_meta, kill, schedule};
-use crate::travel::{predicted_travel_ticks, travel, TravelSpec};
+use crate::travel::travel::{predicted_travel_ticks, travel};
 use crate::{a, u};
 use log::{debug, trace};
 use screeps::RoomName;
@@ -15,6 +15,7 @@ use crate::room_states::room_states::with_room_state;
 use crate::spawning::reserved_creep::ReservedCreep;
 use crate::spawning::scheduling_creeps::{cancel_scheduled_creep, schedule_creep};
 use crate::spawning::spawn_schedule::{SpawnPromise, SpawnRequest};
+use crate::travel::travel_spec::TravelSpec;
 use crate::utils::uid::UId;
 
 #[derive(Debug, Clone)]

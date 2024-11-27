@@ -5,15 +5,18 @@ use crate::creeps::creep_role::CreepRole;
 use crate::creeps::creep_body::CreepBody;
 use crate::geometry::room_xy::RoomXYUtils;
 use crate::hauling::requests::HaulRequest;
-use crate::hauling::requests::HaulRequestKind::StoreRequest;
+use crate::hauling::requests::HaulRequestKind::DepositRequest;
+use crate::hauling::requests::HaulRequestTargetKind::CreepTarget;
 use crate::hauling::scheduling_hauls::schedule_haul;
+use crate::hauling::transfers::TransferStage::AfterAllTransfers;
 use crate::kernel::sleep::sleep;
 use crate::kernel::wait_until_some::wait_until_some;
 use crate::priorities::UPGRADER_SPAWN_PRIORITY;
 use crate::room_states::room_states::with_room_state;
 use crate::spawning::spawn_pool::{SpawnPool, SpawnPoolOptions};
 use crate::spawning::spawn_schedule::{PreferredSpawn, SpawnRequest};
-use crate::travel::{travel, TravelSpec};
+use crate::travel::travel::travel;
+use crate::travel::travel_spec::TravelSpec;
 use crate::u;
 use crate::utils::priority::Priority;
 use crate::utils::result_utils::ResultUtils;
@@ -73,7 +76,7 @@ pub async fn upgrade_controller(room_name: RoomName) {
         spawn_pool.with_spawned_creeps(|creep_ref| {
             let travel_spec = travel_spec.clone();
             async move {
-                let capacity = u!(creep_ref.borrow_mut().store()).get_capacity(None);
+                let capacity = u!(creep_ref.borrow_mut().carry_capacity());
                 let creep_id = u!(creep_ref.borrow_mut().screeps_id());
                 let upgrade_energy_consumption = u!(creep_ref.borrow_mut().upgrade_energy_consumption());
 
@@ -87,7 +90,7 @@ pub async fn upgrade_controller(room_name: RoomName) {
 
                 loop {
                     // This can only fail if the creep died, but then this process would be killed.
-                    if u!(creep_ref.borrow_mut().store()).get_used_capacity(Some(ResourceType::Energy)) >= upgrade_energy_consumption {
+                    if u!(creep_ref.borrow_mut().used_capacity(Some(ResourceType::Energy), AfterAllTransfers)) >= upgrade_energy_consumption {
                         let controller = u!(get_object_by_id_typed(&controller_id));
                         creep_ref
                             .borrow_mut()
@@ -101,10 +104,12 @@ pub async fn upgrade_controller(room_name: RoomName) {
                         // TODO Use a container.
                         // TODO Use link.
                         let mut new_store_request = HaulRequest::new(
-                            StoreRequest,
+                            DepositRequest,
                             room_name,
                             ResourceType::Energy,
                             creep_id,
+                            CreepTarget,
+                            false,
                             work_pos
                         );
                         new_store_request.amount = capacity;

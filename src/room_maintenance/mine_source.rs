@@ -3,7 +3,7 @@ use crate::kernel::sleep::sleep;
 use crate::priorities::MINER_SPAWN_PRIORITY;
 use crate::room_states::room_states::with_room_state;
 use crate::creeps::creep_body::CreepBody;
-use crate::travel::{travel, TravelSpec};
+use crate::travel::travel::travel;
 use crate::u;
 use crate::utils::result_utils::ResultUtils;
 use log::{debug, warn};
@@ -13,13 +13,15 @@ use screeps::{HasId, ResourceType, RoomName};
 use crate::consts::FAR_FUTURE;
 use crate::geometry::room_xy::RoomXYUtils;
 use crate::hauling::requests::HaulRequest;
-use crate::hauling::requests::HaulRequestKind::PickupRequest;
+use crate::hauling::requests::HaulRequestKind::WithdrawRequest;
+use crate::hauling::requests::HaulRequestTargetKind::PickupTarget;
 use crate::hauling::requests::RequestAmountChange::Increase;
 use crate::hauling::scheduling_hauls::schedule_haul;
 use crate::kernel::wait_until_some::wait_until_some;
 use crate::room_states::utils::run_future_until_structures_change;
 use crate::spawning::spawn_pool::{SpawnPool, SpawnPoolOptions};
 use crate::spawning::spawn_schedule::{PreferredSpawn, SpawnRequest};
+use crate::travel::travel_spec::TravelSpec;
 use crate::utils::priority::Priority;
 use crate::utils::resource_decay::decay_per_tick;
 
@@ -147,10 +149,12 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                                     if let Some(dropped_energy) = u!(creep_pos.look_for(ENERGY)).first() {
                                         let amount = dropped_energy.amount();
                                         let mut new_pickup_request = HaulRequest::new(
-                                            PickupRequest,
+                                            WithdrawRequest,
                                             room_name,
                                             ResourceType::Energy,
                                             dropped_energy.id(),
+                                            PickupTarget,
+                                            false,
                                             creep_pos
                                         );
                                         new_pickup_request.amount = amount;

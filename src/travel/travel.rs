@@ -1,52 +1,35 @@
-use std::fmt::Display;
-use log::trace;
 use crate::creeps::{for_each_creep, CreepRef};
 use crate::kernel::broadcast::Broadcast;
 use crate::kernel::sleep::sleep;
-use crate::u;
+use crate::{local_debug, u};
 use crate::utils::result_utils::ResultUtils;
-use screeps::Position;
+use screeps::{FindPathOptions, Position};
+use screeps::Path::Vectorized;
+use screeps::pathfinder::MultiRoomCostResult;
 use crate::creeps::creep::Creep;
 use crate::errors::XiError;
 use crate::errors::XiError::CreepDead;
 use crate::creeps::creep_body::CreepBody;
+use crate::travel::travel_spec::TravelSpec;
 
-#[derive(Debug)]
-pub struct TravelState {
-    /// Specification where the creep is supposed to be.
-    spec: Option<TravelSpec>,
-    /// Cached information whether the creep arrived at its destination and does not need to move.
-    arrived: bool,
-    /// Broadcast that the creep arrived at travel spec location.
-    pub arrival_broadcast: Broadcast<Result<Position, XiError>>,
-}
-
-impl Default for TravelState {
-    fn default() -> Self {
-        TravelState {
-            spec: None,
-            arrived: true,
-            arrival_broadcast: Broadcast::default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct TravelSpec {
-    pub target: Position,
-    pub range: u8,
-}
-
-impl Display for TravelSpec {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}-{} (range: {})", self.target.room_name(), self.target.xy(), self.range)
-    }
-}
+const DEBUG: bool = true;
 
 pub fn travel(creep_ref: &CreepRef, travel_spec: TravelSpec) -> Broadcast<Result<Position, XiError>> {
     let mut creep = creep_ref.borrow_mut();
-    trace!("Creep {} travelling to {}.", creep.name, travel_spec);
+    let creep_pos = u!(creep.pos());
+    local_debug!("Creep {} travelling from {} to {}.", creep.name, creep_pos, travel_spec.target);
+    let options = FindPathOptions::<_, MultiRoomCostResult>::default()
+        .ignore_creeps(true)
+        .serialize(false);
+    let path = creep_pos.find_path_to(&travel_spec.target, Some(options));
+    local_debug!("Chosen path: {:?}.", path);
+    // TODO Check if the path was actually found.
     creep.travel_state.spec = Some(travel_spec);
+    if let Vectorized(path) = path {
+        creep.travel_state.path = path.into();
+    } else {
+        unreachable!();
+    }
     if let Some(creep_pos) = creep_arrival_pos(&mut creep) {
         creep.travel_state.arrived = true;
         creep.travel_state.arrival_broadcast.broadcast(Ok(creep_pos));
@@ -80,14 +63,27 @@ pub async fn move_creeps() {
             let mut creep = creep_ref.borrow_mut();
             if !creep.travel_state.arrived {
                 if creep.dead {
+                    // TODO Can this happen?
+                    local_debug!("Creep dead, not moving it.");
                     creep.travel_state.arrival_broadcast.broadcast(Err(CreepDead));
                 } else if let Some(creep_pos) = creep_arrival_pos(&mut creep) {
+                    local_debug!("Creep {} arrived at {}.", creep.name, creep_pos);
+                    creep.travel_state.path.clear();
                     creep.travel_state.arrived = true;
                     creep.travel_state.arrival_broadcast.broadcast(Ok(creep_pos));
                 } else {
                     let target = u!(creep.travel_state.spec.as_ref()).target;
-                    creep.move_to(target)
-                        .warn_if_err(&format!("Could not move creep {} towards {}", creep.name, target));
+
+                    local_debug!("Moving creep {} towards {}.", creep.name, target);
+
+                    let path = &mut creep.travel_state.path;
+
+                    if let Some(step) = path.pop_front() {
+                        local_debug!("Next step to take: {:?}.", step);
+                        creep
+                            .move_direction(step.direction)
+                            .warn_if_err(&format!("Could not move creep {} towards {}", creep.name, target));
+                    }
                 }
             }
         });

@@ -6,25 +6,27 @@ use crate::geometry::room_xy::RoomXYUtils;
 use crate::kernel::sleep::sleep;
 use crate::priorities::HAULER_SPAWN_PRIORITY;
 use crate::room_states::room_states::with_room_state;
-use crate::travel::{travel, TravelSpec};
+use crate::travel::travel::travel;
 use crate::u;
 use log::debug;
 use screeps::StructureType::Storage;
-use screeps::{ResourceType, RoomName};
+use screeps::RoomName;
 use crate::creeps::actions::{pickup_when_able, transfer_when_able, withdraw_when_able};
 use crate::creeps::creep_body::CreepBody;
-use crate::hauling::requests::HaulRequestKind::PickupRequest;
-use crate::hauling::reserving_requests::{find_matching_requests, ReservedRequests};
+use crate::hauling::requests::HaulRequestTargetKind::PickupTarget;
+use crate::hauling::reserving_requests::{find_haul_requests, ReservedRequests};
 use crate::hauling::store_anywhere_or_drop::store_anywhere_or_drop;
+use crate::hauling::transfers::TransferStage::AfterAllTransfers;
 use crate::kernel::wait_until_some::wait_until_some;
 use crate::spawning::spawn_pool::{SpawnPool, SpawnPoolOptions};
 use crate::spawning::spawn_schedule::{PreferredSpawn, SpawnRequest};
+use crate::travel::travel_spec::TravelSpec;
 use crate::utils::result_utils::ResultUtils;
 
 const DEBUG: bool = true;
 
 /// Execute hauling of resources of haulers assigned to given room.
-/// Withdraw and store requests are registered in the system and the system assigns them to fre
+/// Withdraw and store requests are registered in the system and the system assigns them to free
 /// haulers. One or more withdraw event is paired with one or more store events. There are special
 /// withdraw and store events for the storage which may not be paired with one another.
 pub async fn haul_resources(room_name: RoomName) {
@@ -89,32 +91,28 @@ pub async fn haul_resources(room_name: RoomName) {
         //      fulfilling all requests. To this end, keeping track of fulfillment of requests,
         //      how big is the backlog, etc.
         spawn_pool.with_spawned_creeps(|creep_ref| async move {
-            let carry_capacity = u!(creep_ref.borrow_mut().store()).get_capacity(None);
+            let carry_capacity = u!(creep_ref.borrow_mut().carry_capacity());
 
             loop {
+                let store = u!(creep_ref.borrow_mut().used_capacities(AfterAllTransfers));
+                let pos = u!(creep_ref.borrow_mut().pos());
+                let ttl = creep_ref.borrow_mut().ticks_to_live();
+
                 debug!(
                     "{} searching for withdraw/pickup and store requests.",
                     creep_ref.borrow().name
                 );
-                let store = u!(creep_ref.borrow_mut().store());
-                let carried_energy = store.get_used_capacity(Some(ResourceType::Energy));
-                if DEBUG {
-                    let store = u!(creep_ref.borrow_mut().store());
-                    debug!("Current store:");
-                    for resource_type in store.store_types() {
-                        debug!("* {}: {}", resource_type, store.get_used_capacity(Some(resource_type)));
-                    }
-                }
-
-                let maybe_matching_requests = find_matching_requests(
+                
+                let reserved_requests = find_haul_requests(
                     room_name,
-                    u!(creep_ref.borrow_mut().pos()),
+                    &store,
+                    pos,
                     carry_capacity,
-                    carried_energy
+                    ttl
                 );
 
-                if let Some(matching_requests) = maybe_matching_requests {
-                    let result = fulfill_requests(&creep_ref, matching_requests).await;
+                if let Some(reserved_requests) = reserved_requests {
+                    let result = fulfill_requests(&creep_ref, reserved_requests).await;
 
                     if let Err(e) = result {
                         debug!("Error when hauling: {:?}.", e);
@@ -143,8 +141,9 @@ async fn fulfill_requests(creep_ref: &CreepRef, mut reserved_requests: ReservedR
             travel(creep_ref, withdraw_travel_spec).await?;
             let target = withdraw_request.request.borrow().target;
             let resource_type = withdraw_request.request.borrow().resource_type;
+            let limited_transfer = withdraw_request.request.borrow().limited_transfer;
 
-            if withdraw_request.request.borrow().kind == PickupRequest {
+            if withdraw_request.request.borrow().target_kind == PickupTarget {
                 debug!(
                     "{} picking up {} {} from {}.",
                     creep_ref.borrow().name, withdraw_request.amount, resource_type, target
@@ -155,7 +154,7 @@ async fn fulfill_requests(creep_ref: &CreepRef, mut reserved_requests: ReservedR
                     "{} transferring {} {} from {}.",
                     creep_ref.borrow().name, withdraw_request.amount, resource_type, target
                 );
-                withdraw_when_able(creep_ref, target, resource_type, withdraw_request.amount).await?;
+                withdraw_when_able(creep_ref, target, resource_type, withdraw_request.amount, limited_transfer).await?;
             }
             
             withdraw_request.complete();
@@ -170,7 +169,7 @@ async fn fulfill_requests(creep_ref: &CreepRef, mut reserved_requests: ReservedR
         }
     }
 
-    if let Some(mut store_request) = reserved_requests.store_requests.pop() {
+    if let Some(mut store_request) = reserved_requests.deposit_requests.pop() {
         let store_travel_spec = TravelSpec {
             target: store_request.request.borrow().pos,
             range: 1,
@@ -181,12 +180,13 @@ async fn fulfill_requests(creep_ref: &CreepRef, mut reserved_requests: ReservedR
             travel(creep_ref, store_travel_spec).await?;
             let target = store_request.request.borrow().target;
             let resource_type = store_request.request.borrow().resource_type;
+            let limited_transfer = store_request.request.borrow().limited_transfer;
 
             debug!(
                 "{} storing {} {} in {}.",
                 creep_ref.borrow().name, store_request.amount, resource_type, target
             );
-            transfer_when_able(creep_ref, target, resource_type, store_request.amount).await?;
+            transfer_when_able(creep_ref, target, resource_type, store_request.amount, limited_transfer).await?;
             
             store_request.complete();
             
@@ -194,8 +194,7 @@ async fn fulfill_requests(creep_ref: &CreepRef, mut reserved_requests: ReservedR
         }.await;
         
         if result.is_err() {
-            result.warn_if_err("Error while fulfilling a store request");
-            reserved_requests.store_requests.push(store_request);
+            reserved_requests.deposit_requests.push(store_request);
         }
         
         match result {

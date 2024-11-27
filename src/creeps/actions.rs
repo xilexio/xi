@@ -10,7 +10,7 @@ use crate::utils::get_object_by_id::erased_object_by_id;
 // This module contains creep actions combined with waiting if not possible in the same tick.
 
 /// Withdraws a resource the first tick it is able to do without conflicting with another action.
-pub async fn withdraw_when_able(creep_ref: &CreepRef, target_id: RawObjectId, resource_type: ResourceType, amount: u32) -> Result<(), XiError> {
+pub async fn withdraw_when_able(creep_ref: &CreepRef, target_id: RawObjectId, resource_type: ResourceType, amount: u32, limited_transfer: bool) -> Result<(), XiError> {
     loop {
         let mut borrowed_creep = creep_ref.borrow_mut();
         // TODO Handle simultaneous action after the code is able to handle computing whether there is enough resource this tick.
@@ -21,7 +21,7 @@ pub async fn withdraw_when_able(creep_ref: &CreepRef, target_id: RawObjectId, re
             drop(borrowed_creep);
             sleep(1).await;
         } else {
-            borrowed_creep.unchecked_withdraw(target_id, resource_type, amount)?;
+            borrowed_creep.unchecked_withdraw(target_id, resource_type, amount, limited_transfer)?;
             return Ok(());
         }
     }
@@ -47,7 +47,7 @@ pub async fn pickup_when_able(creep_ref: &CreepRef, target_id: RawObjectId) -> R
 }
 
 /// Stores a resource the first tick it is able to do without conflicting with another action.
-pub async fn transfer_when_able(creep_ref: &CreepRef, target_id: RawObjectId, resource_type: ResourceType, amount: u32) -> Result<(), XiError> {
+pub async fn transfer_when_able(creep_ref: &CreepRef, target_id: RawObjectId, resource_type: ResourceType, amount: u32, limited_transfer: bool) -> Result<(), XiError> {
     loop {
         let mut borrowed_creep = creep_ref.borrow_mut();
         // TODO Handle simultaneous action after the code is able to handle computing whether there is enough resource this tick.
@@ -59,7 +59,7 @@ pub async fn transfer_when_able(creep_ref: &CreepRef, target_id: RawObjectId, re
             sleep(1).await;
         } else {
             trace!("unchecked_transfer({}, {}, {}", target_id, resource_type, amount);
-            borrowed_creep.unchecked_transfer(target_id, resource_type, amount)?;
+            borrowed_creep.unchecked_transfer(target_id, resource_type, amount, limited_transfer)?;
             return Ok(());
         }
     }
