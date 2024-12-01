@@ -14,3 +14,4 @@ pub mod weighted_distance_matrix;
 pub mod vertex_cut;
 pub mod chokepoint_matrix;
 pub mod minimal_shortest_paths_tree;
+pub mod min_cost_weighted_matching;
