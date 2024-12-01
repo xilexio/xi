@@ -48,15 +48,16 @@ const DEBUG: bool = false;
 /// same amount), but the potential in some Z * S vertex increases enough to make an edge
 /// from it to T - Z tight. This approach is also correct because in each iteration of
 /// increasing potentials and expanding Z exactly one whole matching gets added.
-pub fn min_cost_weighted_matching<C, const N: usize>(costs: &[[(usize, C); N]]) -> Option<(Vec<usize>, C)>
+pub fn min_cost_weighted_matching<W, C>(costs: &[W]) -> Option<(Vec<usize>, C)>
 where
+    W: AsRef<[(usize, C)]> + Debug,
     C: Zero + Bounded + PartialOrd + Sub<Output = C> + AddAssign + SubAssign + Clone + Copy + Debug,
 {
     // Computing |S| and |T|.
     let s_size = costs.len();
     let t_size = costs
         .iter()
-        .filter_map(|s_costs| s_costs.iter().map(|(j, _)| j).max().cloned())
+        .filter_map(|s_costs| s_costs.as_ref().into_iter().map(|(j, _)| j).max())
         .max()
         .map(|max_j| max_j + 1)
         .unwrap_or(0);
@@ -125,7 +126,7 @@ where
             if DEBUG {
                 debug!("Processing t_{} and its matching s_{}.", t, s);
             }
-            for &(t_outside_z, cost) in costs[s].iter() {
+            for &(t_outside_z, cost) in costs[s].as_ref() {
                 // Processing an edge from s to a vertex from T - Z.
                 // Cost being the maximum means the edge does not exist.
                 if cost != C::max_value() && !z.contains(&t_outside_z) {
