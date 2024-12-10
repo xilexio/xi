@@ -48,6 +48,9 @@ const DEBUG: bool = false;
 /// same amount), but the potential in some Z * S vertex increases enough to make an edge
 /// from it to T - Z tight. This approach is also correct because in each iteration of
 /// increasing potentials and expanding Z exactly one whole matching gets added.
+/// 
+/// Consider passing `Vec<[(usize, C); N]>` as the argument for improved memory access and
+/// allocation efficiency.
 pub fn min_cost_weighted_matching<W, C>(costs: &[W]) -> Option<(Vec<usize>, C)>
 where
     W: AsRef<[(usize, C)]> + Debug,
@@ -57,7 +60,7 @@ where
     let s_size = costs.len();
     let t_size = costs
         .iter()
-        .filter_map(|s_costs| s_costs.as_ref().into_iter().map(|(j, _)| j).max())
+        .filter_map(|s_costs| s_costs.as_ref().iter().map(|(j, _)| j).max())
         .max()
         .map(|max_j| max_j + 1)
         .unwrap_or(0);

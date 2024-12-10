@@ -100,7 +100,7 @@ pub async fn build_structures(room_name: RoomName) {
                 u!(spawn_pool.as_mut()).with_spawned_creeps(|creep_ref| async move {
                     let capacity = u!(creep_ref.borrow_mut().carry_capacity());
                     let creep_id = u!(creep_ref.borrow_mut().screeps_id());
-                    let build_energy_consumption = u!(creep_ref.borrow_mut().build_energy_consumption());
+                    let build_energy_consumption = creep_ref.borrow_mut().build_energy_consumption();
                     
                     // TODO After spawning the builder, making it pick up the energy from storage
                     //      if there is one.
@@ -145,7 +145,7 @@ pub async fn build_structures(room_name: RoomName) {
                                 creep_id,
                                 CreepTarget,
                                 false,
-                                u!(creep_ref.borrow_mut().pos())
+                                creep_ref.borrow_mut().travel_state.pos
                             );
                             new_store_request.amount = capacity;
                             new_store_request.priority = Priority(30);

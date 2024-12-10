@@ -4,9 +4,11 @@ use crate::consts::OBSTACLE_COST;
 use crate::geometry::room_xy::RoomXYUtils;
 use screeps::{RoomXY, ROOM_SIZE};
 use std::fmt::{Display, Formatter};
-use crate::algorithms::grid_min_cut::GridGraphDirection::*;
+use crate::geometry::grid_direction::GridDirection::*;
 use crate::algorithms::grid_min_cut::TileVertexKind::*;
-use enum_iterator::{Sequence, all};
+use enum_iterator::all;
+use crate::geometry::grid_direction;
+use crate::geometry::grid_direction::GridDirection;
 
 const DEBUG: bool = false;
 
@@ -42,7 +44,7 @@ pub fn grid_min_cut(costs: &RoomMatrix<u8>) -> Vec<RoomXY> {
                 // Initial capacity of input's non-internal edges is 0.
                 // It only has an internal edge with the capacity equal to the tile cost.
                 let input_node = grid_node(x, y, Input);
-                capacity[grid_edge(input_node, Internal).usize()] = tile_cost;
+                capacity[grid_edge(input_node, Center).usize()] = tile_cost;
                 let output_node = grid_node(x, y, Output);
                 let mut is_near_start = false;
                 for_each_node_around(output_node, |near_node, edge| {
@@ -224,10 +226,8 @@ pub fn grid_min_cut(costs: &RoomMatrix<u8>) -> Vec<RoomXY> {
                         path.pop();
                     }
 
-                    if DEBUG {
-                        if !dfs_stack.is_empty() {
-                            eprintln!("Resuming from {}.", dfs_stack.last().unwrap().0);
-                        }
+                    if DEBUG && !dfs_stack.is_empty() {
+                        eprintln!("Resuming from {}.", dfs_stack.last().unwrap().0);
                     }
                 }
             }
@@ -358,7 +358,7 @@ impl GridGraphEdge {
 /// The maximum value is 6372 * 9 = 57348, which fits in u16.
 /// The multiplication is slow, but edges are always iterated over, never computed directly.
 #[inline]
-fn grid_edge(node: GridGraphNode, direction: GridGraphDirection) -> GridGraphEdge {
+fn grid_edge(node: GridGraphNode, direction: GridDirection) -> GridGraphEdge {
     GridGraphEdge(node.0 + GRID_NODE_ID_CAPACITY * (direction as u16))
 }
 
@@ -368,7 +368,7 @@ fn edge_node(edge: GridGraphEdge) -> GridGraphNode {
 }
 
 #[inline]
-fn edge_direction(edge: GridGraphEdge) -> GridGraphDirection {
+fn edge_direction(edge: GridGraphEdge) -> GridDirection {
     ((edge.0 / GRID_NODE_ID_CAPACITY) as u8).into()
 }
 
@@ -376,15 +376,15 @@ fn edge_direction(edge: GridGraphEdge) -> GridGraphDirection {
 fn edge_target_node(edge: GridGraphEdge) -> GridGraphNode {
     let direction = edge_direction(edge);
     let source_node = edge_node(edge);
-    let (x, y) = direction_to_offset(direction);
-    GridGraphNode((((source_node.0 ^ 1) as i16) + x * (1 << 1) + y * (1 << 7)) as u16)
+    let (x, y) = grid_direction::direction_to_offset(direction);
+    GridGraphNode((((source_node.0 ^ 1) as i16) + (x as i16) * (1 << 1) + (y as i16) * (1 << 7)) as u16)
 }
 
 #[inline]
 fn reverse_edge(edge: GridGraphEdge) -> GridGraphEdge {
     let direction = edge_direction(edge);
     let target_node = edge_target_node(edge);
-    grid_edge(target_node, reverse_direction(direction))
+    grid_edge(target_node, grid_direction::reverse_direction(direction))
 }
 
 #[inline]
@@ -442,9 +442,9 @@ where
 {
     let mut edge = node.0;
 
-    for direction in all::<GridGraphDirection>() {
-        let (x, y) = direction_to_offset(direction);
-        f(GridGraphNode((((node.0 ^ 1) as i16) + x * (1 << 1) + y * (1 << 7)) as u16), GridGraphEdge(edge));
+    for direction in all::<GridDirection>() {
+        let (x, y) = grid_direction::direction_to_offset(direction);
+        f(GridGraphNode((((node.0 ^ 1) as i16) + (x as i16) * (1 << 1) + (y as i16) * (1 << 7)) as u16), GridGraphEdge(edge));
         edge += GRID_NODE_ID_CAPACITY;
     }
 }
@@ -454,68 +454,13 @@ enum TileVertexKind {
     Output = 1,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Sequence)]
-#[repr(u8)]
-enum GridGraphDirection {
-    Internal = 0,
-    Top = 1,
-    TopRight = 2,
-    Right = 3,
-    BottomRight = 4,
-    Bottom = 5,
-    BottomLeft = 6,
-    Left = 7,
-    TopLeft = 8,
-}
-
-impl From<u8> for GridGraphDirection {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => Internal,
-            1 => Top,
-            2 => TopRight,
-            3 => Right,
-            4 => BottomRight,
-            5 => Bottom,
-            6 => BottomLeft,
-            7 => Left,
-            8 => TopLeft,
-            _ => unreachable!(),
-        }
-    }
-}
-
-#[inline]
-fn reverse_direction(direction: GridGraphDirection) -> GridGraphDirection {
-    if direction == Internal {
-        direction
-    } else {
-        ((direction as u8 - 1 + 4) % 8 + 1).into()
-    }
-}
-
-#[inline]
-fn direction_to_offset(direction: GridGraphDirection) -> (i16, i16) {
-    match direction {
-        Internal => (0, 0),
-        Top => (0, -1),
-        TopRight => (1, -1),
-        Right => (1, 0),
-        BottomRight => (1, 1),
-        Bottom => (0, 1),
-        BottomLeft => (-1, 1),
-        Left => (-1, 0),
-        TopLeft => (-1, -1),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::algorithms::grid_min_cut::GridGraphDirection::{BottomRight, Internal};
+    use crate::geometry::grid_direction::GridDirection::{BottomRight, Center};
     use crate::algorithms::grid_min_cut::TileVertexKind::{Input, Output};
     use crate::algorithms::grid_min_cut::{
         edge_direction, edge_node, edge_target_node, for_each_node_around, grid_edge, grid_min_cut, grid_node,
-        grid_node_to_xy, is_internal_edge, reverse_edge, GridGraphDirection,
+        grid_node_to_xy, is_internal_edge, reverse_edge,
     };
     use crate::algorithms::matrix_common::MatrixCommon;
     use crate::algorithms::room_matrix::RoomMatrix;
@@ -525,20 +470,21 @@ mod tests {
     use enum_iterator::all;
     use screeps::{RoomXY, ROOM_SIZE};
     use std::error::Error;
+    use crate::geometry::grid_direction::GridDirection;
 
     #[test]
     fn test_helper_functions() {
         let node_xy = RoomXY::try_from((12, 12)).unwrap();
         let input_node = grid_node(12, 12, Input);
 
-        let input_to_output_edge = grid_edge(input_node, Internal);
+        let input_to_output_edge = grid_edge(input_node, Center);
         assert_eq!(edge_node(input_to_output_edge), input_node);
-        assert_eq!(edge_direction(input_to_output_edge), Internal);
+        assert_eq!(edge_direction(input_to_output_edge), Center);
         assert_eq!(reverse_edge(reverse_edge(input_to_output_edge)), input_to_output_edge);
 
         let output_node = grid_node(12, 12, Output);
 
-        for direction in all::<GridGraphDirection>() {
+        for direction in all::<GridDirection>() {
             let output_to_something_edge = grid_edge(output_node, direction);
             assert_eq!(reverse_edge(reverse_edge(output_to_something_edge)), output_to_something_edge);
         }
@@ -548,7 +494,7 @@ mod tests {
 
         for_each_node_around(input_node, |near_node, edge| {
             assert_eq!(edge_node(edge), input_node);
-            if edge_direction(edge) == Internal {
+            if edge_direction(edge) == Center {
                 assert_eq!(edge_target_node(edge), output_node);
             } else {
                 let xy = grid_node_to_xy(edge_target_node(edge));
@@ -556,7 +502,7 @@ mod tests {
             }
         });
 
-        assert!(is_internal_edge(grid_edge(grid_node(25, 26, Input), Internal)));
+        assert!(is_internal_edge(grid_edge(grid_node(25, 26, Input), Center)));
         assert!(!is_internal_edge(grid_edge(grid_node(25, 26, Input), BottomRight)));
     }
 

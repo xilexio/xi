@@ -5,7 +5,7 @@ use rustc_hash::FxHashMap;
 use screeps::{Direction, ObjectId, Position, RoomName, StructureSpawn};
 use crate::creeps::creep_role::CreepRole;
 use crate::creeps::creep_body::CreepBody;
-use crate::creeps::CreepRef;
+use crate::creeps::creeps::CreepRef;
 use crate::utils::priority::Priority;
 use crate::utils::uid::UId;
 

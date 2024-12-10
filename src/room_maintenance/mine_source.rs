@@ -145,7 +145,7 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                             // Transporting the energy in a way depending on room plan.
                             match mining_kind {
                                 MiningKind::DropMining => {
-                                    let creep_pos = u!(creep_ref.borrow_mut().pos());
+                                    let creep_pos = creep_ref.borrow_mut().travel_state.pos;
                                     if let Some(dropped_energy) = u!(creep_pos.look_for(ENERGY)).first() {
                                         let amount = dropped_energy.amount();
                                         let mut new_pickup_request = HaulRequest::new(

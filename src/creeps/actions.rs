@@ -1,7 +1,7 @@
 use log::trace;
 use screeps::{RawObjectId, Resource, ResourceType};
 use wasm_bindgen::JsCast;
-use crate::creeps::CreepRef;
+use crate::creeps::creeps::CreepRef;
 use crate::errors::XiError;
 use crate::utils::game_tick::game_tick;
 use crate::kernel::sleep::sleep;

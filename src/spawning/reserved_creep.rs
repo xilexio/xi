@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 use log::trace;
 use rustc_hash::FxHashSet;
 use crate::creeps::creep::Creep;
-use crate::creeps::CreepRef;
+use crate::creeps::creeps::CreepRef;
 use crate::a;
 use crate::creeps::creep_role::CreepRole;
 

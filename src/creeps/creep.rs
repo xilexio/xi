@@ -2,10 +2,28 @@ use log::warn;
 use rustc_hash::FxHashMap;
 use crate::travel::travel_state::TravelState;
 use crate::{log_err, u};
-use screeps::{game, ConstructionSite, Direction, HasId, HasPosition, MaybeHasId, MoveToOptions, ObjectId, PolyStyle, Position, RawObjectId, Resource, ResourceType, SharedCreepProperties, Source, StructureController, Transferable, Withdrawable, BUILD_POWER, HARVEST_POWER, UPGRADE_CONTROLLER_POWER};
-use screeps::Part::Work;
+use screeps::{
+    game,
+    ConstructionSite,
+    Direction,
+    HasId,
+    MaybeHasId,
+    MoveToOptions,
+    ObjectId,
+    PolyStyle,
+    Position,
+    RawObjectId,
+    Resource,
+    ResourceType,
+    SharedCreepProperties,
+    Source,
+    StructureController,
+    Transferable,
+    Withdrawable,
+};
 use crate::creeps::creep_body::CreepBody;
 use crate::creeps::creep_role::CreepRole;
+use crate::creeps::generic_creep::GenericCreep;
 use crate::errors::XiError;
 use crate::errors::XiError::*;
 use crate::hauling::transfers::{
@@ -15,6 +33,7 @@ use crate::hauling::transfers::{
     register_transfer,
     TransferStage
 };
+use crate::travel::surface::Surface;
 use crate::utils::get_object_by_id::erased_object_by_id;
 use crate::utils::cold::cold;
 use crate::utils::game_tick::game_tick;
@@ -22,9 +41,9 @@ use crate::utils::single_tick_cache::SingleTickCache;
 use crate::utils::unchecked_transferable::UncheckedTransferable;
 use crate::utils::unchecked_withdrawable::UncheckedWithdrawable;
 
-type CrId = u32;
+pub type CrId = u32;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Creep {
     /// Globally unique creep name.
     pub name: String,
@@ -41,15 +60,54 @@ pub struct Creep {
     pub last_pickup_tick: u32,
     pub last_transfer_tick: u32,
     pub dead: bool,
-    pub cached_creep: SingleTickCache<screeps::Creep>,
+    pub body: CreepBody,
+    /// The number of ticks it takes for the creep to move one tile.
+    /// MAX means the creep is immovable.
+    /// Due to the limit of 50 parts and swamp being the worst, the maximum for a movable creep
+    /// is 49 * 5 = 245.
+    pub ticks_per_tile: [u8; 3],
+    pub cached_screeps_obj: SingleTickCache<screeps::Creep>,
 }
 
 impl Creep {
+    pub fn new(
+        name: String,
+        id: Option<ObjectId<screeps::Creep>>,
+        role: CreepRole,
+        number: CrId,
+        body: CreepBody
+    ) -> Self {
+        let ticks_per_tile = [
+            body.ticks_per_tile(Surface::Road),
+            body.ticks_per_tile(Surface::Plain),
+            body.ticks_per_tile(Surface::Swamp),
+        ];
+        
+        // This is an invalid position, but it does not matter as creeps are registered before
+        // updating their position.
+        let pos = Position::from_packed(0);
+
+        Creep {
+            name,
+            id,
+            role,
+            number,
+            travel_state: TravelState::new(pos),
+            last_withdraw_tick: 0,
+            last_pickup_tick: 0,
+            last_transfer_tick: 0,
+            dead: false,
+            body,
+            ticks_per_tile: ticks_per_tile.map(|x| x),
+            cached_screeps_obj: SingleTickCache::default(),
+        }
+    }
+    
     // Utility
 
     pub fn screeps_obj(&mut self) -> Result<&mut screeps::Creep, XiError> {
         if !self.dead {
-            Ok(self.cached_creep.get_or_insert_with(|| u!(game::creeps().get(self.name.clone()))))
+            Ok(self.cached_screeps_obj.get_or_insert_with(|| u!(game::creeps().get(self.name.clone()))))
         } else {
             Err(CreepDead)
         }
@@ -70,12 +128,12 @@ impl Creep {
         }
     }
 
-    // API wrappers
-    
-    pub fn body(&mut self) -> Result<CreepBody, XiError> {
-        Ok(self.screeps_obj()?.body().into())
+    pub fn role_id(&self) -> (CreepRole, CrId) {
+        (self.role, self.number)
     }
 
+    // Actions performed by the creep
+    
     pub fn harvest(&mut self, source: &Source) -> Result<(), XiError> {
         self.screeps_obj()?.harvest(source).or(Err(CreepHarvestFailed))
     }
@@ -89,10 +147,6 @@ impl Creep {
         self.screeps_obj()?.move_direction(direction).or(Err(CreepMoveToFailed))
     }
 
-    pub fn pos(&mut self) -> Result<Position, XiError> {
-        Ok(self.screeps_obj()?.pos())
-    }
-
     pub fn public_say(&mut self, message: &str) -> Result<(), XiError> {
         self.screeps_obj()?.say(message, true).or(Err(CreepSayFailed))
     }
@@ -100,34 +154,7 @@ impl Creep {
     pub fn suicide(&mut self) -> Result<(), XiError> {
         self.screeps_obj()?.suicide().or(Err(CreepSuicideFailed))
     }
-
-    /// Zero indicates a dead creep.
-    pub fn ticks_to_live(&mut self) -> u32 {
-        let obj = self.screeps_obj();
-        match obj {
-            Ok(creep) => creep.ticks_to_live().unwrap_or(0),
-            Err(CreepDead) => 0,
-            Err(_) => {
-                cold();
-                log_err!(obj);
-                0
-            }
-        }
-    }
     
-    pub fn spawning(&mut self) -> bool {
-        let obj = self.screeps_obj();
-        match obj {
-            Ok(creep) => creep.spawning(),
-            Err(CreepDead) => false,
-            Err(_) => {
-                cold();
-                log_err!(obj);
-                false
-            }
-        }
-    }
-
     pub fn withdraw<T>(&mut self, target_id: ObjectId<T>, target: &T, resource_type: ResourceType, amount: u32, limited_transfer: bool) -> Result<(), XiError>
     where
         T: Withdrawable,
@@ -213,8 +240,12 @@ impl Creep {
     pub fn build(&mut self, construction_site: &ConstructionSite) -> Result<(), XiError> {
         self.screeps_obj()?.build(construction_site).or(Err(CreepBuildFailed))
     }
+    
+    // Current information about the creep
 
-    // Store wrappers
+    pub fn fatigue(&mut self) -> Result<u32, XiError> {
+        Ok(self.screeps_obj()?.fatigue())
+    }
     
     pub fn carry_capacity(&mut self) -> Result<u32, XiError> {
         Ok(self.screeps_obj()?.store().get_capacity(None))
@@ -238,29 +269,70 @@ impl Creep {
         Ok(get_used_capacities_with_object(obj, id, transfer_stage))
     }
 
-    // Statistics
-
-    pub fn energy_harvest_power(&mut self) -> Result<u32, XiError> {
-        Ok(self.screeps_obj()?
-            .body()
-            .iter()
-            .filter_map(|body_part| (body_part.part() == Work).then_some(HARVEST_POWER))
-            .sum())
+    /// Zero indicates a dead creep.
+    pub fn ticks_to_live(&mut self) -> u32 {
+        let obj = self.screeps_obj();
+        match obj {
+            Ok(creep) => creep.ticks_to_live().unwrap_or(0),
+            Err(CreepDead) => 0,
+            Err(_) => {
+                cold();
+                log_err!(obj);
+                0
+            }
+        }
+    }
+    
+    pub fn spawning(&mut self) -> bool {
+        let obj = self.screeps_obj();
+        match obj {
+            Ok(creep) => creep.spawning(),
+            Err(CreepDead) => false,
+            Err(_) => {
+                cold();
+                log_err!(obj);
+                false
+            }
+        }
     }
 
-    pub fn upgrade_energy_consumption(&mut self) -> Result<u32, XiError> {
-        Ok(self.screeps_obj()?
-            .body()
-            .iter()
-            .filter_map(|body_part| (body_part.part() == Work).then_some(UPGRADE_CONTROLLER_POWER))
-            .sum())
+    // Statistics based on the body alone
+
+    pub fn energy_harvest_power(&mut self) -> u32 {
+        self.body.energy_harvest_power()
     }
 
-    pub fn build_energy_consumption(&mut self) -> Result<u32, XiError> {
-        Ok(self.screeps_obj()?
-            .body()
-            .iter()
-            .filter_map(|body_part| (body_part.part() == Work).then_some(BUILD_POWER))
-            .sum())
+    pub fn upgrade_energy_consumption(&mut self) -> u32 {
+        self.body.upgrade_energy_usage()
+    }
+
+    pub fn build_energy_consumption(&mut self) -> u32 {
+        self.body.build_energy_usage()
+    }
+}
+
+impl GenericCreep for Creep {
+    fn get_name(&self) -> &String {
+        &self.name
+    }
+    
+    fn get_screeps_id(&mut self) -> Result<ObjectId<screeps::Creep>, XiError> {
+        self.screeps_id()
+    }
+
+    fn get_travel_state(&self) -> &TravelState {
+        &self.travel_state
+    }
+
+    fn get_travel_state_mut(&mut self) -> &mut TravelState {
+        &mut self.travel_state
+    }
+
+    fn get_ticks_per_tile(&self, surface: Surface) -> u8 {
+        self.ticks_per_tile[surface as usize]
+    }
+
+    fn get_fatigue(&mut self) -> Result<u32, XiError> {
+        self.fatigue()
     }
 }

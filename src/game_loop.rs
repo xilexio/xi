@@ -10,11 +10,11 @@ use crate::room_states::scan_rooms::scan_rooms;
 use crate::visualization::show_visualizations::show_visualizations;
 use log::info;
 use screeps::game;
-use crate::creeps::cleanup_creeps;
+use crate::creeps::creeps::cleanup_creeps;
 use crate::kernel::kernel::{run_processes, schedule, wake_up_sleeping_processes};
 use crate::kernel::sleep::sleep;
 use crate::logging::init_logging;
-use crate::travel::travel::move_creeps;
+use crate::travel::traffic::move_creeps;
 use crate::utils::priority::Priority;
 
 pub fn setup() {

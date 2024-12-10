@@ -13,12 +13,14 @@ use crate::room_states::room_state::{ControllerData, MineralData, RoomDesignatio
 
 const DEBUG: bool = true;
 
-/// Updates the state of given room, i.e., records the terrain, structures, resources and other data.
-/// Fails if the room is not visible.
+/// Updates the state of given room, i.e., records the terrain, structures, resources and other
+/// data. Fails if the room is not visible.
 pub fn scan_room(room_name: RoomName, force_update: bool) -> Result<(), XiError> {
     map_and_replace_room_state(room_name, |state| update_room_state_from_scan(room_name, force_update, state))
 }
 
+/// Updates the state of a given room, given the room state to update.
+// TODO double borrow at xi::room_states::scan_rooms::scan_rooms::{{closure}}::hd7cffa08165cb64e (wasm-function[1002]:206)
 pub fn update_room_state_from_scan(room_name: RoomName, force_update: bool, state: &mut RoomState) -> Result<(), XiError> {
     local_debug!("Scanning room {} with force_update={}.", room_name, force_update);
     let room = match game::rooms().get(room_name) {

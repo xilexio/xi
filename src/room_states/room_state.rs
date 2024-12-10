@@ -1,12 +1,30 @@
 use serde::{Deserialize, Serialize};
 use derive_more::Constructor;
-use screeps::{game, ConstructionSite, Mineral, ObjectId, Position, ResourceType, RoomName, RoomXY, Source, StructureContainer, StructureController, StructureExtension, StructureLink, StructureSpawn, StructureType};
+use screeps::{
+    game, 
+    ConstructionSite, 
+    Mineral, 
+    ObjectId, 
+    Position, 
+    ResourceType, 
+    RoomName, 
+    RoomXY, 
+    Source, 
+    StructureContainer, 
+    StructureController, 
+    StructureExtension, 
+    StructureLink, 
+    StructureSpawn, 
+    StructureType, 
+    Terrain,
+};
 use rustc_hash::{FxHashMap, FxHashSet};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
 use log::info;
 use js_sys::{Object, Reflect};
-use crate::creeps::CreepRef;
+use screeps::StructureType::Road;
+use crate::creeps::creeps::CreepRef;
 use crate::economy::room_eco_config::RoomEcoConfig;
 use crate::economy::room_eco_stats::RoomEcoStats;
 use crate::geometry::room_xy::RoomXYUtils;
@@ -14,6 +32,7 @@ use crate::kernel::broadcast::Broadcast;
 use crate::room_planning::plan::Plan;
 use crate::room_planning::room_planner::RoomPlanner;
 use crate::room_states::packed_terrain::PackedTerrain;
+use crate::travel::surface::Surface;
 use crate::u;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -184,8 +203,7 @@ impl RoomState {
     pub fn structure_xy(&self, structure_type: StructureType) -> Option<RoomXY> {
         self.structures
             .get(&structure_type)
-            .map(|xys| xys.iter().next())
-            .flatten()
+            .and_then(|xys| xys.iter().next())
             .cloned()
     }
 
@@ -195,8 +213,36 @@ impl RoomState {
         self.structure_xy(structure_type)
             .map(|xy| xy.to_pos(self.room_name))
     }
+
+    pub fn tile_surface(&self, xy: RoomXY) -> Surface {
+        if self.structures.get(&Road).map(|xys| xys.contains(&xy)).unwrap_or(false) {
+            Surface::Road
+        } else {
+            match self.terrain.get(xy) {
+                Terrain::Plain => {
+                    Surface::Plain
+                }
+                Terrain::Wall => {
+                    Surface::Obstacle
+                }
+                Terrain::Swamp => {
+                    Surface::Swamp
+                }
+            }
+        }
+    }
 }
 
 fn packed_terrain(room_state: &RoomState) -> PackedTerrain {
     u!(game::map::get_room_terrain(room_state.room_name)).into()
+}
+
+#[cfg(test)]
+pub fn empty_unowned_room_state() -> RoomState {
+    RoomState::new(test_empty_unowned_room_name())
+}
+
+#[cfg(test)]
+pub fn test_empty_unowned_room_name() -> RoomName {
+    RoomName::new("W1N1").unwrap()
 }

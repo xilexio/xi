@@ -1,4 +1,3 @@
-use crate::creeps::{find_idle_creep, CreepRef};
 use crate::utils::game_tick::game_tick;
 use crate::kernel::process_handle::ProcessHandle;
 use crate::kernel::kernel::{current_process_wrapped_meta, kill, schedule};
@@ -10,11 +9,13 @@ use std::cell::RefCell;
 use std::cmp::max;
 use std::future::Future;
 use std::rc::Rc;
+use crate::creeps::creeps::{find_idle_creep, CreepRef};
 use crate::economy::room_eco_stats::RoomCreepStats;
 use crate::room_states::room_states::with_room_state;
 use crate::spawning::reserved_creep::ReservedCreep;
 use crate::spawning::scheduling_creeps::{cancel_scheduled_creep, schedule_creep};
 use crate::spawning::spawn_schedule::{SpawnPromise, SpawnRequest};
+use crate::travel::surface::Surface;
 use crate::travel::travel_spec::TravelSpec;
 use crate::utils::uid::UId;
 
@@ -477,7 +478,7 @@ impl SpawnPoolElement {
                             1,
                             travel_spec.range,
                             &spawn_request.body,
-                            false // TODO
+                            Surface::Plain // TODO
                         )
                     })
                     .unwrap_or(0);

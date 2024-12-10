@@ -1,5 +1,5 @@
 use crate::creeps::creep_role::CreepRole;
-use crate::creeps::CreepRef;
+use crate::creeps::creeps::CreepRef;
 use crate::errors::XiError;
 use crate::utils::game_tick::game_tick;
 use crate::geometry::room_xy::RoomXYUtils;
@@ -95,7 +95,7 @@ pub async fn haul_resources(room_name: RoomName) {
 
             loop {
                 let store = u!(creep_ref.borrow_mut().used_capacities(AfterAllTransfers));
-                let pos = u!(creep_ref.borrow_mut().pos());
+                let pos = creep_ref.borrow_mut().travel_state.pos;
                 let ttl = creep_ref.borrow_mut().ticks_to_live();
 
                 debug!(

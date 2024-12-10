@@ -78,7 +78,7 @@ pub async fn upgrade_controller(room_name: RoomName) {
             async move {
                 let capacity = u!(creep_ref.borrow_mut().carry_capacity());
                 let creep_id = u!(creep_ref.borrow_mut().screeps_id());
-                let upgrade_energy_consumption = u!(creep_ref.borrow_mut().upgrade_energy_consumption());
+                let upgrade_energy_consumption = creep_ref.borrow_mut().upgrade_energy_consumption();
 
                 if let Err(err) = travel(&creep_ref, travel_spec.clone()).await {
                     warn!("Upgrader could not reach its destination: {err}");

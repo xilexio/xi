@@ -1,10 +1,11 @@
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::geometry::rect::Rect;
 use crate::geometry::room_xy::RoomXYUtils;
-use screeps::RoomXY;
+use screeps::{RoomXY, ROOM_SIZE};
 use std::error::Error;
+use std::fmt::{Display, Formatter, LowerHex};
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RoomMatrixSlice<T> {
     pub rect: Rect,
     pub data: Vec<T>,
@@ -70,7 +71,7 @@ where
     {
         let mut result = RoomMatrixSlice::new(self.rect, S::default());
         for (xy, value) in self.iter() {
-            result.set(xy, f(xy, self.get(xy)));
+            result.set(xy, f(xy, value));
         }
         result
     }
@@ -92,6 +93,19 @@ where
         }
     }
 
+    fn clone_filled(&self, fill: T) -> Self {
+        let mut data = Vec::new();
+        data.resize_with(self.rect.area(), || fill);
+        RoomMatrixSlice {
+            rect: self.rect,
+            data,
+        }
+    }
+
+    fn around_xy(&self, xy: RoomXY) -> impl Iterator<Item=RoomXY> {
+        xy.restricted_around(self.rect)
+    }
+
     fn iter_xy<'a, 'b>(&'a self) -> impl Iterator<Item = RoomXY> + 'b {
         let base_x = self.rect.top_left.x.u8();
         let base_y = self.rect.top_left.y.u8();
@@ -99,6 +113,41 @@ where
         let height = self.rect.height() as u16;
         (0..(width * height))
             .map(move |i| unsafe { RoomXY::unchecked_new(base_x + (i % width) as u8, base_y + (i / width) as u8) })
+    }
+}
+
+impl<T> Display for RoomMatrixSlice<T>
+where
+    T: Clone + Copy + PartialEq + LowerHex + Sized,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "   ")?;
+        for x in self.rect.top_left.x.u8()..=self.rect.bottom_right.x.u8() {
+            write!(f, "{:>size$}", x, size = 2 * size_of::<T>())?;
+            if x != ROOM_SIZE - 1 {
+                write!(f, " ")?;
+            }
+        }
+        writeln!(f)?;
+        for y in self.rect.top_left.y.u8()..=self.rect.bottom_right.y.u8() {
+            write!(f, "{:>size$} ", y, size = 2)?;
+
+            for x in self.rect.top_left.x.u8()..=self.rect.bottom_right.x.u8() {
+                unsafe {
+                    write!(
+                        f,
+                        "{:0>size$x}",
+                        self.get(RoomXY::unchecked_new(x, y)),
+                        size = 2 * size_of::<T>()
+                    )?;
+                }
+                if x != self.rect.bottom_right.x.u8() {
+                    write!(f, " ")?;
+                }
+            }
+            writeln!(f)?;
+        }
+        Ok(())
     }
 }
 

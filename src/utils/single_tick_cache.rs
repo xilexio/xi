@@ -25,4 +25,13 @@ impl<T> SingleTickCache<T> {
         }
         u!(self.data.as_mut())
     }
+    
+    pub fn get_or_try_insert_with<E>(&mut self, f: impl FnOnce() -> Result<T, E>) -> Result<&mut T, E> {
+        let current_tick = game_tick();
+        if current_tick != self.cache_tick {
+            self.data = Some(f()?);
+            self.cache_tick = current_tick;
+        }
+        Ok(u!(self.data.as_mut()))
+    }
 }

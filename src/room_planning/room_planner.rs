@@ -1980,6 +1980,43 @@ impl RoomPlanner {
     }
 }
 
+impl Debug for RoomPlanner {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "   ")?;
+        for x in 0..ROOM_SIZE {
+            write!(f, "{:>size$}", x, size = 2)?;
+            if x != ROOM_SIZE - 1 {
+                write!(f, "  ")?;
+            }
+        }
+        writeln!(f)?;
+        for y in 0..ROOM_SIZE {
+            write!(f, "{:>size$} ", y, size = 2)?;
+
+            for x in 0..ROOM_SIZE {
+                unsafe {
+                    let tile = self.planned_tiles.get_xy(x, y);
+                    let terrain = self.terrain.get((x, y).try_into().unwrap());
+
+                    if tile.structures().is_empty() && tile.reserved() {
+                        write!(f, "{}", tile.structures())?;
+                    } else if terrain == Wall {
+                        write!(f, " # ")?;
+                    } else {
+                        write!(f, "{}", tile.structures())?;
+                    }
+
+                    if x != ROOM_SIZE - 1 {
+                        write!(f, " ")?;
+                    }
+                }
+            }
+            writeln!(f)?;
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use screeps::ResourceType::Keanium;
@@ -2026,42 +2063,5 @@ mod tests {
         }
 
         panic!("Planner did not manage to produce a plan within 10 tries.");
-    }
-}
-
-impl Debug for RoomPlanner {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "   ")?;
-        for x in 0..ROOM_SIZE {
-            write!(f, "{:>size$}", x, size = 2)?;
-            if x != ROOM_SIZE - 1 {
-                write!(f, "  ")?;
-            }
-        }
-        writeln!(f)?;
-        for y in 0..ROOM_SIZE {
-            write!(f, "{:>size$} ", y, size = 2)?;
-
-            for x in 0..ROOM_SIZE {
-                unsafe {
-                    let tile = self.planned_tiles.get_xy(x, y);
-                    let terrain = self.terrain.get((x, y).try_into().unwrap());
-
-                    if tile.structures().is_empty() && tile.reserved() {
-                        write!(f, "{}", tile.structures())?;
-                    } else if terrain == Wall {
-                        write!(f, " # ")?;
-                    } else {
-                        write!(f, "{}", tile.structures())?;
-                    }
-
-                    if x != ROOM_SIZE - 1 {
-                        write!(f, " ")?;
-                    }
-                }
-            }
-            writeln!(f)?;
-        }
-        Ok(())
     }
 }

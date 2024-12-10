@@ -1,5 +1,5 @@
 use crate::creeps::actions::drop_when_able;
-use crate::creeps::CreepRef;
+use crate::creeps::creeps::CreepRef;
 use crate::errors::XiError;
 use crate::hauling::transfers::TransferStage::AfterAllTransfers;
 

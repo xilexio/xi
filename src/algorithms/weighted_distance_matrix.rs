@@ -1,9 +1,12 @@
 use crate::algorithms::matrix_common::MatrixCommon;
-use crate::algorithms::room_matrix::RoomMatrix;
-use crate::geometry::room_xy::RoomXYUtils;
 use num_traits::PrimInt;
 use screeps::RoomXY;
 use std::collections::BTreeMap;
+use std::fmt::{Debug, Display};
+use crate::local_debug;
+use crate::utils::multi_map_utils::MultiMapUtils;
+
+const DEBUG: bool = false;
 
 // TODO is there any practical reason to differentiate between obstacles and unreachable?
 pub fn obstacle_cost<T>() -> T
@@ -21,23 +24,28 @@ where
 }
 
 /// Implementation of Dijkstra algorithm from multiple starting points.
-pub fn weighted_distance_matrix<T>(cost_matrix: &RoomMatrix<T>, start: impl Iterator<Item = RoomXY>) -> RoomMatrix<T>
+pub fn weighted_distance_matrix<M, C>(cost_matrix: &M, start: impl Iterator<Item = RoomXY>) -> M
 where
-    T: PrimInt,
+    M: MatrixCommon<C> + Display,
+    C: PrimInt + Debug,
 {
-    let mut distances = RoomMatrix::new(unreachable_cost());
-    let mut queue: BTreeMap<T, Vec<RoomXY>> = BTreeMap::new();
+    let mut distances = cost_matrix.clone_filled(unreachable_cost());
+    let mut queue: BTreeMap<C, Vec<RoomXY>> = BTreeMap::new();
 
     for xy in start {
-        distances.set(xy, T::zero());
-        for near in xy.around() {
+        distances.set(xy, C::zero());
+        for near in cost_matrix.around_xy(xy) {
             let cost = cost_matrix.get(near);
             if cost != obstacle_cost() {
                 distances.set(near, cost);
-                queue.entry(cost).and_modify(|xys| xys.push(near)).or_insert(vec![near]);
+                queue.push_or_insert(cost, near);
             }
         }
     }
+    
+    local_debug!("weighted_distance_matrix cost_matrix:\n{}", cost_matrix);
+    local_debug!("weighted_distance_matrix queue and distances:");
+    local_debug!("queue={:?}\n{}", queue, distances);
 
     while !queue.is_empty() {
         let mut first = queue.first_entry().unwrap();
@@ -45,22 +53,21 @@ where
         if let Some(xy) = xys.pop() {
             let dist = *first.key();
             if distances.get(xy) == dist {
-                for near in xy.around() {
+                for near in cost_matrix.around_xy(xy) {
                     let near_cost = cost_matrix.get(near);
                     let new_dist = dist.saturating_add(near_cost);
                     let near_dist = distances.get(near);
                     if near_cost != obstacle_cost() && new_dist < near_dist {
                         distances.set(near, new_dist);
-                        queue
-                            .entry(new_dist)
-                            .and_modify(|xys| xys.push(near))
-                            .or_insert(vec![near]);
+                        queue.push_or_insert(new_dist, near);
                     }
                 }
             }
         } else {
             first.remove();
         }
+        
+        local_debug!("queue={:?}\n{}", queue, distances);
     }
 
     distances

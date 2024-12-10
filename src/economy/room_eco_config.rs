@@ -1,5 +1,4 @@
 use std::cmp::max;
-use std::iter::repeat;
 use log::{info, trace};
 use screeps::{ENERGY_REGEN_TIME, SOURCE_ENERGY_CAPACITY};
 use screeps::Part::{Carry, Move, Work};
@@ -10,6 +9,7 @@ use crate::creeps::creep_role::CreepRole::{Hauler, Miner};
 use crate::geometry::room_xy::RoomXYUtils;
 use crate::room_planning::room_planner::SOURCE_AND_CONTROLLER_ROAD_RCL;
 use crate::room_states::room_state::RoomState;
+use crate::travel::surface::Surface;
 use crate::u;
 
 const MIN_SAFE_LAST_CREEP_TTL: u32 = 300;
@@ -60,7 +60,8 @@ impl RoomEcoConfig {
 
         let roads_used = room_state.rcl >= SOURCE_AND_CONTROLLER_ROAD_RCL;
 
-        let hauler_throughput = hauler_body.hauling_throughput(roads_used) / 2.0;
+        let hauler_throughput = hauler_body
+            .hauling_throughput(roads_used.then_some(Surface::Road).unwrap_or(Surface::Plain)) / 2.0;
 
         let controller_work_pos = u!(u!(room_state.controller).work_xy).to_pos(room_state.room_name);
 
@@ -256,55 +257,47 @@ impl RoomEcoConfig {
     }
 
     pub fn hauler_body(spawn_energy: u32) -> CreepBody {
-        let parts = if spawn_energy == 0 {
+        if spawn_energy == 0 {
             // Smallest possible hauler.
-            vec![Carry, Move]
+            vec![(Move, 1), (Carry, 1)].into()
         } else if spawn_energy >= 550 {
-            repeat([Carry, Move]).take(5).flatten().collect::<Vec<_>>()
+            vec![(Move, 5), (Carry, 5)].into()
         } else {
-            vec![Carry, Move, Carry, Move, Carry, Move]
-        };
-
-        CreepBody::new(parts)
+            vec![(Move, 3), (Carry, 3)].into()
+        }
     }
 
     pub fn miner_body(spawn_energy: u32, drop_mining: bool) -> CreepBody {
-        let parts = if spawn_energy == 0 {
+        if spawn_energy == 0 {
             if drop_mining {
                 // Smallest possible drop miner.
-                vec![Move, Work]
+                vec![(Move, 1), (Work, 1)].into()
             } else {
                 // Smallest possible link miner.
-                vec![Move, Carry, Work]
+                vec![(Move, 1), (Work, 1), (Carry, 1)].into()
             }
         } else if spawn_energy >= 550 && drop_mining {
-            vec![Work, Work, Work, Work, Move, Work]
+            vec![(Move, 1), (Work, 5)].into()
         } else if drop_mining {
-            vec![Move, Work, Move, Work]
+            vec![(Move, 2), (Work, 2)].into()
         } else {
-            vec![Work, Move, Carry, Work]
-        };
-
-        CreepBody::new(parts)
+            vec![(Move, 1), (Work, 2), (Carry, 1)].into()
+        }
     }
 
     pub fn upgrader_body(spawn_energy: u32) -> CreepBody {
-        let parts = if spawn_energy >= 550 {
-            vec![Move, Carry, Carry, Carry, Work, Move, Carry, Work]
+        if spawn_energy >= 550 {
+            vec![(Move, 2), (Work, 2), (Carry, 4)].into()
         } else {
-            vec![Carry, Move, Carry, Work]
-        };
-
-        CreepBody::new(parts)
+            vec![(Move, 1), (Work, 1), (Carry, 2)].into()
+        }
     }
 
     pub fn builder_body(spawn_energy: u32) -> CreepBody {
-        let parts = if spawn_energy >= 550 {
-            vec![Move, Move, Carry, Work, Work, Work]
+        if spawn_energy >= 550 {
+            vec![(Move, 2), (Work, 3), (Carry, 1)].into()
         } else {
-            vec![Move, Carry, Work, Work]
-        };
-
-        CreepBody::new(parts)
+            vec![(Move, 1), (Work, 2), (Carry, 1)].into()
+        }
     }
 }

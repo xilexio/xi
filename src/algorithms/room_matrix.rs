@@ -56,6 +56,16 @@ where
         self.data[xy.to_index()] = value;
     }
 
+    fn clone_filled(&self, fill: T) -> Self {
+        RoomMatrix {
+            data: [fill; ROOM_AREA]
+        }
+    }
+
+    fn around_xy(&self, xy: RoomXY) -> impl Iterator<Item=RoomXY> {
+        xy.around()
+    }
+
     fn iter_xy<'it>(&self) -> impl Iterator<Item = RoomXY> + 'it {
         (0..ROOM_AREA).map(|i| unsafe {
             RoomXY::unchecked_new((i % (ROOM_SIZE as usize)) as u8, (i / (ROOM_SIZE as usize)) as u8)

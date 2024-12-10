@@ -4,9 +4,20 @@ pub trait MatrixCommon<T>
 where
     T: Clone + Copy + PartialEq,
 {
+    /// Gets the element at given XY. Panics if it is out of bounds.
     fn get(&self, xy: RoomXY) -> T;
+    /// Sets the element at given XY. Panics if it is out of bounds.
     fn set(&mut self, xy: RoomXY, value: T);
+    
+    /// Used to make another matrix of the same type and size.
+    fn clone_filled(&self, fill: T) -> Self;
+    
+    /// Returns an iterator over RoomXY around given tile that are within bounds.
+    fn around_xy(&self, xy: RoomXY) -> impl Iterator<Item = RoomXY>;
 
+    /// Iterates over all RoomXY within the matrix.
+    fn iter_xy<'a, 'b>(&'a self) -> impl Iterator<Item = RoomXY> + 'b;
+    
     /// `x` and `y` are required to be within room bounds.
     #[inline]
     unsafe fn get_xy(&self, x: u8, y: u8) -> T {
@@ -19,12 +30,10 @@ where
         self.set(RoomXY::unchecked_new(x, y), value)
     }
 
-    fn iter_xy<'a, 'b>(&'a self) -> impl Iterator<Item = RoomXY> + 'b;
-
     fn iter(&self) -> impl Iterator<Item = (RoomXY, T)> + '_ {
         self.iter_xy().map(move |xy| (xy, self.get(xy)))
     }
-
+    
     fn find_xy<'a>(&'a self, value: T) -> impl Iterator<Item = RoomXY> + 'a
     where
         T: 'a,

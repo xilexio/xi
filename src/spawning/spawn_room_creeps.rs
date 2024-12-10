@@ -1,4 +1,4 @@
-use crate::creeps::register_creep;
+use crate::creeps::creeps::register_creep;
 use crate::utils::game_tick::game_tick;
 use crate::kernel::kernel::schedule;
 use crate::kernel::sleep::sleep;
@@ -7,13 +7,7 @@ use crate::room_states::room_states::with_room_state;
 use crate::u;
 use log::{debug, trace, warn};
 use rustc_hash::{FxHashMap, FxHashSet};
-use screeps::{
-    game,
-    ObjectId,
-    RoomName,
-    SpawnOptions,
-    StructureSpawn,
-};
+use screeps::{game, ObjectId, RoomName, SpawnOptions, StructureSpawn};
 use std::collections::Bound;
 use crate::spawning::spawn_schedule::{with_spawn_schedule, PreferredSpawn, SpawnEvent};
 
@@ -123,12 +117,15 @@ fn try_execute_spawn_event(room_name: RoomName, spawn_id: ObjectId<StructureSpaw
 
         // Nonexistent creeps are cleaned up next tick. This creep will exist the next tick, unless it
         // fails to spawn.
-        let creep = register_creep(event.request.role);
+        let creep = register_creep(
+            event.request.role,
+            event.request.body.clone()
+        );
 
         // Issuing the spawn intent.
         let spawn_options = SpawnOptions::default();
         let spawn_result = spawn
-            .spawn_creep_with_options(&event.request.body.parts, &creep.borrow().name, &spawn_options);
+            .spawn_creep_with_options(&event.request.body.parts_vec(), &creep.borrow().name, &spawn_options);
 
         if spawn_result.is_err() {
             warn!(

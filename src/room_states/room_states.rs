@@ -3,11 +3,20 @@ use screeps::RoomName;
 use std::cell::RefCell;
 use std::ops::DerefMut;
 use crate::room_states::room_state::{RoomDesignation, RoomState};
+#[cfg(test)]
+use crate::room_states::room_state::empty_unowned_room_state;
 
 pub type RoomStates = FxHashMap<RoomName, RoomState>;
 
 thread_local! {
     static ROOM_STATES: RefCell<RoomStates> = RefCell::new(FxHashMap::default());
+}
+
+pub fn with_room_states<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut RoomStates) -> R,
+{
+    ROOM_STATES.with(|states| f(states.borrow_mut().deref_mut()))
 }
 
 pub fn with_room_state<F, R>(room_name: RoomName, f: F) -> Option<R>
@@ -57,9 +66,11 @@ where
     });
 }
 
-pub fn with_room_states<F, R>(f: F) -> R
-where
-    F: FnOnce(&mut RoomStates) -> R,
-{
-    ROOM_STATES.with(|states| f(states.borrow_mut().deref_mut()))
+#[cfg(test)]
+pub fn test_room_states() -> RoomStates {
+    let room_states = [
+        empty_unowned_room_state(),
+    ];
+    
+    room_states.into_iter().map(|room_state| (room_state.room_name, room_state)).collect()
 }
