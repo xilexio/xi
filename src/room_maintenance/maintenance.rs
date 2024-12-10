@@ -90,12 +90,13 @@ async fn maintain_room(room_name: RoomName) {
         );
 
         // Schedule mining sources inside the room, independently for each source.
+        let number_of_sources = room_state.sources.len();
         for (source_ix, source_data) in room_state.sources.iter().enumerate() {
             debug!("Setting up mining of {} in {}.", source_data.xy, room_name);
             schedule(
                 &format!("mine_source_{}_X{}_Y{}", room_name, source_data.xy.x, source_data.xy.y),
                 current_priority() - 1,
-                mine_source(room_name, source_ix),
+                mine_source(room_name, source_ix, number_of_sources),
             );
         }
 

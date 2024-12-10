@@ -114,7 +114,7 @@ pub async fn move_creeps() {
                     if let Some(travel_spec) = creep.travel_state.spec.as_ref() {
                         local_debug!(
                             "Moving creep {} towards {}. Next tile: {}. Fatigued: {}.",
-                            creep.name, travel_spec.target, pos.f(), fatigued
+                            creep.name, travel_spec.target.f(), pos.f(), fatigued
                         );
                     } else {
                         local_debug!(
@@ -263,6 +263,8 @@ where
         }
 
         // TODO remember it and if we want repath or extend path
+        // TODO Result::Err at src\travel\traffic.rs:267,23 in xi::travel::traffic: Err(InvalidRectError)
+        local_debug!("{:?} {} {:?} {:?}", creep.get_travel_state(), creep_pos.f(), target_rect, slice);
         target_rect = u!(target_rect.intersection(slice));
 
         // The traffic costs are a 3x3 slice of the distance matrix towards the target

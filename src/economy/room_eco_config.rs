@@ -1,5 +1,5 @@
 use std::cmp::max;
-use log::{info, trace};
+use log::{info, trace, warn};
 use screeps::{ENERGY_REGEN_TIME, SOURCE_ENERGY_CAPACITY};
 use screeps::Part::{Carry, Move, Work};
 use screeps::StructureType::{Spawn, Storage};
@@ -23,8 +23,9 @@ pub struct RoomEcoConfig {
     /// The body of a hauler.
     pub hauler_body: CreepBody,
 
-    /// The number of miners that should be spawned per each source in the room.
-    pub miners_required_per_source: u32,
+    /// The number of miners that should be currently spawned.
+    /// Miners are shared by all room sources.
+    pub miners_required: u32,
     /// The body of a miner to spawn for each room source.
     pub miner_body: CreepBody,
 
@@ -61,7 +62,7 @@ impl RoomEcoConfig {
         let roads_used = room_state.rcl >= SOURCE_AND_CONTROLLER_ROAD_RCL;
 
         let hauler_throughput = hauler_body
-            .hauling_throughput(roads_used.then_some(Surface::Road).unwrap_or(Surface::Plain)) / 2.0;
+            .hauling_throughput(if roads_used { Surface::Road } else { Surface::Plain }) / 2.0;
 
         let controller_work_pos = u!(u!(room_state.controller).work_xy).to_pos(room_state.room_name);
 
@@ -91,6 +92,10 @@ impl RoomEcoConfig {
             // Multiplier of how much does a creep body cost including the cost of haulers.
             // Note that hauler energy usage should also be multiplied.
             body_cost_multiplier = 1.0 / (1.0 - avg_source_spawn_dist / hauler_throughput * base_hauler_body_energy_usage);
+            if !(0.0..=2.0).contains(&body_cost_multiplier) {
+                warn!("Improbable body cost multiplier computed: {:.2}.", body_cost_multiplier);
+                body_cost_multiplier = 2.0;
+            }
 
             let controller_distance_sum = room_state
                 .sources
@@ -121,12 +126,11 @@ impl RoomEcoConfig {
             // TODO Link mining.
             miner_body = Self::miner_body(0, true);
         }
-        let miners_required_per_source = if small_miner_required {
+        let miners_required = if small_miner_required {
             1
         } else {
-            (single_source_energy_income / miner_body.energy_harvest_power() as f32).ceil() as u32
+            (single_source_energy_income / miner_body.energy_harvest_power() as f32).ceil() as u32 * number_of_sources
         };
-        let miners_required = miners_required_per_source * number_of_sources;
         let total_miner_body_energy_usage = miners_required as f32 * miner_body.body_energy_usage() * body_cost_multiplier;
         let total_mining_energy_usage = total_miner_body_energy_usage;
         let mining_hauling_throughput = total_miner_body_energy_usage * avg_source_spawn_dist;
@@ -247,7 +251,7 @@ impl RoomEcoConfig {
         Self {
             haulers_required,
             hauler_body,
-            miners_required_per_source,
+            miners_required,
             miner_body,
             upgraders_required,
             upgrader_body,

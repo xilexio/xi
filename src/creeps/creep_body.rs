@@ -59,7 +59,7 @@ impl CreepBody {
     }
 
     pub fn spawn_duration(&self) -> u32 {
-        self.parts.len() as u32 * CREEP_SPAWN_TIME
+        self.total_part_count() as u32 * CREEP_SPAWN_TIME
     }
 
     pub fn energy_cost(&self) -> u32 {
@@ -67,7 +67,11 @@ impl CreepBody {
     }
 
     pub fn count_parts(&self, part: Part) -> u8 {
-        self.parts.get(&part).map(|(count, _)| *count as u8).unwrap_or(0)
+        self.parts.get(&part).map(|(count, _)| *count).unwrap_or(0)
+    }
+    
+    pub fn total_part_count(&self) -> u8 {
+        self.parts.values().map(|(count, _)| *count).sum()
     }
 
     /// The amount of energy per tick required to keep a creep with this body spawned.
@@ -80,14 +84,18 @@ impl CreepBody {
     }
 
     pub fn ticks_per_tile(&self, surface: Surface) -> u8 {
-        let move_parts = self.count_parts(Move);
+        if surface == Surface::Obstacle {
+            return u8::MAX;
+        }
+        let move_parts = self.count_parts(Move) as u16;
         if move_parts == 0 {
             return u8::MAX;
         }
-        let move_cost_per_part = surface.move_cost();
-        let fatigue = (self.parts.len() as u8 - move_parts) * move_cost_per_part;
-        let move_power = move_parts * MOVE_POWER as u8;
-        max(1, fatigue.div_ceil(move_power) as u8)
+        let move_cost_per_part = surface.move_cost() as u16;
+        // The fatigue can be as high as 490, which exceeds u8::MAX.
+        let fatigue = (self.total_part_count() as u16 - move_parts) * move_cost_per_part;
+        let move_power = move_parts * MOVE_POWER as u16;
+        max(1u8, fatigue.div_ceil(move_power) as u8)
     }
     
     pub fn fatigue_regen_ticks(&self, fatigue: u8) -> u8 {
@@ -175,5 +183,32 @@ impl From<Vec<(Part, u8)>> for CreepBody {
         Self {
             parts
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use screeps::Part::{Move, Work};
+    use crate::travel::surface::Surface;
+
+    #[test]
+    fn test_ticks_per_tile() {
+        assert_eq!(crate::creeps::creep_body::CreepBody::from(vec![(Move, 1)]).ticks_per_tile(Surface::Road), 1u8);
+        assert_eq!(crate::creeps::creep_body::CreepBody::from(vec![(Move, 1)]).ticks_per_tile(Surface::Plain), 1u8);
+        assert_eq!(crate::creeps::creep_body::CreepBody::from(vec![(Move, 1)]).ticks_per_tile(Surface::Swamp), 1u8);
+        assert_eq!(crate::creeps::creep_body::CreepBody::from(vec![(Move, 1)]).ticks_per_tile(Surface::Obstacle), u8::MAX);
+        
+        assert_eq!(crate::creeps::creep_body::CreepBody::from(vec![(Move, 1), (Work, 3)]).ticks_per_tile(Surface::Road), 2u8);
+        assert_eq!(crate::creeps::creep_body::CreepBody::from(vec![(Move, 1), (Work, 3)]).ticks_per_tile(Surface::Plain), 3u8);
+        assert_eq!(crate::creeps::creep_body::CreepBody::from(vec![(Move, 1), (Work, 3)]).ticks_per_tile(Surface::Swamp), 15u8);
+        assert_eq!(crate::creeps::creep_body::CreepBody::from(vec![(Move, 1), (Work, 3)]).ticks_per_tile(Surface::Obstacle), u8::MAX);
+        
+        assert_eq!(crate::creeps::creep_body::CreepBody::from(vec![(Move, 1), (Work, 49)]).ticks_per_tile(Surface::Road), 25u8);
+        assert_eq!(crate::creeps::creep_body::CreepBody::from(vec![(Move, 1), (Work, 49)]).ticks_per_tile(Surface::Plain), 49u8);
+        assert_eq!(crate::creeps::creep_body::CreepBody::from(vec![(Move, 1), (Work, 49)]).ticks_per_tile(Surface::Swamp), 245u8);
+        assert_eq!(crate::creeps::creep_body::CreepBody::from(vec![(Move, 1), (Work, 49)]).ticks_per_tile(Surface::Obstacle), u8::MAX);
+        
+        assert_eq!(crate::creeps::creep_body::CreepBody::from(vec![(Work, 1)]).ticks_per_tile(Surface::Plain), u8::MAX);
+        assert_eq!(crate::creeps::creep_body::CreepBody::from(vec![(Work, 1)]).ticks_per_tile(Surface::Swamp), u8::MAX);
     }
 }

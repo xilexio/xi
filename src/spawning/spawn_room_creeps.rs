@@ -10,6 +10,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::{game, ObjectId, RoomName, SpawnOptions, StructureSpawn};
 use std::collections::Bound;
 use crate::spawning::spawn_schedule::{with_spawn_schedule, PreferredSpawn, SpawnEvent};
+use crate::utils::result_utils::ResultUtils;
 
 const DEBUG: bool = true;
 
@@ -127,11 +128,13 @@ fn try_execute_spawn_event(room_name: RoomName, spawn_id: ObjectId<StructureSpaw
         let spawn_result = spawn
             .spawn_creep_with_options(&event.request.body.parts_vec(), &creep.borrow().name, &spawn_options);
 
+        spawn_result.warn_if_err(&format!(
+            "Failed to spawn {} in spawn {} in {}.",
+            event.request.role,
+            spawn_id,
+            room_name
+        ));
         if spawn_result.is_err() {
-            warn!(
-                "Failed to spawn {} in spawn {} in {}.",
-                event.request.role, spawn_id, room_name
-            );
             return false;
         }
 
@@ -219,7 +222,7 @@ pub fn update_spawn_list(room_name: RoomName) {
                 debug!("Unregistering spawn {} in {}.", spawn_id, room_name);
                 if let Some(event) = maybe_spawn_event {
                     warn!(
-                        "Failed to spawn {} in {} due to lost spawn.",
+                        "Failed to spawn {} in {} due to a lost spawn.",
                         event.request.role, room_name
                     );
                     event.promise.borrow_mut().cancelled = true;

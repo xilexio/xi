@@ -1,3 +1,4 @@
+use std::cmp::min;
 use crate::creeps::creep_role::CreepRole;
 use crate::kernel::sleep::sleep;
 use crate::priorities::MINER_SPAWN_PRIORITY;
@@ -32,7 +33,7 @@ enum MiningKind {
     LinkMining,
 }
 
-pub async fn mine_source(room_name: RoomName, source_ix: usize) {
+pub async fn mine_source(room_name: RoomName, source_ix: usize, number_of_sources: usize) {
     loop {
         // Computing a template for spawn request that will later have its tick intervals modified.
         // Also computing travel spec. The working location (and hence travel spec) depends on the
@@ -96,15 +97,20 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
 
         run_future_until_structures_change(room_name, async move {
             loop {
-                let (miners_required_per_source, miner_body) = wait_until_some(|| with_room_state(room_name, |room_state| {
+                let (source_miners_required, miner_body) = wait_until_some(|| with_room_state(room_name, |room_state| {
                     room_state
                         .eco_config
                         .as_ref()
                         .map(|config| {
-                            (config.miners_required_per_source, config.miner_body.clone())
+                            // Dividing the miners among sources.
+                            let mut source_miners_required = config.miners_required / number_of_sources as u32;
+                            if (source_ix as u32) < number_of_sources as u32 - number_of_sources as u32 * source_miners_required {
+                                source_miners_required += 1;
+                            }
+                            (source_miners_required, config.miner_body.clone())
                         })
                 }).flatten()).await;
-                spawn_pool.target_number_of_creeps = miners_required_per_source;
+                spawn_pool.target_number_of_creeps = min(source_data.drop_mining_xys.len() as u32, source_miners_required);
                 spawn_pool.base_spawn_request.body = miner_body;
 
                 // Keeping a miner or multiple miners spawned and mining.
