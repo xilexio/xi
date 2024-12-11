@@ -97,7 +97,7 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize, number_of_source
 
         run_future_until_structures_change(room_name, async move {
             loop {
-                let (source_miners_required, miner_body) = wait_until_some(|| with_room_state(room_name, |room_state| {
+                let (source_miners_required, miner_body, miner_spawn_priority) = wait_until_some(|| with_room_state(room_name, |room_state| {
                     room_state
                         .eco_config
                         .as_ref()
@@ -107,11 +107,12 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize, number_of_source
                             if (source_ix as u32) < number_of_sources as u32 - number_of_sources as u32 * source_miners_required {
                                 source_miners_required += 1;
                             }
-                            (source_miners_required, config.miner_body.clone())
+                            (source_miners_required, config.miner_body.clone(), config.miner_spawn_priority)
                         })
                 }).flatten()).await;
                 spawn_pool.target_number_of_creeps = min(source_data.drop_mining_xys.len() as u32, source_miners_required);
                 spawn_pool.base_spawn_request.body = miner_body;
+                spawn_pool.base_spawn_request.priority = miner_spawn_priority;
 
                 // Keeping a miner or multiple miners spawned and mining.
                 spawn_pool.with_spawned_creeps(|creep_ref| {

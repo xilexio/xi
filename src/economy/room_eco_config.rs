@@ -11,6 +11,7 @@ use crate::room_planning::room_planner::SOURCE_AND_CONTROLLER_ROAD_RCL;
 use crate::room_states::room_state::RoomState;
 use crate::travel::surface::Surface;
 use crate::u;
+use crate::utils::priority::Priority;
 
 const MIN_SAFE_LAST_CREEP_TTL: u32 = 300;
 
@@ -22,12 +23,14 @@ pub struct RoomEcoConfig {
     pub haulers_required: u32,
     /// The body of a hauler.
     pub hauler_body: CreepBody,
+    pub hauler_spawn_priority: Priority,
 
     /// The number of miners that should be currently spawned.
     /// Miners are shared by all room sources.
     pub miners_required: u32,
     /// The body of a miner to spawn for each room source.
     pub miner_body: CreepBody,
+    pub miner_spawn_priority: Priority,
 
     /// The number of upgraders to spawn.
     pub upgraders_required: u32,
@@ -136,6 +139,14 @@ impl RoomEcoConfig {
         let mining_hauling_throughput = total_miner_body_energy_usage * avg_source_spawn_dist;
         total_hauling_throughput += mining_hauling_throughput;
         energy_balance -= total_mining_energy_usage;
+        
+        let mut miner_spawn_priority = Priority(200);
+        let mut hauler_spawn_priority = Priority(150);
+        if miner_stats.number_of_creeps == 0 {
+            miner_spawn_priority = Priority(250);
+        } else if hauler_stats.number_of_creeps == 0 {
+            hauler_spawn_priority = Priority(250);
+        }
 
         // Builder uses energy on its body and building.
         // Ignoring the time spent travelling for the purpose of energy usage.
@@ -272,8 +283,10 @@ impl RoomEcoConfig {
         Self {
             haulers_required,
             hauler_body,
+            hauler_spawn_priority,
             miners_required,
             miner_body,
+            miner_spawn_priority,
             upgraders_required,
             upgrader_body,
             builders_required,

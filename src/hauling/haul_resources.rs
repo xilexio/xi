@@ -56,7 +56,7 @@ pub async fn haul_resources(room_name: RoomName) {
     let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, SpawnPoolOptions::default());
     
     loop {
-        let (haulers_required, hauler_body) = wait_until_some(|| with_room_state(room_name, |room_state| {
+        let (haulers_required, hauler_body, hauler_spawn_priority) = wait_until_some(|| with_room_state(room_name, |room_state| {
             // TODO
             if game_tick() % 10 == 4 {
                 if let Some(eco_stats) = room_state.eco_stats.as_mut() {
@@ -68,11 +68,12 @@ pub async fn haul_resources(room_name: RoomName) {
                 .eco_config
                 .as_ref()
                 .map(|config| {
-                    (config.haulers_required, config.hauler_body.clone())
+                    (config.haulers_required, config.hauler_body.clone(), config.hauler_spawn_priority)
                 })
         }).flatten()).await;
         spawn_pool.target_number_of_creeps = haulers_required;
         spawn_pool.base_spawn_request.body = hauler_body;
+        spawn_pool.base_spawn_request.priority = hauler_spawn_priority;
         
         /* TODO This should not be needed. For now, let it break.
         with_haul_requests(room_name, |haul_requests| {

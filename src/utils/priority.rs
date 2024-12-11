@@ -1,5 +1,7 @@
+use serde::{Deserialize, Serialize};
+
 /// Generic priority. Higher is more important.
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
 #[repr(transparent)]
 pub struct Priority(pub u8);
 
