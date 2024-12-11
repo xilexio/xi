@@ -158,7 +158,7 @@ fn resolve_conflicts<I, C>(
     extra_obstacles: FxHashSet<Position>,
 )
 where
-    I: Hash + PartialEq + Eq + Clone + Copy,
+    I: Hash + PartialEq + Eq + Copy,
     C: GenericCreep,
 {
     // Starting to resolve conflicts from here. Recursively increasing the set of conflicted

@@ -2,7 +2,7 @@ use screeps::RoomXY;
 
 pub trait MatrixCommon<T>
 where
-    T: Clone + Copy + PartialEq,
+    T: Copy + PartialEq,
 {
     /// Gets the element at given XY. Panics if it is out of bounds.
     fn get(&self, xy: RoomXY) -> T;
@@ -69,7 +69,7 @@ where
     fn merge_from<M, S, F>(&mut self, matrix: &M, mut merge: F)
     where
         M: MatrixCommon<S>,
-        S: Clone + Copy + PartialEq,
+        S: Copy + PartialEq,
         F: FnMut(T, S) -> T,
     {
         for (xy, value) in matrix.iter() {

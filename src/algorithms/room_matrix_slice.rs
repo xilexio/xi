@@ -13,7 +13,7 @@ pub struct RoomMatrixSlice<T> {
 
 impl<T> RoomMatrixSlice<T>
 where
-    T: Clone + Copy + PartialEq,
+    T: Copy + PartialEq,
 {
     pub fn new(rect: Rect, fill: T) -> Self {
         let mut data = Vec::new();
@@ -67,7 +67,7 @@ where
     pub fn map<F, S>(&self, mut f: F) -> RoomMatrixSlice<S>
     where
         F: FnMut(RoomXY, T) -> S,
-        S: Clone + Copy + PartialEq + Default,
+        S: Copy + PartialEq + Default,
     {
         let mut result = RoomMatrixSlice::new(self.rect, S::default());
         for (xy, value) in self.iter() {
@@ -79,7 +79,7 @@ where
 
 impl<T> MatrixCommon<T> for RoomMatrixSlice<T>
 where
-    T: Clone + Copy + PartialEq,
+    T: Copy + PartialEq,
 {
     #[inline]
     fn get(&self, xy: RoomXY) -> T {
@@ -118,7 +118,7 @@ where
 
 impl<T> Display for RoomMatrixSlice<T>
 where
-    T: Clone + Copy + PartialEq + LowerHex + Sized,
+    T: Copy + PartialEq + LowerHex + Sized,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "   ")?;

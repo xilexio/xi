@@ -17,7 +17,7 @@ pub struct RoomMatrix<T> {
 
 impl<T> RoomMatrix<T>
 where
-    T: Clone + Copy + PartialEq,
+    T: Copy + PartialEq,
 {
     pub fn new(fill: T) -> Self {
         RoomMatrix {
@@ -32,7 +32,7 @@ where
     pub fn map<F, S>(&self, mut f: F) -> RoomMatrix<S>
     where
         F: FnMut(RoomXY, T) -> S,
-        S: Clone + Copy + PartialEq + Default,
+        S: Copy + PartialEq + Default,
     {
         let mut data = [S::default(); ROOM_AREA];
         for (xy, value) in self.iter() {
@@ -44,7 +44,7 @@ where
 
 impl<T> MatrixCommon<T> for RoomMatrix<T>
 where
-    T: Clone + Copy + PartialEq,
+    T: Copy + PartialEq,
 {
     #[inline]
     fn get(&self, xy: RoomXY) -> T {
@@ -75,7 +75,7 @@ where
 
 impl<T> Default for RoomMatrix<T>
 where
-    T: Clone + Copy + PartialEq + Default,
+    T: Copy + PartialEq + Default,
 {
     fn default() -> Self {
         RoomMatrix::new(T::default())
@@ -84,7 +84,7 @@ where
 
 impl<T> Display for RoomMatrix<T>
 where
-    T: Clone + Copy + PartialEq + LowerHex + Sized,
+    T: Copy + PartialEq + LowerHex + Sized,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "   ")?;
@@ -119,7 +119,7 @@ where
 
 impl<T> Serialize for RoomMatrix<T>
 where
-    T: Serialize + Clone + Copy,
+    T: Serialize + Copy,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -135,7 +135,7 @@ where
 
 impl<'de, T> Deserialize<'de> for RoomMatrix<T>
 where
-    T: Deserialize<'de> + Default + Serialize + Clone + Copy + PartialEq,
+    T: Deserialize<'de> + Default + Serialize + Copy + PartialEq,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -148,7 +148,7 @@ where
 #[derive(Default)]
 struct RoomMatrixVisitor<T>
 where
-    T: Default + Clone + Copy + PartialEq,
+    T: Default + Copy + PartialEq,
 {
     /// Buffer in which to place deserialized `RoomMatrix`. Starts with default values.
     buffer: RoomMatrix<T>,
@@ -158,7 +158,7 @@ where
 
 impl<'de, T> Visitor<'de> for RoomMatrixVisitor<T>
 where
-    T: Deserialize<'de> + Default + Clone + Copy + PartialEq,
+    T: Deserialize<'de> + Default + Copy + PartialEq,
 {
     type Value = RoomMatrix<T>;
 

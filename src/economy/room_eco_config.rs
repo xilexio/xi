@@ -222,6 +222,27 @@ impl RoomEcoConfig {
         let extra_haulers_hauling_throughput = hauling_extra_energy_usage * avg_source_spawn_dist;
 
         if let Some(eco_stats) = room_state.eco_stats.as_ref() {
+            info!("Current haul stats / small sample haul stats:");
+            info!(
+                "Avg. unfulfilled withdraw amount: {:.2}R, {:.2}R",
+                eco_stats.haul_stats.unfulfilled_withdraw_amount.avg::<f32>(),
+                eco_stats.haul_stats.unfulfilled_withdraw_amount.small_sample_avg::<f32>()
+            );
+            info!(
+                "Avg. unfulfilled deposit amount: {:.2}R, {:.2}R",
+                eco_stats.haul_stats.unfulfilled_deposit_amount.avg::<f32>(),
+                eco_stats.haul_stats.unfulfilled_deposit_amount.small_sample_avg::<f32>()
+            );
+            info!(
+                "Avg. withdrawable storage amount: {:.2}R, {:.2}R",
+                eco_stats.haul_stats.withdrawable_storage_amount.avg::<f32>(),
+                eco_stats.haul_stats.withdrawable_storage_amount.small_sample_avg::<f32>()
+            );
+            info!(
+                "Avg. depositable storage amount: {:.2}R, {:.2}R",
+                eco_stats.haul_stats.depositable_storage_amount.avg::<f32>(),
+                eco_stats.haul_stats.depositable_storage_amount.small_sample_avg::<f32>()
+            );
             info!("Current creeps:");
             for &role in eco_stats.creep_stats_by_role.keys() {
                 let role_stats = eco_stats.creep_stats(role);

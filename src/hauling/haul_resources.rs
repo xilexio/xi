@@ -57,6 +57,13 @@ pub async fn haul_resources(room_name: RoomName) {
     
     loop {
         let (haulers_required, hauler_body) = wait_until_some(|| with_room_state(room_name, |room_state| {
+            // TODO
+            if game_tick() % 10 == 4 {
+                if let Some(eco_stats) = room_state.eco_stats.as_mut() {
+                    eco_stats.haul_stats.add_sample(room_name);
+                }
+            }
+            
             room_state
                 .eco_config
                 .as_ref()

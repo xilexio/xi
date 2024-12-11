@@ -54,7 +54,7 @@ const DEBUG: bool = false;
 pub fn min_cost_weighted_matching<W, C>(costs: &[W]) -> Option<(Vec<usize>, C)>
 where
     W: AsRef<[(usize, C)]> + Debug,
-    C: Zero + Bounded + PartialOrd + Sub<Output = C> + AddAssign + SubAssign + Clone + Copy + Debug,
+    C: Zero + Bounded + PartialOrd + Sub<Output = C> + AddAssign + SubAssign + Copy + Debug,
 {
     // Computing |S| and |T|.
     let s_size = costs.len();
