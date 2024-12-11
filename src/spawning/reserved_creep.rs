@@ -37,7 +37,9 @@ impl ReservedCreep {
         with_reserved_creeps(|reserved_creeps| {
             let creep = creep_ref.borrow();
             trace!("Reserving creep {}.", creep.name);
-            // TODO This assertion has failed after spawning a creep.
+            // TODO This assertion has failed after spawning a creep just after another one suicided.
+            //      xi::spawning::reserved_creep: Reserving creep upgrader36.
+            //      [ERROR] xi::utils::assert: Assertion failed in src\spawning\reserved_creep.rs:41,13 in xi::spawning::reserved_creep.
             a!(!reserved_creeps.contains(&(creep.role, creep.number)));
             reserved_creeps.insert((creep.role, creep.number));
         });

@@ -96,7 +96,7 @@ async fn maintain_room(room_name: RoomName) {
             schedule(
                 &format!("mine_source_{}_X{}_Y{}", room_name, source_data.xy.x, source_data.xy.y),
                 current_priority() - 1,
-                mine_source(room_name, source_ix, number_of_sources),
+                mine_source(room_name, source_ix),
             );
         }
 

@@ -234,6 +234,18 @@ where
         let mut target_rect;
         let mut path_reused = true;
         let path_len = creep.get_travel_state().path.len();
+        if DEBUG && path_len != 0 {
+            let dist = creep.get_travel_state().path[path_len - 1].get_range_to(creep.get_travel_state().pos);
+            if dist != 1 {
+                warn!(
+                    "Creep {} at {} has path that is {} tiles away, starting from {}.",
+                    creep.get_name(),
+                    creep.get_travel_state().pos.f(),
+                    dist,
+                    creep.get_travel_state().path[path_len - 1].f()
+                );
+            }
+        }
         // TODO Handle cross-room movement.
         if path_len >= 2 {
             let two_tiles_further = creep.get_travel_state().path[path_len - 2].xy();
@@ -248,7 +260,8 @@ where
         }
 
         if let Some(travel_spec) = creep.get_travel_state().spec.as_ref() {
-            if travel_spec.target.get_range_to(creep_pos) <= 2 + travel_spec.range as u32 {
+            // Repathing if the target is on creep's or adjacent tile.
+            if travel_spec.target.get_range_to(creep_pos) <= 1 + travel_spec.range as u32 {
                 // Unless something is wrong with pathfinding, if the target has not
                 // been reached, the creep should have a path towards it.
                 target_rect = travel_spec.target_rect();
@@ -263,7 +276,26 @@ where
         }
 
         // TODO remember it and if we want repath or extend path
-        // TODO Result::Err at src\travel\traffic.rs:267,23 in xi::travel::traffic: Err(InvalidRectError)
+        // TODO xi::travel::traffic:
+        //      TravelState {
+        //          pos: Position { packed: 2054625303, x: RoomCoordinate(24), y: RoomCoordinate(23), room_name: RoomName { packed: 31351, real: "W5N8" } },
+        //          spec: Some(TravelSpec {
+        //              target: Position { packed: 2054626074, x: RoomCoordinate(27), y: RoomCoordinate(26), room_name: RoomName { packed: 31351, real: "W5N8" } },
+        //              range: 1
+        //          }),
+        //          path: [
+        //              Position { packed: 2054626074, x: RoomCoordinate(27), y: RoomCoordinate(26), room_name: RoomName { packed: 31351, real: "W5N8" } },
+        //              Position { packed: 2054626073, x: RoomCoordinate(27), y: RoomCoordinate(25), room_name: RoomName { packed: 31351, real: "W5N8" } },
+        //              Position { packed: 2054625816, x: RoomCoordinate(26), y: RoomCoordinate(24), room_name: RoomName { packed: 31351, real: "W5N8" } },
+        //              Position { packed: 2054625559, x: RoomCoordinate(25), y: RoomCoordinate(23), room_name: RoomName { packed: 31351, real: "W5N8" } }
+        //          ],
+        //          arrived: false,
+        //          arrival_broadcast: Broadcast { cid: UId(18), value: RefCell { value: None }, last_try_tick: 0 }
+        //      }
+        //      (W5N8,24,23)
+        //      Rect { top_left: RoomXY { x: RoomCoordinate(26), y: RoomCoordinate(25) }, bottom_right: RoomXY { x: RoomCoordinate(28), y: RoomCoordinate(27) } }
+        //      Rect { top_left: RoomXY { x: RoomCoordinate(23), y: RoomCoordinate(22) }, bottom_right: RoomXY { x: RoomCoordinate(26), y: RoomCoordinate(24) } }
+        //      xi::utils::unwrap: Unwrapping failed on Result::Err at src\travel\traffic.rs:268,23 in xi::travel::traffic: Err(InvalidRectError).
         local_debug!("{:?} {} {:?} {:?}", creep.get_travel_state(), creep_pos.f(), target_rect, slice);
         target_rect = u!(target_rect.intersection(slice));
 

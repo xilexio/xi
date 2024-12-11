@@ -33,7 +33,7 @@ enum MiningKind {
     LinkMining,
 }
 
-pub async fn mine_source(room_name: RoomName, source_ix: usize, number_of_sources: usize) {
+pub async fn mine_source(room_name: RoomName, source_ix: usize) {
     loop {
         // Computing a template for spawn request that will later have its tick intervals modified.
         // Also computing travel spec. The working location (and hence travel spec) depends on the
@@ -103,10 +103,13 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize, number_of_source
                         .as_ref()
                         .map(|config| {
                             // Dividing the miners among sources.
+                            let number_of_sources = room_state.sources.len();
                             let mut source_miners_required = config.miners_required / number_of_sources as u32;
-                            if (source_ix as u32) < number_of_sources as u32 - number_of_sources as u32 * source_miners_required {
+                            if (source_ix as u32) < config.miners_required - number_of_sources as u32 * source_miners_required {
                                 source_miners_required += 1;
                             }
+                            // The number of miners may not exceed the number of neighboring places to stand on.
+                            source_miners_required = min(source_miners_required, room_state.sources[source_ix].drop_mining_xys.len() as u32);
                             (source_miners_required, config.miner_body.clone(), config.miner_spawn_priority)
                         })
                 }).flatten()).await;
