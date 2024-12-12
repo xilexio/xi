@@ -17,10 +17,12 @@ pub struct HaulStats {
     pub withdrawable_storage_amount: HaulStatsAvgVector,
     /// Total amount of free space in the storages in the room.
     pub depositable_storage_amount: HaulStatsAvgVector,
+    /// Number of haulers that are idle in the current tick.
+    pub idle_haulers: HaulStatsAvgVector,
 }
 
 impl HaulStats {
-    pub fn add_sample(&mut self, room_name: RoomName) {
+    pub fn add_sample(&mut self, room_name: RoomName, idle_haulers: u32) {
         with_haul_requests(room_name, |haul_requests| {
             let mut amounts = [[0u32, 0u32], [0u32, 0u32]];
             haul_requests.withdraw_requests.values().for_each(|request| {
@@ -33,6 +35,7 @@ impl HaulStats {
             self.unfulfilled_deposit_amount.push(amounts[1][0]);
             self.withdrawable_storage_amount.push(amounts[0][1]);
             self.depositable_storage_amount.push(amounts[1][1]);
+            self.idle_haulers.push(idle_haulers);
         });
     }
 }

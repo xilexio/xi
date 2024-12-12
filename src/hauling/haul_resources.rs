@@ -1,3 +1,5 @@
+use std::cell::Cell;
+use std::rc::Rc;
 use crate::creeps::creep_role::CreepRole;
 use crate::creeps::creeps::CreepRef;
 use crate::errors::XiError;
@@ -54,16 +56,10 @@ pub async fn haul_resources(room_name: RoomName) {
     }));
 
     let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, SpawnPoolOptions::default());
+    let idle_haulers = Rc::new(Cell::new(0u32));
     
     loop {
         let (haulers_required, hauler_body, hauler_spawn_priority) = wait_until_some(|| with_room_state(room_name, |room_state| {
-            // TODO
-            if game_tick() % 10 == 4 {
-                if let Some(eco_stats) = room_state.eco_stats.as_mut() {
-                    eco_stats.haul_stats.add_sample(room_name);
-                }
-            }
-            
             room_state
                 .eco_config
                 .as_ref()
@@ -94,44 +90,59 @@ pub async fn haul_resources(room_name: RoomName) {
             });
         });
         */
+        
+        idle_haulers.replace(0);
 
         // TODO Measuring number of idle creeps and trying to minimize their number while
-        //      fulfilling all requests. To this end, keeping track of fulfillment of requests,
-        //      how big is the backlog, etc.
-        spawn_pool.with_spawned_creeps(|creep_ref| async move {
-            let carry_capacity = u!(creep_ref.borrow_mut().carry_capacity());
+        //      fulfilling all requests.
+        spawn_pool.with_spawned_creeps(|creep_ref| {
+            let idle_haulers_clone = idle_haulers.clone();
+            async move {
+                let carry_capacity = u!(creep_ref.borrow_mut().carry_capacity());
 
-            loop {
-                let store = u!(creep_ref.borrow_mut().used_capacities(AfterAllTransfers));
-                let pos = creep_ref.borrow_mut().travel_state.pos;
-                let ttl = creep_ref.borrow_mut().ticks_to_live();
+                loop {
+                    let store = u!(creep_ref.borrow_mut().used_capacities(AfterAllTransfers));
+                    let pos = creep_ref.borrow_mut().travel_state.pos;
+                    let ttl = creep_ref.borrow_mut().ticks_to_live();
 
-                debug!(
-                    "{} searching for withdraw/pickup and store requests.",
-                    creep_ref.borrow().name
-                );
-                
-                let reserved_requests = find_haul_requests(
-                    room_name,
-                    &store,
-                    pos,
-                    carry_capacity,
-                    ttl
-                );
+                    debug!(
+                        "{} searching for withdraw/pickup and store requests.",
+                        creep_ref.borrow().name
+                    );
 
-                if let Some(reserved_requests) = reserved_requests {
-                    let result = fulfill_requests(&creep_ref, reserved_requests).await;
+                    let reserved_requests = find_haul_requests(
+                        room_name,
+                        &store,
+                        pos,
+                        carry_capacity,
+                        ttl
+                    );
 
-                    if let Err(e) = result {
-                        debug!("Error when hauling: {:?}.", e);
+                    if let Some(reserved_requests) = reserved_requests {
+                        let result = fulfill_requests(&creep_ref, reserved_requests).await;
+
+                        if let Err(e) = result {
+                            debug!("Error when hauling: {:?}.", e);
+                            sleep(1).await;
+                        }
+                    } else {
+                        // There is nothing to haul. The creep is idle.
+                        idle_haulers_clone.set(idle_haulers_clone.get() + 1);
                         sleep(1).await;
                     }
-                } else {
-                    sleep(1).await;
                 }
             }
         });
 
+        with_room_state(room_name, |room_state| {
+            // TODO
+            if game_tick() % 10 == 4 {
+                if let Some(eco_stats) = room_state.eco_stats.as_mut() {
+                    eco_stats.haul_stats.add_sample(room_name, idle_haulers.get());
+                }
+            }
+        });
+        
         sleep(1).await;
     }
 }
