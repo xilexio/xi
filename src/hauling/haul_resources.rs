@@ -9,7 +9,7 @@ use crate::kernel::sleep::sleep;
 use crate::priorities::HAULER_SPAWN_PRIORITY;
 use crate::room_states::room_states::with_room_state;
 use crate::travel::travel::travel;
-use crate::u;
+use crate::{local_debug, u};
 use log::debug;
 use screeps::StructureType::Storage;
 use screeps::RoomName;
@@ -91,7 +91,6 @@ pub async fn haul_resources(room_name: RoomName) {
         });
         */
         
-        idle_haulers.replace(0);
 
         // TODO Measuring number of idle creeps and trying to minimize their number while
         //      fulfilling all requests.
@@ -128,20 +127,24 @@ pub async fn haul_resources(room_name: RoomName) {
                     } else {
                         // There is nothing to haul. The creep is idle.
                         idle_haulers_clone.set(idle_haulers_clone.get() + 1);
+                        local_debug!("Hauler {} is idle.", creep_ref.borrow().name);
                         sleep(1).await;
                     }
                 }
             }
         });
 
-        with_room_state(room_name, |room_state| {
-            // TODO
-            if game_tick() % 10 == 4 {
+        if game_tick() % 10 == 4 {
+            with_room_state(room_name, |room_state| {
+                // TODO
                 if let Some(eco_stats) = room_state.eco_stats.as_mut() {
-                    eco_stats.haul_stats.add_sample(room_name, idle_haulers.get());
+                    local_debug!("Recording {} idle haulers.", idle_haulers.get());
+                    eco_stats.haul_stats.add_sample(room_name, idle_haulers.replace(0));
                 }
-            }
-        });
+            });
+        } else {
+            idle_haulers.replace(0);
+        }
         
         sleep(1).await;
     }

@@ -259,7 +259,7 @@ impl RoomEcoConfig {
                 eco_stats.haul_stats.depositable_storage_amount.last()
             );
             info!(
-                "Idle haulers: {:.2}R, {:.2}R, {}R",
+                "Idle haulers: {:.2}, {:.2}, {}",
                 eco_stats.haul_stats.idle_haulers.avg::<f32>(),
                 eco_stats.haul_stats.idle_haulers.small_sample_avg::<f32>(),
                 eco_stats.haul_stats.idle_haulers.last()
