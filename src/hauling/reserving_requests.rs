@@ -3,6 +3,7 @@ use log::debug;
 use rustc_hash::FxHashMap;
 use screeps::{Position, ResourceType, RoomName};
 use crate::{local_debug, u};
+use crate::geometry::position_utils::PositionUtils;
 use crate::hauling::requests::{with_haul_requests, ReservedHaulRequest};
 use crate::hauling::requests::HaulRequestTargetKind::StorageTarget;
 use crate::hauling::requests::RequestAmountChange::Increase;
@@ -101,7 +102,7 @@ pub fn find_haul_requests(
                 room_name,
                 resources_str,
                 creep_capacity,
-                creep_pos,
+                creep_pos.f(),
                 creep_ttl
             );
             debug!("Available withdraw requests:");

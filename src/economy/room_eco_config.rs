@@ -1,6 +1,6 @@
 use std::cmp::{max, min};
 use log::info;
-use screeps::{ENERGY_REGEN_TIME, SOURCE_ENERGY_CAPACITY};
+use screeps::{controller_downgrade, ENERGY_REGEN_TIME, SOURCE_ENERGY_CAPACITY};
 use screeps::Part::{Carry, Move, Work};
 use serde::{Deserialize, Serialize};
 use crate::creeps::creep_body::CreepBody;
@@ -15,8 +15,6 @@ const DEBUG: bool = true;
 const MIN_AVG_ENERGY_TO_SPARE: u32 = 200;
 
 const MIN_SAFE_LAST_CREEP_TTL: u32 = 300;
-
-const CRITICAL_CONTROLLER_DOWNGRADE_TICKS: u32 = 3000;
 
 /// Structure containing parameters for the room economy that decide the distribution of resources
 /// as well as composition of creeps.
@@ -148,6 +146,19 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
         eco_config.miners_required = single_source_energy_income.div_ceil(eco_config.miner_body.energy_harvest_power()) * number_of_sources;
     }
     
+    // Energy to spare is decided by the amount in storage as well as the average unfulfilled
+    // withdraw requests.
+    let unfulfilled_haul_amount_balance = eco_stats.haul_stats.unfulfilled_withdraw_amount.small_sample_avg::<i32>()
+        - eco_stats.haul_stats.unfulfilled_deposit_amount.small_sample_avg::<i32>();
+    let has_energy_to_spare = unfulfilled_haul_amount_balance > MIN_AVG_ENERGY_TO_SPARE as i32;
+    
+    let ticks_to_downgrade = u!(room_state.controller).downgrade_tick - game_tick();
+    let max_ticks_to_downgrade = u!(controller_downgrade(room_state.rcl));
+    // TODO Once everything is built, it should be kept close to fully upgraded.
+    //      On RCL 5-7, it should be kept rather high, but building should also take place.
+    //      On RCL 4 and lower, it's sufficient to just barely keep it from downgrading.
+    let controller_downgrade_level_critical = ticks_to_downgrade < max_ticks_to_downgrade / 4;
+    
     if !bootstrapping {
         // Increasing or decreasing the required number of haulers depending on the average amount of
         // resources to carry in unfulfilled requests as well as the number if idle haulers.
@@ -155,15 +166,19 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
         let unfulfilled_fulfillable_haul_amount = max(
             min(
                 eco_stats.haul_stats.unfulfilled_withdraw_amount.small_sample_avg::<u32>(),
-                eco_stats.haul_stats.unfulfilled_deposit_amount.small_sample_avg::<u32>() + eco_stats.haul_stats.depositable_storage_amount.small_sample_avg::<u32>()
+                eco_stats.haul_stats.unfulfilled_deposit_amount.small_sample_avg::<u32>()
+                    + eco_stats.haul_stats.depositable_storage_amount.small_sample_avg::<u32>()
             ),
             min(
                 eco_stats.haul_stats.unfulfilled_deposit_amount.small_sample_avg::<u32>(),
-                eco_stats.haul_stats.unfulfilled_withdraw_amount.small_sample_avg::<u32>() + eco_stats.haul_stats.withdrawable_storage_amount.small_sample_avg::<u32>()
+                eco_stats.haul_stats.unfulfilled_withdraw_amount.small_sample_avg::<u32>()
+                    + eco_stats.haul_stats.withdrawable_storage_amount.small_sample_avg::<u32>()
             )
         );
 
         // TODO Possibly also check if there is energy to spare.
+        // TODO If there is a lot of energy in decaying piles, but also no storage, spawn more
+        //      haulers to contain it.
         if eco_config.haulers_required > 1 && hauler_stats.number_of_idle_creeps.small_sample_avg::<f32>() >= 1.5 {
             // If there is at least 1.5 idle hauler on average, decrease the number of required haulers.
             eco_config.haulers_required -= 1;
@@ -173,16 +188,10 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
             eco_config.haulers_required += 1;
         }
 
-        // Energy to spare is decided by the amount in storage as well as the average unfulfilled
-        // withdraw requests.
-        let unfulfilled_haul_amount_balance = eco_stats.haul_stats.unfulfilled_withdraw_amount.small_sample_avg::<i32>()
-            - eco_stats.haul_stats.unfulfilled_deposit_amount.small_sample_avg::<i32>();
-        let has_energy_to_spare = unfulfilled_haul_amount_balance > MIN_AVG_ENERGY_TO_SPARE as i32;
-
         // If there are construction sites, spawn builders.
         // TODO Also make the calculations based on various storage, especially when the main storage
         //      is built.
-        if room_state.construction_site_queue.is_empty() {
+        if controller_downgrade_level_critical || room_state.construction_site_queue.is_empty() {
             // No need for builders if there are no construction sites.
             eco_config.builders_required = 0;
         } else {
@@ -206,8 +215,7 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
 
         // If there is enough energy to spare, spawn upgraders. They have smaller priority than
         // builders. However, if the controller is close to downgrading, prioritize the upgrader.
-        let controller_downgrade_level_critical = u!(room_state.controller).downgrade_tick - game_tick() < CRITICAL_CONTROLLER_DOWNGRADE_TICKS;
-        if !room_state.construction_site_queue.is_empty() || !controller_downgrade_level_critical {
+        if !room_state.construction_site_queue.is_empty() && !controller_downgrade_level_critical {
             eco_config.upgraders_required = 0;
         } else {
             let upgrader_stats = eco_stats.creep_stats(Upgrader);
@@ -218,7 +226,7 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
                 // If there is energy to spare, spawn more upgraders.
                 // However, don't spawn more builders if some of them are idle (i.e., starved for
                 // energy).
-                if eco_config.upgraders_required == 0 || eco_config.builders_required == upgrader_stats.number_of_active_creeps.last() &&upgrader_stats.number_of_idle_creeps.small_sample_avg::<f32>() < 0.5 {
+                if eco_config.upgraders_required == 0 || eco_config.upgraders_required == upgrader_stats.number_of_active_creeps.last() &&upgrader_stats.number_of_idle_creeps.small_sample_avg::<f32>() < 0.5 {
                     eco_config.upgraders_required += 1;
                 }
             }
@@ -287,7 +295,7 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
             .iter().map(|cs| u!(cs.structure_type.construction_cost()))
             .sum();
         
-        info!("Bootstrapping: {}", bootstrapping);
+        info!("Bootstrapping: {}, Energy to spare: {}, Controller critical: {}", bootstrapping, has_energy_to_spare, controller_downgrade_level_critical);
         info!("Spawn energy: {}/{}", spawn_energy, spawn_energy_capacity);
         info!("Energy income: {:.2}E/t", energy_income);
         info!("Predicted energy usage and other stats:");

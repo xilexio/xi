@@ -59,9 +59,7 @@ pub struct RoomState {
     #[serde(skip)]
     pub planner: Option<Box<RoomPlanner>>,
     /// Structures to be built at current RCL.
-    pub current_rcl_structures: Option<StructuresMap>,
-    /// Indicator whether all structures required in the current RCL are built. Used to trigger construction.
-    pub current_rcl_structures_built: bool,
+    pub current_rcl_structures: StructuresMap,
     #[serde(skip)]
     pub construction_site_queue: Vec<ConstructionSiteData>,
     // Information about fast filler and its extensions.
@@ -189,8 +187,7 @@ impl RoomState {
             controller: None,
             sources: Vec::new(),
             mineral: None,
-            current_rcl_structures: None,
-            current_rcl_structures_built: true,
+            current_rcl_structures: FxHashMap::default(),
             structures: FxHashMap::default(),
             structures_matrix: RoomMatrix::default(),
             plan: None,

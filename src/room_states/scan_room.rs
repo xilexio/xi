@@ -10,6 +10,7 @@ use crate::economy::room_eco_stats::RoomEcoStats;
 use crate::errors::XiError;
 use crate::geometry::room_xy::RoomXYUtils;
 use crate::room_states::room_state::{ControllerData, MineralData, RoomDesignation, RoomResources, RoomState, SourceData, StructureData};
+use crate::utils::game_tick::game_tick;
 
 const DEBUG: bool = true;
 
@@ -51,7 +52,7 @@ pub fn update_room_state_from_scan(room_name: RoomName, force_update: bool, stat
             xy: pos.xy(),
             work_xy,
             link_xy,
-            downgrade_tick: controller.ticks_to_downgrade().unwrap_or(0)
+            downgrade_tick: game_tick() + controller.ticks_to_downgrade().unwrap_or(0)
         });
     };
     local_debug!("Room designation: {:?}", state.designation);

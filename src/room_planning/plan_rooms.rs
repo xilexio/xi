@@ -73,7 +73,8 @@ pub async fn plan_rooms() {
                         }
                     }
                 }
-            } else if room_state.current_rcl_structures.is_none() {
+            } else {
+                // TODO Do not recompute it so often, instead trigger something when RCL changes.
                 plan_current_rcl_structures(room_state);
             }
         });
@@ -127,6 +128,5 @@ pub fn plan_current_rcl_structures(room_state: &mut RoomState) {
         structures_map
     };
 
-    room_state.current_rcl_structures = Some(structures_map);
-    room_state.current_rcl_structures_built = false;
+    room_state.current_rcl_structures = structures_map;
 }

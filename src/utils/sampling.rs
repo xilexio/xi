@@ -2,9 +2,9 @@ use crate::utils::game_tick::game_tick;
 
 pub const LARGE_SAMPLE_SIZE: usize = 100;
 pub const SMALL_SAMPLE_SIZE: usize = 10;
-pub const SAMPLE_INTERVAL: u32 = 10;
+pub const SAMPLE_INTERVAL: u32 = 4;
 
-const SAMPLE_TICK_MOD: u32 = 4;
+const SAMPLE_TICK_MOD: u32 = 1;
 
 pub fn is_sample_tick() -> bool {
     game_tick() % SAMPLE_INTERVAL == SAMPLE_TICK_MOD

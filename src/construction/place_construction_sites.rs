@@ -17,6 +17,8 @@ use screeps::StructureType::{
 use screeps::{game, HasPosition, MaybeHasId, RoomName, RoomXY, StructureType};
 use crate::room_states::room_state::{ConstructionSiteData, StructuresMap};
 
+const DEBUG: bool = true;
+
 const MAX_CONSTRUCTION_SITES_PER_ROOM: u32 = 4;
 
 const PRIORITY_OF_STRUCTURES: [StructureType; 16] = [
@@ -63,154 +65,154 @@ pub async fn place_construction_sites() {
                 });
             }
 
-            if !room_state.current_rcl_structures_built {
-                trace!("Computing what construction sites to place in room {}.", room_name);
+            if room_state.current_rcl_structures.is_empty() {
+                trace!(
+                    "No structures are planned in room {} for RCL {}.",
+                    room_name, room_state.rcl
+                );
+            } else {
+                trace!(
+                    "Computing what construction sites to place in room {} at RCL {}.",
+                    room_name, room_state.rcl
+                );
+                // Computing which structures are missing and which are not in the plan.
+                let StructuresDiff {
+                    extra_structures,
+                    missing_structures_by_priority
+                } = room_structures_diff_from_current_rcl_structures(
+                    &room_state.current_rcl_structures,
+                    &room_state.structures
+                );
 
-                if let Some(current_rcl_structures) = room_state.current_rcl_structures.as_ref() {
-                    // Computing which structures are missing and which are not in the plan.
-                    let StructuresDiff {
-                        extra_structures,
-                        missing_structures_by_priority
-                    } = room_structures_diff_from_current_rcl_structures(
-                        current_rcl_structures,
-                        &room_state.structures
-                    );
+                // Cannot remove a structure that cannot be in the same place as the new one
+                // and create a construction site in the same tick in the same place.
+                // Cannot remove and create another construction site in the same
+                // tick in the same place.
+                // Cannot place two construction sites in the same place.
+                // Gathering coordinates of these tiles.
+                let mut xys_not_for_new_cs = extra_structures
+                    .values()
+                    .flatten()
+                    .copied()
+                    .collect::<FxHashSet<_>>();
 
-                    // Cannot remove a structure that cannot be in the same place as the new one
-                    // and create a construction site in the same tick in the same place.
-                    // Cannot remove and create another construction site in the same
-                    // tick in the same place.
-                    // Cannot place two construction sites in the same place.
-                    // Gathering coordinates of these tiles.
-                    let mut xys_not_for_new_cs = extra_structures
-                        .values()
-                        .flatten()
-                        .copied()
-                        .collect::<FxHashSet<_>>();
-
-                    // Removing extra structures.
-                    let mut number_of_spawns = room_state
-                        .structures
-                        .get(&Spawn)
-                        .map(|xys| xys.len())
-                        .unwrap_or(0);
-                    for (structure_type, xys) in extra_structures {
-                        for xy in xys {
-                            // There is an extra structure in the room. It might happen upon claiming
-                            // a room with structures present or when the room was downgraded.
-                            if structure_type == Spawn && number_of_spawns == 1 {
-                                warn!(
-                                    "The only {:?} in {} at {} is in an incorrect place. Not removing it.",
-                                    structure_type, room_name, xy,
-                                );
-                            } else {
-                                // Destroying the structure.
-                                if let Some(structure_obj) = get_structure(room_name, xy, structure_type) {
-                                    // TODO Do not destroy the structure if it is owned and supposed
-                                    //      to be built at RCL8 in that location unless it being
-                                    //      inactive breaks something (e.g., remote links being
-                                    //      active while the fast filler link is not).
-                                    // TODO This should be some API constant, not just zero.
-                                    if structure_obj.as_structure().destroy() != 0 {
-                                        warn!(
-                                            "Failed to remove a structure {:?} in {} at {}",
-                                            structure_type, room_name, xy
-                                        );
-                                    }
-
-                                    if structure_type == Spawn {
-                                        number_of_spawns -= 1;
-                                    }
-                                } else {
-                                    error!("Failed to find the structure {:?} in {} at {} that was about to be removed",
-                                        structure_type, room_name, xy);
+                // Removing extra structures.
+                let mut number_of_spawns = room_state
+                    .structures
+                    .get(&Spawn)
+                    .map(|xys| xys.len())
+                    .unwrap_or(0);
+                for (structure_type, xys) in extra_structures {
+                    for xy in xys {
+                        // There is an extra structure in the room. It might happen upon claiming
+                        // a room with structures present or when the room was downgraded.
+                        if structure_type == Spawn && number_of_spawns == 1 {
+                            warn!(
+                                "The only {:?} in {} at {} is in an incorrect place. Not removing it.",
+                                structure_type, room_name, xy,
+                            );
+                        } else {
+                            // Destroying the structure.
+                            if let Some(structure_obj) = get_structure(room_name, xy, structure_type) {
+                                // TODO Do not destroy the structure if it is owned and supposed
+                                //      to be built at RCL8 in that location unless it being
+                                //      inactive breaks something (e.g., remote links being
+                                //      active while the fast filler link is not).
+                                // TODO This should be some API constant, not just zero.
+                                if structure_obj.as_structure().destroy() != 0 {
+                                    warn!(
+                                        "Failed to remove a structure {:?} in {} at {}",
+                                        structure_type, room_name, xy
+                                    );
                                 }
+
+                                if structure_type == Spawn {
+                                    number_of_spawns -= 1;
+                                }
+                            } else {
+                                error!("Failed to find the structure {:?} in {} at {} that was about to be removed",
+                                    structure_type, room_name, xy);
                             }
                         }
                     }
+                }
 
-                    // Computing which construction sites are missing and which are not in the plan
-                    // or not top priority.
-                    let room_construction_sites = construction_sites_by_room
-                        .remove(&room_name)
-                        .unwrap_or_default();
-                    let room_construction_sites_count = room_construction_sites.len();
+                // Computing which construction sites are missing and which are not in the plan
+                // or not top priority.
+                let room_construction_sites = construction_sites_by_room
+                    .remove(&room_name)
+                    .unwrap_or_default();
+                let room_construction_sites_count = room_construction_sites.len();
 
-                    let ConstructionSitesDiff {
-                        extra_construction_sites,
-                        correct_construction_sites,
-                        missing_construction_sites
-                    } = construction_sites_diff_from_top_priority_missing_structures(
-                        missing_structures_by_priority,
-                        room_construction_sites
-                    );
+                let ConstructionSitesDiff {
+                    extra_construction_sites,
+                    correct_construction_sites,
+                    missing_construction_sites
+                } = construction_sites_diff_from_top_priority_missing_structures(
+                    missing_structures_by_priority,
+                    room_construction_sites
+                );
 
-                    xys_not_for_new_cs.extend(
-                        extra_construction_sites
-                            .iter()
-                            .map(|cs| cs.xy)
-                    );
+                xys_not_for_new_cs.extend(
+                    extra_construction_sites
+                        .iter()
+                        .map(|cs| cs.xy)
+                );
 
-                    let construction_sites_left_to_limit = max(
-                        MAX_CONSTRUCTION_SITES_PER_ROOM as i32 + extra_construction_sites.len() as i32 - room_construction_sites_count as i32,
-                        0
-                    ) as usize;
+                let construction_sites_left_to_limit = max(
+                    MAX_CONSTRUCTION_SITES_PER_ROOM as i32 + extra_construction_sites.len() as i32 - room_construction_sites_count as i32,
+                    0
+                ) as usize;
 
-                    // Registering the correct construction sites in the room state.
-                    room_state.construction_site_queue = correct_construction_sites;
+                // Registering the correct construction sites in the room state.
+                room_state.construction_site_queue = correct_construction_sites;
 
-                    // Removing invalid construction sites.
-                    // TODO Do not remove construction site with decent progress on them.
-                    for cs in extra_construction_sites {
-                        let construction_site = u!(game::get_object_by_id_typed(&cs.id));
-                        construction_site.remove().warn_if_err(&format!(
-                            "Failed to remove a construction site of {:?} in {} at {}",
-                            cs.structure_type, room_name, cs.xy
+                // Removing invalid construction sites.
+                // TODO Do not remove construction site with decent progress on them.
+                for cs in extra_construction_sites {
+                    let construction_site = u!(game::get_object_by_id_typed(&cs.id));
+                    construction_site.remove().warn_if_err(&format!(
+                        "Failed to remove a construction site of {:?} in {} at {}",
+                        cs.structure_type, room_name, cs.xy
+                    ));
+                }
+
+                // Placing construction sites with the top priority.
+                // Taking only the `construction_sites_left_to_limit` because the next iteration
+                // of this function every extra structure and construction site will be removed
+                // (maybe except the sole incorrect spawn), so no point in starting work on
+                // other construction sites only to remove
+                let placed_construction_sites = missing_construction_sites
+                    .iter()
+                    .take(construction_sites_left_to_limit);
+                for &(structure_type, xy) in placed_construction_sites {
+                    if xys_not_for_new_cs.contains(&xy) {
+                        debug!(
+                            "Cannot place construction site for {:?} in {} at {} since something else is there.",
+                            structure_type, room_name, xy
+                        );
+                    } else {
+                        xys_not_for_new_cs.insert(xy);
+                        debug!(
+                            "Placing a new construction site for {:?} at {} in {}.",
+                            structure_type, xy, room_name
+                        );
+
+                        let room = u!(rooms().get(room_name));
+
+                        let js_name = structure_js_name(structure_type, room_name, xy);
+                        let creation_result = room
+                            .create_construction_site(
+                                xy.x.u8(),
+                                xy.y.u8(),
+                                structure_type,
+                                js_name.as_ref(),
+                            );
+                        creation_result.warn_if_err(&format!(
+                            "Failed to create the construction site of {:?} in {} at {}",
+                            structure_type, room_name, xy
                         ));
                     }
-
-                    // Placing construction sites with the top priority.
-                    // Taking only the `construction_sites_left_to_limit` because the next iteration
-                    // of this function every extra structure and construction site will be removed
-                    // (maybe except the sole incorrect spawn), so no point in starting work on
-                    // other construction sites only to remove
-                    let placed_construction_sites = missing_construction_sites
-                        .iter()
-                        .take(construction_sites_left_to_limit);
-                    for &(structure_type, xy) in placed_construction_sites {
-                        if xys_not_for_new_cs.contains(&xy) {
-                            debug!(
-                                "Cannot place construction site for {:?} in {} at {} since something else is there.",
-                                structure_type, room_name, xy
-                            );
-                        } else {
-                            xys_not_for_new_cs.insert(xy);
-                            debug!(
-                                "Placing a new construction site for {:?} at {} in {}.",
-                                structure_type, xy, room_name
-                            );
-
-                            let room = u!(rooms().get(room_name));
-
-                            let js_name = structure_js_name(structure_type, room_name, xy);
-                            let creation_result = room
-                                .create_construction_site(
-                                    xy.x.u8(),
-                                    xy.y.u8(),
-                                    structure_type,
-                                    js_name.as_ref(),
-                                );
-                            creation_result.warn_if_err(&format!(
-                                "Failed to create the construction site of {:?} in {} at {}",
-                                structure_type, room_name, xy
-                            ));
-                        }
-                    }
-                } else {
-                    error!(
-                        "Expected Some in current_rcl_structures in room {} when they are not built yet.",
-                        room_name
-                    );
                 }
             }
         });
@@ -240,7 +242,7 @@ fn room_structures_diff_from_current_rcl_structures(
             .get(&structure_type)
             .cloned()
             .unwrap_or_default();
-        
+
         // Computing extra structures that should be removed.
         for &xy in existing_structure_xys.iter() {
             if !planned_structure_xys.contains(&xy) {

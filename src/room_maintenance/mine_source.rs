@@ -121,6 +121,7 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                             // Dividing the miners among sources.
                             let number_of_sources = room_state.sources.len();
                             let mut source_miners_required = config.miners_required / number_of_sources as u32;
+                            // TODO Prioritize the source closest to spawn.
                             if (source_ix as u32) < config.miners_required - number_of_sources as u32 * source_miners_required {
                                 source_miners_required += 1;
                             }

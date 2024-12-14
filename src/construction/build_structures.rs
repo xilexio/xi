@@ -1,7 +1,6 @@
 use log::{trace, warn};
 use screeps::{ResourceType, RoomName, CREEP_RANGED_ACTION_RANGE};
 use screeps::game::get_object_by_id_typed;
-use crate::creeps::creep_role::CreepRole;
 use crate::creeps::creep_body::CreepBody;
 use crate::creeps::creep_role::CreepRole::Builder;
 use crate::geometry::room_xy::RoomXYUtils;
@@ -37,7 +36,7 @@ pub async fn build_structures(room_name: RoomName) {
             .collect::<Vec<_>>();
 
         SpawnRequest {
-            role: CreepRole::Builder,
+            role: Builder,
             body: CreepBody::empty(),
             priority: BUILDER_SPAWN_PRIORITY,
             preferred_spawns,
@@ -48,10 +47,6 @@ pub async fn build_structures(room_name: RoomName) {
     // TODO Handle prioritizing energy for the upgrading - always upgrade enough to prevent
     //      the room from downgrading, but only upgrade more if there is energy to spare.
     loop {
-        // TODO pick construction site with highest priority
-        // TODO spawn a builder
-        // TODO send a builder to build it
-        
         let cs_data = u!(with_room_state(room_name, |room_state| {
             if room_state.construction_site_queue.is_empty() {
                 trace!("Nothing to build in {}.", room_name);

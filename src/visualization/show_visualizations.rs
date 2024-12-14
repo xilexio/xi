@@ -17,13 +17,30 @@ pub async fn show_visualizations() {
             measure_time("show_visualizations", || {
                 for_each_owned_room(|room_name, room_state| {
                     if let Some(plan) = room_state.plan.as_ref() {
-                        if let Some(current_rcl_structures) = room_state.current_rcl_structures.as_ref() {
-                            let mut vis = RoomVisualExt::new(room_name);
+                        let mut vis = RoomVisualExt::new(room_name);
 
-                            for (xy, tile) in plan.tiles.iter() {
-                                if tile.structures().road() && get_structure(room_name, xy, Road).is_none() {
-                                    let opacity = if current_rcl_structures
-                                        .get(&Road)
+                        for (xy, tile) in plan.tiles.iter() {
+                            if tile.structures().road() && get_structure(room_name, xy, Road).is_none() {
+                                let opacity = if room_state
+                                    .current_rcl_structures
+                                    .get(&Road)
+                                    .map(|xys| xys.contains(&xy))
+                                    .unwrap_or(false)
+                                {
+                                    CURRENT_RCL_PLAN_OPACITY
+                                } else {
+                                    RCL8_PLAN_OPACITY
+                                };
+                                vis.structure_roomxy(xy, Road, opacity);
+                            }
+                        }
+
+                        for (xy, tile) in plan.tiles.iter() {
+                            if let Ok(structure_type) = StructureType::try_from(tile.structures().main()) {
+                                if get_structure(room_name, xy, structure_type).is_none() {
+                                    let opacity = if room_state
+                                        .current_rcl_structures
+                                        .get(&structure_type)
                                         .map(|xys| xys.contains(&xy))
                                         .unwrap_or(false)
                                     {
@@ -31,40 +48,24 @@ pub async fn show_visualizations() {
                                     } else {
                                         RCL8_PLAN_OPACITY
                                     };
-                                    vis.structure_roomxy(xy, Road, opacity);
+                                    vis.structure_roomxy(xy, structure_type, opacity);
                                 }
                             }
+                        }
 
-                            for (xy, tile) in plan.tiles.iter() {
-                                if let Ok(structure_type) = StructureType::try_from(tile.structures().main()) {
-                                    if get_structure(room_name, xy, structure_type).is_none() {
-                                        let opacity = if current_rcl_structures
-                                            .get(&structure_type)
-                                            .map(|xys| xys.contains(&xy))
-                                            .unwrap_or(false)
-                                        {
-                                            CURRENT_RCL_PLAN_OPACITY
-                                        } else {
-                                            RCL8_PLAN_OPACITY
-                                        };
-                                        vis.structure_roomxy(xy, structure_type, opacity);
-                                    }
-                                }
-                            }
-
-                            for (xy, tile) in plan.tiles.iter() {
-                                if tile.structures().rampart() && get_structure(room_name, xy, Rampart).is_none() {
-                                    let opacity = if current_rcl_structures
-                                        .get(&Road)
-                                        .map(|xys| xys.contains(&xy))
-                                        .unwrap_or(false)
-                                    {
-                                        CURRENT_RCL_PLAN_OPACITY
-                                    } else {
-                                        RCL8_PLAN_OPACITY
-                                    };
-                                    vis.structure_roomxy(xy, Rampart, opacity);
-                                }
+                        for (xy, tile) in plan.tiles.iter() {
+                            if tile.structures().rampart() && get_structure(room_name, xy, Rampart).is_none() {
+                                let opacity = if room_state
+                                    .current_rcl_structures
+                                    .get(&Road)
+                                    .map(|xys| xys.contains(&xy))
+                                    .unwrap_or(false)
+                                {
+                                    CURRENT_RCL_PLAN_OPACITY
+                                } else {
+                                    RCL8_PLAN_OPACITY
+                                };
+                                vis.structure_roomxy(xy, Rampart, opacity);
                             }
                         }
                     }
