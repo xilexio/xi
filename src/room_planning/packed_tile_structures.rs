@@ -173,7 +173,7 @@ impl PackedTileStructures {
     }
 
     #[inline]
-    pub fn merge(self, structure_type: StructureType) -> Result<Self, PackedTileStructuresError> {
+    pub fn merge_structure(self, structure_type: StructureType) -> Result<Self, PackedTileStructuresError> {
         if structure_type == StructureType::Rampart {
             Ok(self.with_rampart(true))
         } else if structure_type == StructureType::Road {
@@ -239,7 +239,7 @@ impl PackedTileStructures {
     pub fn merge_tile(self, other: Self) -> Result<Self, PackedTileStructuresError> {
         let mut result = self;
         for structure_type in other.iter() {
-            result = result.merge(structure_type)?;
+            result = result.merge_structure(structure_type)?;
         }
         Ok(result)
     }
@@ -259,18 +259,18 @@ mod tests {
         assert!(PackedTileStructures::from(Rampart).is_passable(true));
         assert!(!PackedTileStructures::from(Rampart).is_passable(false));
         assert!(PackedTileStructures::from(Container).is_passable(false));
-        assert!(!PackedTileStructures::from(Container).merge(Rampart)?.is_passable(false));
+        assert!(!PackedTileStructures::from(Container).merge_structure(Rampart)?.is_passable(false));
         assert!(!PackedTileStructures::from(Spawn).is_passable(true));
-        assert!(!PackedTileStructures::from(Spawn).merge(Rampart)?.is_passable(true));
+        assert!(!PackedTileStructures::from(Spawn).merge_structure(Rampart)?.is_passable(true));
         assert!(PackedTileStructures::from(Container)
-            .merge(Road)?
-            .merge(Rampart)?
+            .merge_structure(Road)?
+            .merge_structure(Rampart)?
             .is_passable(true));
         assert!(!PackedTileStructures::from(Container)
-            .merge(Road)?
-            .merge(Rampart)?
+            .merge_structure(Road)?
+            .merge_structure(Rampart)?
             .is_passable(false));
-        assert!(PackedTileStructures::from(Container).merge(Road)?.is_passable(false));
+        assert!(PackedTileStructures::from(Container).merge_structure(Road)?.is_passable(false));
         Ok(())
     }
 }

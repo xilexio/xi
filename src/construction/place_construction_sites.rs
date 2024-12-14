@@ -72,7 +72,7 @@ pub async fn place_construction_sites() {
                         extra_structures,
                         missing_structures_by_priority
                     } = room_structures_diff_from_current_rcl_structures(
-                        &current_rcl_structures,
+                        current_rcl_structures,
                         &room_state.structures
                     );
 
@@ -240,7 +240,7 @@ fn room_structures_diff_from_current_rcl_structures(
             .get(&structure_type)
             .cloned()
             .unwrap_or_default();
-
+        
         // Computing extra structures that should be removed.
         for &xy in existing_structure_xys.iter() {
             if !planned_structure_xys.contains(&xy) {

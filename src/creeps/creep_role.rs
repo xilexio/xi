@@ -1,6 +1,7 @@
 use std::fmt::{Display, Formatter};
+use enum_iterator::Sequence;
 
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Sequence)]
 pub enum CreepRole {
     Scout,
     Miner,

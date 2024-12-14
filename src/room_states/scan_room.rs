@@ -51,6 +51,7 @@ pub fn update_room_state_from_scan(room_name: RoomName, force_update: bool, stat
             xy: pos.xy(),
             work_xy,
             link_xy,
+            downgrade_tick: controller.ticks_to_downgrade().unwrap_or(0)
         });
     };
     local_debug!("Room designation: {:?}", state.designation);
@@ -124,6 +125,7 @@ pub fn update_room_state_from_scan(room_name: RoomName, force_update: bool, stat
     if structures_changed {
         debug!("Structures in room {room_name} changed.");
         state.structures = structures;
+        state.structures_matrix = u!((&state.structures).try_into());
         state.spawns.clear();
         state.extensions.clear();
 

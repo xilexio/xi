@@ -21,7 +21,7 @@ where
     })
 }
 
-pub trait MaybeReservedCreep {
+pub trait MaybeReserved {
     fn is_reserved(&self) -> bool;
 }
 
@@ -62,7 +62,7 @@ impl Deref for ReservedCreep {
     }
 }
 
-impl MaybeReservedCreep for Creep {
+impl MaybeReserved for Creep {
     fn is_reserved(&self) -> bool {
         with_reserved_creeps(|reserved_creeps| {
             reserved_creeps.contains(&(self.role, self.number))

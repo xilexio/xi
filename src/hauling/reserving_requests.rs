@@ -76,6 +76,8 @@ or
 The total distance is the distance to the withdraw request plus the distance to the target or just
 the distance to the target if no withdraw request was used.
  */
+// TODO Pick up smaller piles when there is nothing else to do. Or just move towards expected energy
+//      source or storage.
 pub fn find_haul_requests(
     room_name: RoomName,
     creep_store: &FxHashMap<ResourceType, u32>,

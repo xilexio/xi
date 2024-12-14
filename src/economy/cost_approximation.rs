@@ -16,6 +16,7 @@ const SOURCE_ENERGY_PER_TICK: f32 = SOURCE_ENERGY_CAPACITY as f32 / ENERGY_REGEN
 
 const AVERAGE_MINERAL_DENSITY: f32 = 15_000.0 * 0.1 + 35_000.0 * 0.4 + 70_000.0 * 0.4 + 100_000.0 * 0.1;
 
+// TODO Split this into functions to be usable in more situations.
 pub fn energy_balance_and_cpu_cost(
     room_name: RoomName,
     source_distances: Vec<u8>,

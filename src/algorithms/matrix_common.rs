@@ -6,8 +6,15 @@ where
 {
     /// Gets the element at given XY. Panics if it is out of bounds.
     fn get(&self, xy: RoomXY) -> T;
+    
+    /// Gets a mutable reference to the element at given XY. Panics if it is out of bounds.
+    fn get_mut(&mut self, xy: RoomXY) -> &mut T;
+    
     /// Sets the element at given XY. Panics if it is out of bounds.
-    fn set(&mut self, xy: RoomXY, value: T);
+    #[inline]
+    fn set(&mut self, xy: RoomXY, value: T) {
+        *self.get_mut(xy) = value;
+    }
     
     /// Used to make another matrix of the same type and size.
     fn clone_filled(&self, fill: T) -> Self;

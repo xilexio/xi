@@ -1,4 +1,4 @@
-use screeps::{MOVE_COST_PLAIN, MOVE_COST_ROAD, MOVE_COST_SWAMP};
+use screeps::{Terrain, MOVE_COST_PLAIN, MOVE_COST_ROAD, MOVE_COST_SWAMP};
 use crate::travel::surface::Surface::*;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -17,5 +17,21 @@ impl Surface {
             Swamp => MOVE_COST_SWAMP as u8,
             Obstacle => u8::MAX
         }
+    }
+}
+
+impl From<Terrain> for Surface {
+    fn from(terrain: Terrain) -> Self {
+        match terrain {
+            Terrain::Plain => Plain,
+            Terrain::Wall => Obstacle,
+            Terrain::Swamp => Swamp
+        }
+    }
+}
+
+impl Default for Surface {
+    fn default() -> Self {
+        Plain
     }
 }

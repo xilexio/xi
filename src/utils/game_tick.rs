@@ -9,18 +9,18 @@ pub fn game_tick() -> u32 {
 }
 
 #[cfg(test)]
-pub static mut GAME_TIME: u32 = 1u32;
+pub static mut GAME_TICK: u32 = 1u32;
 
 #[cfg(test)]
-pub fn inc_game_time() {
+pub fn inc_game_tick() {
     unsafe {
-        GAME_TIME += 1;
+        GAME_TICK += 1;
     }
 }
 
 #[cfg(test)]
 pub fn game_tick() -> u32 {
-    unsafe { GAME_TIME }
+    unsafe { GAME_TICK }
 }
 
 static FIRST_TICK: Mutex<u32> = Mutex::new(0);

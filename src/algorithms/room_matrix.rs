@@ -51,9 +51,8 @@ where
         self.data[xy.to_index()]
     }
 
-    #[inline]
-    fn set(&mut self, xy: RoomXY, value: T) {
-        self.data[xy.to_index()] = value;
+    fn get_mut(&mut self, xy: RoomXY) -> &mut T {
+        &mut self.data[xy.to_index()]
     }
 
     fn clone_filled(&self, fill: T) -> Self {

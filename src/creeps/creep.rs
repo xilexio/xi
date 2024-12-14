@@ -43,6 +43,8 @@ use crate::utils::unchecked_withdrawable::UncheckedWithdrawable;
 
 pub type CrId = u32;
 
+// TODO A creep should have its room assigned.
+// TODO To enable assigning that upon restart, make a function to find the nearest room.
 #[derive(Debug)]
 pub struct Creep {
     /// Globally unique creep name.

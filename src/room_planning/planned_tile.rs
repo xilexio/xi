@@ -61,7 +61,7 @@ impl PlannedTile {
     }
 
     pub fn merge(self, structure_type: StructureType) -> Result<Self, PackedTileStructuresError> {
-        Ok(self.with_structures(self.structures().merge(structure_type)?))
+        Ok(self.with_structures(self.structures().merge_structure(structure_type)?))
     }
 
     pub fn replace(self, structure_type: StructureType) -> Self {

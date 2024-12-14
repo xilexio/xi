@@ -1,19 +1,22 @@
-use std::cmp::max;
-use log::{info, trace, warn};
+use std::cmp::{max, min};
+use log::info;
 use screeps::{ENERGY_REGEN_TIME, SOURCE_ENERGY_CAPACITY};
 use screeps::Part::{Carry, Move, Work};
-use screeps::StructureType::{Spawn, Storage};
 use serde::{Deserialize, Serialize};
 use crate::creeps::creep_body::CreepBody;
-use crate::creeps::creep_role::CreepRole::{Hauler, Miner};
-use crate::geometry::room_xy::RoomXYUtils;
-use crate::room_planning::room_planner::SOURCE_AND_CONTROLLER_ROAD_RCL;
+use crate::creeps::creep_role::CreepRole::{Builder, Hauler, Miner, Upgrader};
 use crate::room_states::room_state::RoomState;
-use crate::travel::surface::Surface;
 use crate::u;
+use crate::utils::game_tick::game_tick;
 use crate::utils::priority::Priority;
 
+const DEBUG: bool = true;
+
+const MIN_AVG_ENERGY_TO_SPARE: u32 = 200;
+
 const MIN_SAFE_LAST_CREEP_TTL: u32 = 300;
+
+const CRITICAL_CONTROLLER_DOWNGRADE_TICKS: u32 = 3000;
 
 /// Structure containing parameters for the room economy that decide the distribution of resources
 /// as well as composition of creeps.
@@ -43,12 +46,272 @@ pub struct RoomEcoConfig {
     pub builder_body: CreepBody,
 }
 
+pub fn update_or_create_eco_config(room_state: &mut RoomState) {
+    let eco_stats = u!(room_state.eco_stats.as_ref());
+    let miner_stats = eco_stats.creep_stats(Miner);
+    let hauler_stats = eco_stats.creep_stats(Hauler);
+
+    let spawn_energy = room_state.resources.spawn_energy;
+    let spawn_energy_capacity = room_state.resources.spawn_energy_capacity;
+    let haulable_energy = eco_stats.haul_stats.withdrawable_storage_amount.last() + eco_stats.haul_stats.unfulfilled_withdraw_amount.last();
+    
+    // TODO Handle link mining.
+    // Computing minimal and preferred miner and hauler bodies.
+    let min_miner_body = preferred_miner_body(0, true);
+    let min_hauler_body = preferred_hauler_body(0);
+    
+    let hauler_body = preferred_hauler_body(spawn_energy_capacity);
+    let miner_body = preferred_miner_body(spawn_energy_capacity, true);
+    
+    if room_state.eco_config.is_none() {
+        // TODO Handle memory wipe from an already built up state better.
+        room_state.eco_config = Some(RoomEcoConfig {
+            haulers_required: 1,
+            hauler_body: hauler_body.clone(),
+            hauler_spawn_priority: Priority(200),
+            miners_required: 1,
+            miner_body: miner_body.clone(),
+            miner_spawn_priority: Priority(200),
+            upgraders_required: 0,
+            upgrader_body: preferred_upgrader_body(spawn_energy),
+            builders_required: 0,
+            builder_body: preferred_builder_body(spawn_energy),
+        });
+    }
+    
+    let eco_config = u!(room_state.eco_config.as_mut());
+    eco_config.hauler_body = hauler_body;
+    eco_config.miner_body = miner_body;
+    
+    let number_of_sources = room_state.sources.len() as u32;
+    let single_source_energy_income = SOURCE_ENERGY_CAPACITY / ENERGY_REGEN_TIME;
+    
+    // Checking if the room is in a condition where it cannot sustain itself.
+    // The minimum is a single miner and a single hauler.
+    // The hauler is a priority except for when the room has no energy income or storage,
+    // then a miner needs to be spawned first.
+    let mut bootstrapping = true;
+    if hauler_stats.number_of_creeps.last() == 0 {
+        // Don't spawn anything else until the issue is resolved.
+        eco_config.clear_non_miner_or_hauler();
+        if miner_stats.number_of_creeps.last() == 0 {
+            // TODO It might be not a good idea to include every single withdrawable energy, only
+            //      one that can be transported to the spawn fast.
+            if spawn_energy >= eco_config.hauler_body.energy_cost() && spawn_energy + haulable_energy >= eco_config.hauler_body.energy_cost() + min_miner_body.energy_cost() {
+                // There is enough energy for a full hauler and then a miner (maybe after
+                // transporting the energy). Spawn the hauler first. A smaller miner body may be
+                // selected in the next iteration.
+                eco_config.haulers_required = 1;
+                eco_config.hauler_spawn_priority = Priority(250);
+                
+                eco_config.miners_required = 1;
+                eco_config.miner_spawn_priority = Priority(200);
+            } else {
+                // We are bootstrapping from scratch. Spawn a miner first to start mining some
+                // energy while the hauler is spawning. The miner should be as big as possible.
+                eco_config.miners_required = 1;
+                eco_config.miner_spawn_priority = Priority(250);
+                // TODO Link mining.
+                eco_config.miner_body = preferred_miner_body(spawn_energy - min_hauler_body.energy_cost(), true);
+                
+                eco_config.haulers_required = 1;
+                eco_config.hauler_spawn_priority = Priority(200);
+                eco_config.hauler_body = min_hauler_body;
+            }
+        } else {
+            // There are miners available, so try to spawn a hauler using whatever energy is
+            // currently available.
+            eco_config.haulers_required = 1;
+            eco_config.hauler_spawn_priority = Priority(250);
+            eco_config.hauler_body = preferred_hauler_body(spawn_energy);
+            
+            eco_config.miners_required = 1;
+            eco_config.miner_spawn_priority = Priority(200);
+        }
+    } else if miner_stats.number_of_creeps.last() == 0 {
+        // Don't spawn anything else until the issue is resolved.
+        eco_config.clear_non_miner_or_hauler();
+        // There are haulers available, but not enough energy to spawn a preferred miner, so try
+        // to spawn a miner using whatever energy is currently available in spawns and to haul
+        // to them.
+        eco_config.miners_required = 1;
+        eco_config.miner_spawn_priority = Priority(250);
+        eco_config.miner_body = preferred_miner_body(min(spawn_energy_capacity, spawn_energy + haulable_energy), true);
+    } else {
+        bootstrapping = false;
+        
+        // Setting the spawn priorities to normal.
+        eco_config.hauler_spawn_priority = Priority(200);
+        eco_config.miner_spawn_priority = Priority(200);
+        
+        // Setting the number of miners to optimal.
+        eco_config.miners_required = single_source_energy_income.div_ceil(eco_config.miner_body.energy_harvest_power()) * number_of_sources;
+    }
+    
+    if !bootstrapping {
+        // Increasing or decreasing the required number of haulers depending on the average amount of
+        // resources to carry in unfulfilled requests as well as the number if idle haulers.
+        // TODO Handle large sample or preliminary calculations if needed.
+        let unfulfilled_fulfillable_haul_amount = max(
+            min(
+                eco_stats.haul_stats.unfulfilled_withdraw_amount.small_sample_avg::<u32>(),
+                eco_stats.haul_stats.unfulfilled_deposit_amount.small_sample_avg::<u32>() + eco_stats.haul_stats.depositable_storage_amount.small_sample_avg::<u32>()
+            ),
+            min(
+                eco_stats.haul_stats.unfulfilled_deposit_amount.small_sample_avg::<u32>(),
+                eco_stats.haul_stats.unfulfilled_withdraw_amount.small_sample_avg::<u32>() + eco_stats.haul_stats.withdrawable_storage_amount.small_sample_avg::<u32>()
+            )
+        );
+
+        // TODO Possibly also check if there is energy to spare.
+        if eco_config.haulers_required > 1 && hauler_stats.number_of_idle_creeps.small_sample_avg::<f32>() >= 1.5 {
+            // If there is at least 1.5 idle hauler on average, decrease the number of required haulers.
+            eco_config.haulers_required -= 1;
+        } else if hauler_stats.number_of_idle_creeps.small_sample_avg::<f32>() < 0.5 && unfulfilled_fulfillable_haul_amount > eco_config.hauler_body.store_capacity() / 2 {
+            // If there are usually no idle haulers and there is on average more to carry than half
+            // of a hauler capacity, increase the number of haulers.
+            eco_config.haulers_required += 1;
+        }
+
+        // Energy to spare is decided by the amount in storage as well as the average unfulfilled
+        // withdraw requests.
+        let unfulfilled_haul_amount_balance = eco_stats.haul_stats.unfulfilled_withdraw_amount.small_sample_avg::<i32>()
+            - eco_stats.haul_stats.unfulfilled_deposit_amount.small_sample_avg::<i32>();
+        let has_energy_to_spare = unfulfilled_haul_amount_balance > MIN_AVG_ENERGY_TO_SPARE as i32;
+
+        // If there are construction sites, spawn builders.
+        // TODO Also make the calculations based on various storage, especially when the main storage
+        //      is built.
+        if room_state.construction_site_queue.is_empty() {
+            // No need for builders if there are no construction sites.
+            eco_config.builders_required = 0;
+        } else {
+            let builder_stats = eco_stats.creep_stats(Builder);
+            if eco_config.builders_required > 1 && builder_stats.number_of_idle_creeps.small_sample_avg::<f32>() >= 1.5 {
+                // If at least 1.5 builders are idle on average, decrease their number.
+                eco_config.builders_required -= 1;
+            } else if has_energy_to_spare {
+                // If there are construction sites and energy to spare, spawn more builders.
+                // However, don't spawn more builders if some of them are idle (i.e., starved for
+                // energy).
+                if eco_config.builders_required == 0 || eco_config.builders_required == builder_stats.number_of_active_creeps.last() && builder_stats.number_of_idle_creeps.small_sample_avg::<f32>() < 0.5 {
+                    eco_config.builders_required += 1;
+                }
+            }
+
+            if eco_config.builders_required > 0 {
+                eco_config.builder_body = preferred_builder_body(spawn_energy);
+            }
+        }
+
+        // If there is enough energy to spare, spawn upgraders. They have smaller priority than
+        // builders. However, if the controller is close to downgrading, prioritize the upgrader.
+        let controller_downgrade_level_critical = u!(room_state.controller).downgrade_tick - game_tick() < CRITICAL_CONTROLLER_DOWNGRADE_TICKS;
+        if !room_state.construction_site_queue.is_empty() || !controller_downgrade_level_critical {
+            eco_config.upgraders_required = 0;
+        } else {
+            let upgrader_stats = eco_stats.creep_stats(Upgrader);
+            if eco_config.upgraders_required > 1 && upgrader_stats.number_of_idle_creeps.small_sample_avg::<f32>() >= 1.5 {
+                // If at least 1.5 upgraders are idle on average, decrease their number.
+                eco_config.upgraders_required -= 1;
+            } else if has_energy_to_spare || controller_downgrade_level_critical {
+                // If there is energy to spare, spawn more upgraders.
+                // However, don't spawn more builders if some of them are idle (i.e., starved for
+                // energy).
+                if eco_config.upgraders_required == 0 || eco_config.builders_required == upgrader_stats.number_of_active_creeps.last() &&upgrader_stats.number_of_idle_creeps.small_sample_avg::<f32>() < 0.5 {
+                    eco_config.upgraders_required += 1;
+                }
+            }
+
+            if eco_config.upgraders_required > 0 {
+                eco_config.upgrader_body = preferred_upgrader_body(spawn_energy);
+            }
+        }
+    }
+    
+    if DEBUG {
+        info!("Average haul stats / small sample haul stats / current haul stats:");
+        info!(
+            "Unfulfilled withdraw amount: {:.2}R, {:.2}R, {}R",
+            eco_stats.haul_stats.unfulfilled_withdraw_amount.avg::<f32>(),
+            eco_stats.haul_stats.unfulfilled_withdraw_amount.small_sample_avg::<f32>(),
+            eco_stats.haul_stats.unfulfilled_withdraw_amount.last()
+        );
+        info!(
+            "Unfulfilled deposit amount: {:.2}R, {:.2}R, {}R",
+            eco_stats.haul_stats.unfulfilled_deposit_amount.avg::<f32>(),
+            eco_stats.haul_stats.unfulfilled_deposit_amount.small_sample_avg::<f32>(),
+            eco_stats.haul_stats.unfulfilled_deposit_amount.last()
+        );
+        info!(
+            "Withdrawable storage amount: {:.2}R, {:.2}R, {}R",
+            eco_stats.haul_stats.withdrawable_storage_amount.avg::<f32>(),
+            eco_stats.haul_stats.withdrawable_storage_amount.small_sample_avg::<f32>(),
+            eco_stats.haul_stats.withdrawable_storage_amount.last()
+        );
+        info!(
+            "Depositable storage amount: {:.2}R, {:.2}R, {}R",
+            eco_stats.haul_stats.depositable_storage_amount.avg::<f32>(),
+            eco_stats.haul_stats.depositable_storage_amount.small_sample_avg::<f32>(),
+            eco_stats.haul_stats.depositable_storage_amount.last()
+        );
+        info!("Creep stats:");
+        for (role, role_stats) in eco_stats.creep_stats_by_role.iter() {
+            info!(
+                "* {}: {} creeps, {} with prespawned, max TTL {}, {} with prespawned, {:.2} idle ({:.2} avg.)",
+                role,
+                role_stats.number_of_active_creeps.last(),
+                role_stats.number_of_creeps.last(),
+                role_stats.max_active_creep_ttl.last(),
+                role_stats.max_creep_ttl.last(),
+                role_stats.number_of_idle_creeps.last(),
+                role_stats.number_of_idle_creeps.small_sample_avg::<f32>()
+            );
+        }
+
+        let energy_income = number_of_sources as f32 * single_source_energy_income as f32;
+        
+        let hauling_body_energy_usage = eco_config.haulers_required as f32 * eco_config.hauler_body.body_energy_usage();
+        let mining_body_energy_usage = eco_config.miners_required as f32 * eco_config.miner_body.body_energy_usage();
+        let building_body_energy_usage = eco_config.builders_required as f32 * eco_config.builder_body.body_energy_usage();
+        let upgrading_body_energy_usage = eco_config.upgraders_required as f32 * eco_config.upgrader_body.body_energy_usage();
+        
+        let body_energy_usage = hauling_body_energy_usage + mining_body_energy_usage + building_body_energy_usage + upgrading_body_energy_usage;
+        let building_work_energy_usage = eco_config.builders_required as f32 * eco_config.builder_body.build_energy_usage() as f32;
+        let upgrading_work_energy_usage = eco_config.upgraders_required as f32 * eco_config.upgrader_body.upgrade_energy_usage() as f32;
+        let work_energy_usage = building_work_energy_usage + upgrading_work_energy_usage;
+        let energy_usage = body_energy_usage + work_energy_usage;
+        
+        let total_construction_site_energy_needed: u32 = room_state
+            .construction_site_queue
+            .iter().map(|cs| u!(cs.structure_type.construction_cost()))
+            .sum();
+        
+        info!("Bootstrapping: {}", bootstrapping);
+        info!("Spawn energy: {}/{}", spawn_energy, spawn_energy_capacity);
+        info!("Energy income: {:.2}E/t", energy_income);
+        info!("Predicted energy usage and other stats:");
+        info!("* Hauling:   {:.2}E/t on {} creeps, {}", hauling_body_energy_usage, eco_config.haulers_required, eco_config.hauler_body);
+        info!("* Mining:    {:.2}E/t on {} creeps, {}", mining_body_energy_usage, eco_config.miners_required, eco_config.miner_body);
+        info!("* Building:  {:.2}E/t on {} creeps + {:.2}E/t on work, {}", building_body_energy_usage, eco_config.builders_required, building_work_energy_usage, eco_config.builder_body);
+        info!("* Upgrading: {:.2}E/t on {} creeps + {:.2}E/t on work, {}", upgrading_body_energy_usage, eco_config.upgraders_required, upgrading_work_energy_usage, eco_config.upgrader_body);
+        info!("Construction sites: {} (total {}E needed)", room_state.construction_site_queue.len(), total_construction_site_energy_needed);
+        info!("Energy usage: {:.2}E/t + {:.2}E/t = {:.2}E/t", body_energy_usage, work_energy_usage, energy_usage);
+        info!("Energy balance: {:.2}E/t", energy_income - energy_usage)
+    }
+}
+
 impl RoomEcoConfig {
-    // TODO Take previous room eco and other stats and adjust the values according to actual usage.
-    // TODO Also include spawn occupation in the calculation, particularly at low RCL.
+    pub fn clear_non_miner_or_hauler(&mut self) {
+        self.upgraders_required = 0;
+        self.builders_required = 0;
+    }
+    
+    /*
     pub fn new(room_state: &RoomState) -> Self {
-        let miner_stats = u!(room_state.eco_stats.as_ref()).creep_stats(Miner);
-        let hauler_stats = u!(room_state.eco_stats.as_ref()).creep_stats(Hauler);
+        let eco_stats = u!(room_state.eco_stats.as_ref());
+        let miner_stats = eco_stats.creep_stats(Miner);
+        let hauler_stats = eco_stats.creep_stats(Hauler);
 
         let spawn_energy = room_state.resources.spawn_energy;
         let spawn_energy_capacity = room_state.resources.spawn_energy_capacity;
@@ -59,7 +322,7 @@ impl RoomEcoConfig {
         let energy_income = number_of_sources as f32 * single_source_energy_income;
 
         // Hauler uses energy only on its body.
-        let mut hauler_body = Self::hauler_body(spawn_energy_capacity);
+        let mut hauler_body = preferred_hauler_body(spawn_energy_capacity);
         let base_hauler_body_energy_usage = hauler_body.body_energy_usage();
 
         let roads_used = room_state.rcl >= SOURCE_AND_CONTROLLER_ROAD_RCL;
@@ -116,7 +379,7 @@ impl RoomEcoConfig {
 
         // Miner uses energy only on its body.
         // TODO Link mining.
-        let mut miner_body = Self::miner_body(spawn_energy_capacity, true);
+        let mut miner_body = preferred_miner_body(spawn_energy_capacity, true);
         // When the room is out of essential creeps needed to sustain spawning other creeps, it
         // cannot just spawn any creep of any size.
         // Note that there is no need to prevent spawning of other creeps since they have smaller
@@ -127,7 +390,7 @@ impl RoomEcoConfig {
             && spawn_energy < miner_body.energy_cost() + hauler_body.energy_cost();
         if small_miner_required {
             // TODO Link mining.
-            miner_body = Self::miner_body(0, true);
+            miner_body = preferred_miner_body(0, true);
         }
         let miners_required = if small_miner_required {
             1
@@ -139,7 +402,7 @@ impl RoomEcoConfig {
         let mining_hauling_throughput = total_miner_body_energy_usage * avg_source_spawn_dist;
         total_hauling_throughput += mining_hauling_throughput;
         energy_balance -= total_mining_energy_usage;
-        
+
         let mut miner_spawn_priority = Priority(200);
         let mut hauler_spawn_priority = Priority(150);
         if miner_stats.number_of_creeps == 0 {
@@ -152,7 +415,7 @@ impl RoomEcoConfig {
         // Ignoring the time spent travelling for the purpose of energy usage.
         // This is only a one-time cost, so when storage is available, there is no real limit on
         // the number of builders as long as all are used and there is enough spawn capacity.
-        let builder_body = Self::builder_body(spawn_energy_capacity);
+        let builder_body = preferred_builder_body(spawn_energy_capacity);
         let mut total_building_energy_usage = 0f32;
         let mut building_creep_energy_usage = 0f32;
         let mut building_hauling_throughput = 0f32;
@@ -187,7 +450,7 @@ impl RoomEcoConfig {
 
         // Upgrader uses energy on its body and upgrading.
         // Ignoring the time spent travelling for the purpose of energy usage.
-        let upgrader_body = Self::upgrader_body(spawn_energy_capacity);
+        let upgrader_body = preferred_upgrader_body(spawn_energy_capacity);
         let upgrader_body_energy_usage = upgrader_body.body_energy_usage() * body_cost_multiplier;
         let upgrader_upgrade_energy_usage = upgrader_body.upgrade_energy_usage() as f32;
         let upgrader_energy_usage = upgrader_body_energy_usage + upgrader_upgrade_energy_usage;
@@ -212,7 +475,7 @@ impl RoomEcoConfig {
         let small_hauler_required = hauler_stats.number_of_creeps == 0
             && spawn_energy < hauler_body.energy_cost();
         if small_hauler_required {
-            hauler_body = Self::hauler_body(0);
+            hauler_body = preferred_hauler_body(0);
         }
         // When there are no miners, do not spawn any new haulers.
         // TODO Unless there is energy to spare in the storage.
@@ -303,49 +566,60 @@ impl RoomEcoConfig {
             builder_body,
         }
     }
+     */
+}
 
-    pub fn hauler_body(spawn_energy: u32) -> CreepBody {
-        if spawn_energy == 0 {
-            // Smallest possible hauler.
-            vec![(Move, 1), (Carry, 1)].into()
-        } else if spawn_energy >= 550 {
-            vec![(Move, 5), (Carry, 5)].into()
-        } else {
-            vec![(Move, 3), (Carry, 3)].into()
-        }
+pub fn preferred_hauler_body(spawn_energy: u32) -> CreepBody {
+    if spawn_energy >= 550 {
+        vec![(Move, 5), (Carry, 5)].into()
+    } else if spawn_energy >= 300 {
+        vec![(Move, 3), (Carry, 3)].into()
+    } else {
+        // Smallest possible hauler.
+        vec![(Move, 1), (Carry, 1)].into()
     }
+}
 
-    pub fn miner_body(spawn_energy: u32, drop_mining: bool) -> CreepBody {
-        if spawn_energy == 0 {
-            if drop_mining {
-                // Smallest possible drop miner.
-                vec![(Move, 1), (Work, 1)].into()
-            } else {
-                // Smallest possible link miner.
-                vec![(Move, 1), (Work, 1), (Carry, 1)].into()
-            }
-        } else if spawn_energy >= 550 && drop_mining {
-            vec![(Move, 1), (Work, 5)].into()
-        } else if drop_mining {
-            vec![(Move, 2), (Work, 2)].into()
-        } else {
-            vec![(Move, 1), (Work, 2), (Carry, 1)].into()
-        }
+pub fn preferred_miner_body(spawn_energy: u32, drop_mining: bool) -> CreepBody {
+    if drop_mining {
+        preferred_drop_miner_body(spawn_energy)
+    } else {
+        preferred_link_miner_body(spawn_energy)
     }
+}
 
-    pub fn upgrader_body(spawn_energy: u32) -> CreepBody {
-        if spawn_energy >= 550 {
-            vec![(Move, 2), (Work, 2), (Carry, 4)].into()
-        } else {
-            vec![(Move, 1), (Work, 1), (Carry, 2)].into()
-        }
+pub fn preferred_drop_miner_body(spawn_energy: u32) -> CreepBody {
+    if spawn_energy >= 550 {
+        vec![(Move, 1), (Work, 5)].into()
+    } else if spawn_energy >= 300 {
+        vec![(Move, 2), (Work, 2)].into()
+    } else {
+        // Smallest possible drop miner.
+        vec![(Move, 1), (Work, 1)].into()
     }
+}
 
-    pub fn builder_body(spawn_energy: u32) -> CreepBody {
-        if spawn_energy >= 550 {
-            vec![(Move, 2), (Work, 3), (Carry, 1)].into()
-        } else {
-            vec![(Move, 1), (Work, 2), (Carry, 1)].into()
-        }
+pub fn preferred_link_miner_body(spawn_energy: u32) -> CreepBody {
+    if spawn_energy >= 300 {
+        vec![(Move, 1), (Work, 2), (Carry, 1)].into()
+    } else {
+        // Smallest possible link miner.
+        vec![(Move, 1), (Work, 1), (Carry, 1)].into()
+    }
+}
+
+pub fn preferred_upgrader_body(spawn_energy: u32) -> CreepBody {
+    if spawn_energy >= 550 {
+        vec![(Move, 2), (Work, 2), (Carry, 4)].into()
+    } else {
+        vec![(Move, 1), (Work, 1), (Carry, 2)].into()
+    }
+}
+
+pub fn preferred_builder_body(spawn_energy: u32) -> CreepBody {
+    if spawn_energy >= 550 {
+        vec![(Move, 2), (Work, 3), (Carry, 1)].into()
+    } else {
+        vec![(Move, 1), (Work, 2), (Carry, 1)].into()
     }
 }

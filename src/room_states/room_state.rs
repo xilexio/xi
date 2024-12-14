@@ -23,18 +23,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
 use log::info;
 use js_sys::{Object, Reflect};
-use screeps::StructureType::Road;
+use crate::algorithms::matrix_common::MatrixCommon;
+use crate::algorithms::room_matrix::RoomMatrix;
 use crate::creeps::creeps::CreepRef;
 use crate::economy::room_eco_config::RoomEcoConfig;
 use crate::economy::room_eco_stats::RoomEcoStats;
 use crate::geometry::room_xy::RoomXYUtils;
 use crate::kernel::broadcast::Broadcast;
+use crate::room_planning::packed_tile_structures::PackedTileStructures;
 use crate::room_planning::plan::Plan;
 use crate::room_planning::room_planner::RoomPlanner;
 use crate::room_states::packed_terrain::PackedTerrain;
 use crate::travel::surface::Surface;
 use crate::u;
 
+// TODO Instead of Option everywhere, create OwnedRoomState with all extra attributes or even better,
+//      combine it with designation into one enum.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RoomState {
     pub room_name: RoomName,
@@ -49,6 +53,8 @@ pub struct RoomState {
     // TODO ids of structures for owned rooms, where extensions and spawns and links are split by location, e.g., fastFillerExtensions
     // TODO for unowned rooms, ids are not as important (if at all)
     pub structures: StructuresMap,
+    #[serde(skip)]
+    pub structures_matrix: RoomMatrix<PackedTileStructures>,
     pub plan: Option<Plan>,
     #[serde(skip)]
     pub planner: Option<Box<RoomPlanner>>,
@@ -102,6 +108,7 @@ pub struct ControllerData {
     pub xy: RoomXY,
     pub work_xy: Option<RoomXY>,
     pub link_xy: Option<RoomXY>,
+    pub downgrade_tick: u32,
 }
 
 #[derive(Deserialize, Serialize, Clone, Debug, Constructor)]
@@ -185,6 +192,7 @@ impl RoomState {
             current_rcl_structures: None,
             current_rcl_structures_built: true,
             structures: FxHashMap::default(),
+            structures_matrix: RoomMatrix::default(),
             plan: None,
             planner: None,
             construction_site_queue: Vec::new(),
@@ -213,10 +221,13 @@ impl RoomState {
         self.structure_xy(structure_type)
             .map(|xy| xy.to_pos(self.room_name))
     }
-
+    
     pub fn tile_surface(&self, xy: RoomXY) -> Surface {
-        if self.structures.get(&Road).map(|xys| xys.contains(&xy)).unwrap_or(false) {
+        let tile_structures = self.structures_matrix.get(xy);
+        if tile_structures.road() {
             Surface::Road
+        } else if !tile_structures.is_passable(self.designation == RoomDesignation::Owned) {
+            Surface::Obstacle
         } else {
             match self.terrain.get(xy) {
                 Terrain::Plain => {

@@ -19,14 +19,14 @@ impl Future for Sleep {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         if game_tick() >= self.wake_up_tick {
             local_debug!(
-                "Sleep ready because game_time {} >= {} wake_up_tick.",
+                "Sleep ready because game_tick {} >= {} wake_up_tick.",
                 game_tick(),
                 self.wake_up_tick
             );
             Poll::Ready(())
         } else {
             local_debug!(
-                "Sleep pending because game_time {} < {} wake_up_tick.",
+                "Sleep pending because game_tick {} < {} wake_up_tick.",
                 game_tick(),
                 self.wake_up_tick
             );

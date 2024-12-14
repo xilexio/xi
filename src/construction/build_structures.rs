@@ -3,6 +3,7 @@ use screeps::{ResourceType, RoomName, CREEP_RANGED_ACTION_RANGE};
 use screeps::game::get_object_by_id_typed;
 use crate::creeps::creep_role::CreepRole;
 use crate::creeps::creep_body::CreepBody;
+use crate::creeps::creep_role::CreepRole::Builder;
 use crate::geometry::room_xy::RoomXYUtils;
 use crate::hauling::requests::HaulRequest;
 use crate::hauling::requests::HaulRequestKind::DepositRequest;
@@ -124,6 +125,8 @@ pub async fn build_structures(room_name: RoomName) {
                         let cs = get_object_by_id_typed(&cs_data.id);
                         if cs.is_none() {
                             // The building is finished or the construction site stopped existing.
+                            // This future runs after the build_structures future, but this can run
+                            // between ticks where construction sites are recreated.
                             break;
                         }
                         
@@ -136,21 +139,29 @@ pub async fn build_structures(room_name: RoomName) {
 
                             // TODO Handle cancellation by drop (when creep dies).
                             store_request = None;
-                        } else if store_request.is_none() {
-                            // TODO Request the energy in advance.
-                            let mut new_store_request = HaulRequest::new(
-                                DepositRequest,
-                                room_name,
-                                ResourceType::Energy,
-                                creep_id,
-                                CreepTarget,
-                                false,
-                                creep_ref.borrow_mut().travel_state.pos
-                            );
-                            new_store_request.amount = capacity;
-                            new_store_request.priority = Priority(30);
+                        } else {
+                            with_room_state(room_name, |room_state| {
+                                if let Some(eco_stats) = room_state.eco_stats.as_mut() {
+                                    eco_stats.register_idle_creep(Builder, &creep_ref);
+                                }
+                            });
                             
-                            store_request = Some(schedule_haul(new_store_request, store_request.take()));
+                            if store_request.is_none() {
+                                // TODO Request the energy in advance.
+                                let mut new_store_request = HaulRequest::new(
+                                    DepositRequest,
+                                    room_name,
+                                    ResourceType::Energy,
+                                    creep_id,
+                                    CreepTarget,
+                                    false,
+                                    creep_ref.borrow_mut().travel_state.pos
+                                );
+                                new_store_request.amount = capacity;
+                                new_store_request.priority = Priority(30);
+
+                                store_request = Some(schedule_haul(new_store_request, store_request.take()));
+                            }
                         }
 
                         sleep(1).await;

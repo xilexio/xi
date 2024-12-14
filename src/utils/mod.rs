@@ -18,3 +18,5 @@ pub mod game_tick;
 pub mod map_utils;
 pub mod part_extras;
 pub mod permutation;
+pub mod sampling;
+pub mod avg_vector;

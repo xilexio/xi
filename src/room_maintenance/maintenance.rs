@@ -8,6 +8,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::{game, RoomName};
 use crate::construction::build_structures::build_structures;
 use crate::consts::FAR_FUTURE;
+use crate::economy::gather_eco_samples::gather_eco_samples;
 use crate::economy::update_eco_config::update_eco_config;
 use crate::room_maintenance::filling_spawns::fill_spawns;
 use crate::hauling::haul_resources::haul_resources;
@@ -106,11 +107,17 @@ async fn maintain_room(room_name: RoomName) {
             current_priority() - 1,
             haul_resources(room_name)
         );
+        
+        schedule(
+            &format!("gather_eco_samples{}", room_name),
+            current_priority() - 2,
+            gather_eco_samples(room_name)
+        );
 
         // Update stats and decide on resource distribution within the room.
         schedule(
             &format!("update_eco_config{}", room_name),
-            current_priority() - 2,
+            current_priority() - 3,
             update_eco_config(room_name)
         );
 

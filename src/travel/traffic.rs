@@ -39,7 +39,7 @@ pub fn register_creep_pos(creep_ref: &CreepRef) {
     let mut creep = creep_ref.borrow_mut();
     creep.travel_state.pos = u!(creep.screeps_obj()).pos();
     if let Some(creep_pos) = creep_arrival_pos(&mut creep) {
-        local_debug!("Creep {} arrived at {}.", creep.name, creep_pos);
+        local_debug!("Creep {} arrived at {}.", creep.name, creep_pos.f());
         creep.travel_state.path.clear();
         creep.travel_state.arrived = true;
         creep.travel_state.arrival_broadcast.broadcast(Ok(creep_pos));
@@ -50,7 +50,7 @@ pub fn register_creep_pos(creep_ref: &CreepRef) {
             // TODO Repath.
             warn!(
                 "Creep {} is {} tiles from the next position on the path ({}).",
-                creep.name, next_pos_dist, next_pos
+                creep.name, next_pos_dist, next_pos.f()
             );
         }
     }

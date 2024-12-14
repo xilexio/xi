@@ -1571,12 +1571,11 @@ impl RoomPlanner {
         let potential_tiles = self
             .storage_xy
             .outward_iter(Some(2), None)
-            .filter_map(|xy| {
-                (self.planned_tiles.get(xy).is_empty()
+            .filter(|&xy| {
+                self.planned_tiles.get(xy).is_empty()
                     && self.interior_dm.get(xy) > CREEP_RANGED_ACTION_RANGE
                     && self.terrain.get(xy) != Wall
-                    && xy.around().any(|near| !self.planned_tiles.get(near).is_empty()))
-                    .then_some(xy)
+                    && xy.around().any(|near| !self.planned_tiles.get(near).is_empty())
             })
             .collect::<Vec<_>>();
 
@@ -1599,11 +1598,10 @@ impl RoomPlanner {
         let mut extensions = self
             .storage_xy
             .outward_iter(Some(2), None)
-            .filter_map(|xy| {
-                (self.interior_dm.get(xy) > CREEP_RANGED_ACTION_RANGE
+            .filter(|&xy| {
+                self.interior_dm.get(xy) > CREEP_RANGED_ACTION_RANGE
                     && self.planned_tiles.get(xy).grown()
-                    && self.planned_tiles.get(xy).structures().main() == Extension.try_into().unwrap())
-                    .then_some(xy)
+                    && self.planned_tiles.get(xy).structures().main() == Extension.try_into().unwrap()
             })
             .collect::<Vec<_>>();
         extensions.reverse();
@@ -1880,9 +1878,9 @@ impl RoomPlanner {
         }
 
         {
-            // Roads are built at the RCL when they are used. Note that ramparts are not included in the `min_rcl`, as they
-            // are all built in the same RCL. Additionally, there are no roads before RCL 3 and all remaining roads are
-            // built on RCL 6.
+            // Roads are built at the RCL when they are used. Note that ramparts are not included in
+            // the `min_rcl`, as they are all built in the same RCL. Additionally, there are no
+            // roads before RCL 3 and all remaining roads are built on RCL 6.
             // TODO Consider making rampart roads built on-demand when there is a siedge.
             let source_and_controller_work_xys = self
                 .planned_sources
@@ -2042,6 +2040,7 @@ mod tests {
             (30, 10).try_into().unwrap(),
             None,
             None,
+            0
         ));
         room_state.terrain.set((0, 0).try_into().unwrap(), Wall);
         room_state.terrain.set((0, ROOM_SIZE - 1).try_into().unwrap(), Wall);

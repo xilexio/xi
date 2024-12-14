@@ -86,10 +86,9 @@ where
         unsafe { self.data[xy.rect_index(self.rect)] }
     }
 
-    #[inline]
-    fn set(&mut self, xy: RoomXY, value: T) {
+    fn get_mut(&mut self, xy: RoomXY) -> &mut T {
         unsafe {
-            self.data[xy.rect_index(self.rect)] = value;
+            &mut self.data[xy.rect_index(self.rect)]
         }
     }
 

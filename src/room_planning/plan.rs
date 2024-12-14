@@ -43,6 +43,7 @@ pub struct PlanScore {
 
 impl Eq for PlanScore {}
 
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd<Self> for PlanScore {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.total_score.partial_cmp(&other.total_score)

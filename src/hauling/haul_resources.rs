@@ -1,5 +1,3 @@
-use std::cell::Cell;
-use std::rc::Rc;
 use crate::creeps::creep_role::CreepRole;
 use crate::creeps::creeps::CreepRef;
 use crate::errors::XiError;
@@ -9,12 +7,13 @@ use crate::kernel::sleep::sleep;
 use crate::priorities::HAULER_SPAWN_PRIORITY;
 use crate::room_states::room_states::with_room_state;
 use crate::travel::travel::travel;
-use crate::{local_debug, u};
+use crate::u;
 use log::debug;
 use screeps::StructureType::Storage;
 use screeps::RoomName;
 use crate::creeps::actions::{pickup_when_able, transfer_when_able, withdraw_when_able};
 use crate::creeps::creep_body::CreepBody;
+use crate::creeps::creep_role::CreepRole::Hauler;
 use crate::hauling::requests::HaulRequestTargetKind::PickupTarget;
 use crate::hauling::reserving_requests::{find_haul_requests, ReservedRequests};
 use crate::hauling::store_anywhere_or_drop::store_anywhere_or_drop;
@@ -24,6 +23,7 @@ use crate::spawning::spawn_pool::{SpawnPool, SpawnPoolOptions};
 use crate::spawning::spawn_schedule::{PreferredSpawn, SpawnRequest};
 use crate::travel::travel_spec::TravelSpec;
 use crate::utils::result_utils::ResultUtils;
+use crate::utils::sampling::is_sample_tick;
 
 const DEBUG: bool = true;
 
@@ -56,7 +56,6 @@ pub async fn haul_resources(room_name: RoomName) {
     }));
 
     let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, SpawnPoolOptions::default());
-    let idle_haulers = Rc::new(Cell::new(0u32));
     
     loop {
         let (haulers_required, hauler_body, hauler_spawn_priority) = wait_until_some(|| with_room_state(room_name, |room_state| {
@@ -90,60 +89,54 @@ pub async fn haul_resources(room_name: RoomName) {
             });
         });
         */
-        
 
-        // TODO Measuring number of idle creeps and trying to minimize their number while
-        //      fulfilling all requests.
-        spawn_pool.with_spawned_creeps(|creep_ref| {
-            let idle_haulers_clone = idle_haulers.clone();
-            async move {
-                let carry_capacity = u!(creep_ref.borrow_mut().carry_capacity());
+        spawn_pool.with_spawned_creeps(|creep_ref| async move {
+            let carry_capacity = u!(creep_ref.borrow_mut().carry_capacity());
 
-                loop {
-                    let store = u!(creep_ref.borrow_mut().used_capacities(AfterAllTransfers));
-                    let pos = creep_ref.borrow_mut().travel_state.pos;
-                    let ttl = creep_ref.borrow_mut().ticks_to_live();
+            loop {
+                let store = u!(creep_ref.borrow_mut().used_capacities(AfterAllTransfers));
+                let pos = creep_ref.borrow_mut().travel_state.pos;
+                let ttl = creep_ref.borrow_mut().ticks_to_live();
 
-                    debug!(
-                        "{} searching for withdraw/pickup and store requests.",
-                        creep_ref.borrow().name
-                    );
+                debug!(
+                    "{} searching for withdraw/pickup and store requests.",
+                    creep_ref.borrow().name
+                );
 
-                    let reserved_requests = find_haul_requests(
-                        room_name,
-                        &store,
-                        pos,
-                        carry_capacity,
-                        ttl
-                    );
+                let reserved_requests = find_haul_requests(
+                    room_name,
+                    &store,
+                    pos,
+                    carry_capacity,
+                    ttl
+                );
 
-                    if let Some(reserved_requests) = reserved_requests {
-                        let result = fulfill_requests(&creep_ref, reserved_requests).await;
+                if let Some(reserved_requests) = reserved_requests {
+                    let result = fulfill_requests(&creep_ref, reserved_requests).await;
 
-                        if let Err(e) = result {
-                            debug!("Error when hauling: {:?}.", e);
-                            sleep(1).await;
-                        }
-                    } else {
-                        // There is nothing to haul. The creep is idle.
-                        idle_haulers_clone.set(idle_haulers_clone.get() + 1);
-                        local_debug!("Hauler {} is idle.", creep_ref.borrow().name);
+                    if let Err(e) = result {
+                        debug!("Error when hauling: {:?}.", e);
                         sleep(1).await;
                     }
+                } else {
+                    // There is nothing to haul. The creep is idle.
+                    with_room_state(room_name, |room_state| {
+                        if let Some(eco_stats) = room_state.eco_stats.as_mut() {
+                            eco_stats.register_idle_creep(Hauler, &creep_ref);
+                        }
+                    });
+                    sleep(1).await;
                 }
             }
         });
 
-        if game_tick() % 10 == 4 {
+        if is_sample_tick() {
             with_room_state(room_name, |room_state| {
                 // TODO
                 if let Some(eco_stats) = room_state.eco_stats.as_mut() {
-                    local_debug!("Recording {} idle haulers.", idle_haulers.get());
-                    eco_stats.haul_stats.add_sample(room_name, idle_haulers.replace(0));
+                    eco_stats.haul_stats.add_sample(room_name);
                 }
             });
-        } else {
-            idle_haulers.replace(0);
         }
         
         sleep(1).await;

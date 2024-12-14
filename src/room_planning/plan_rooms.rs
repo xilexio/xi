@@ -115,12 +115,12 @@ pub fn plan_current_rcl_structures(room_state: &mut RoomState) {
         }
 
         for source_info in plan.sources.iter() {
-            if plan.tiles.get(source_info.link_xy).min_rcl() > room_state.rcl {
+            if MIN_CONTAINER_RCL <= room_state.rcl && room_state.rcl < plan.tiles.get(source_info.link_xy).min_rcl() {
                 structures_map.push_or_insert(Container, source_info.work_xy);
             }
         }
 
-        if room_state.rcl >= MIN_CONTAINER_RCL && plan.tiles.get(plan.controller.link_xy).min_rcl() > room_state.rcl {
+        if MIN_CONTAINER_RCL <= room_state.rcl && room_state.rcl < plan.tiles.get(plan.controller.link_xy).min_rcl() {
             structures_map.push_or_insert(Container, plan.controller.work_xy);
         }
 

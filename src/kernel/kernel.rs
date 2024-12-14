@@ -380,7 +380,7 @@ fn kernel() -> MappedMutexGuard<'static, RawMutex, Kernel> {
 #[cfg(test)]
 mod tests {
     use std::cell::Cell;
-    use crate::utils::game_tick::inc_game_time;
+    use crate::utils::game_tick::inc_game_tick;
     use crate::logging::init_logging;
     use log::LevelFilter::Trace;
     use std::sync::Mutex;
@@ -489,11 +489,11 @@ mod tests {
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 1);
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 1);
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 2);
@@ -521,11 +521,11 @@ mod tests {
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 2);
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 2);
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 4);
@@ -601,11 +601,11 @@ mod tests {
         schedule("set_five", Priority(100), set_five);
         run_processes();
         assert_eq!(get_test_counter(), 4);
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 5);
-        inc_game_time();
+        inc_game_tick();
     }
 
     #[test]
@@ -634,7 +634,7 @@ mod tests {
         schedule("spawn_and_kill", Priority(100), spawn_and_kill);
         run_processes();
         assert_eq!(get_test_counter(), 1);
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 11);
@@ -664,11 +664,11 @@ mod tests {
         });
         run_processes();
         assert_eq!(get_test_counter(), 1);
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 44);
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 86);
@@ -697,11 +697,11 @@ mod tests {
         });
         run_processes();
         assert_eq!(get_test_counter(), 0);
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 42);
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 84);
@@ -730,11 +730,11 @@ mod tests {
         });
         run_processes();
         assert_eq!(get_test_counter(), 0);
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 42);
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 84);
@@ -767,15 +767,15 @@ mod tests {
         });
         run_processes();
         assert_eq!(get_test_counter(), 0);
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 1);
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 1);
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 3);
@@ -808,13 +808,13 @@ mod tests {
             cond.broadcast(2);
         });
         run_processes();
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
     }
@@ -843,15 +843,15 @@ mod tests {
         });
         run_processes();
         assert_eq!(get_test_counter(), 0);
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 1);
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 3);
-        inc_game_time();
+        inc_game_tick();
         wake_up_sleeping_processes();
         run_processes();
         assert_eq!(get_test_counter(), 6);
