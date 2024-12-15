@@ -51,10 +51,7 @@ pub async fn upgrade_controller(room_name: RoomName) {
     }));
 
     // Travel spec for the upgrader. Will not change unless structures change.
-    let travel_spec = TravelSpec {
-        target: work_pos,
-        range: 0,
-    };
+    let travel_spec = TravelSpec::new(work_pos, 0);
 
     // TODO Handle prioritizing energy for the upgrading - always upgrade enough to prevent
     //      the room from downgrading, but only upgrade more if there is energy to spare.

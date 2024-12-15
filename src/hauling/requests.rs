@@ -176,7 +176,7 @@ impl HaulRequest {
             amount: 0,
             amount_change: RequestAmountChange::NoChange,
             decay: 0,
-            priority: Priority::default(),
+            priority: Priority(100),
             reserved_amount: 0,
         }
     }

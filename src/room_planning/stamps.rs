@@ -3,7 +3,6 @@ use crate::algorithms::room_matrix_slice::RoomMatrixSlice;
 use crate::geometry::rect::Rect;
 use crate::room_planning::planned_tile::{BasePart, PlannedTile};
 use screeps::StructureType::{Container, Extension, Factory, Lab, Link, PowerSpawn, Road, Spawn, Storage, Terminal};
-use crate::room_planning::plan_rooms::MIN_CONTAINER_RCL;
 use crate::room_planning::room_planner::SOURCE_AND_CONTROLLER_ROAD_RCL;
 
 /// Fast filler/core stamp.
@@ -106,7 +105,7 @@ pub fn core_stamp() -> RoomMatrixSlice<PlannedTile> {
     result.set((2, 3).try_into().unwrap(), PlannedTile::from(Extension).with_min_rcl(2));
     result.set(
         (3, 3).try_into().unwrap(),
-        PlannedTile::from(Container).with_reserved(true).with_min_rcl(MIN_CONTAINER_RCL),
+        PlannedTile::from(Container).with_reserved(true).with_min_rcl(4),
     );
     result.set((4, 3).try_into().unwrap(), PlannedTile::from(Extension).with_min_rcl(4));
     result.set((5, 3).try_into().unwrap(), PlannedTile::from(Spawn).with_min_rcl(7));

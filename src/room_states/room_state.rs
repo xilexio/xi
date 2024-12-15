@@ -21,7 +21,7 @@ use screeps::{
 use rustc_hash::{FxHashMap, FxHashSet};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
-use log::info;
+use log::{info, trace};
 use js_sys::{Object, Reflect};
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix::RoomMatrix;
@@ -221,20 +221,27 @@ impl RoomState {
     
     pub fn tile_surface(&self, xy: RoomXY) -> Surface {
         let tile_structures = self.structures_matrix.get(xy);
+        trace!("tile_structures[{}] = {:?}, terrain[{}] = {:?}", xy, tile_structures, xy, self.terrain.get(xy));
         if tile_structures.road() {
             Surface::Road
         } else if !tile_structures.is_passable(self.designation == RoomDesignation::Owned) {
             Surface::Obstacle
         } else {
-            match self.terrain.get(xy) {
-                Terrain::Plain => {
-                    Surface::Plain
-                }
-                Terrain::Wall => {
-                    Surface::Obstacle
-                }
-                Terrain::Swamp => {
-                    Surface::Swamp
+            // TODO This is ugly and inefficient. Include construction sites in structures_map,
+            //      instead.
+            if self.construction_site_queue.iter().any(|x| x.xy == xy && x.structure_type != StructureType::Container && x.structure_type != StructureType::Road && x.structure_type != StructureType::Rampart) {
+                Surface::Obstacle
+            } else {
+                match self.terrain.get(xy) {
+                    Terrain::Plain => {
+                        Surface::Plain
+                    }
+                    Terrain::Wall => {
+                        Surface::Obstacle
+                    }
+                    Terrain::Swamp => {
+                        Surface::Swamp
+                    }
                 }
             }
         }

@@ -52,15 +52,15 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
     let spawn_energy = room_state.resources.spawn_energy;
     let spawn_energy_capacity = room_state.resources.spawn_energy_capacity;
     let haulable_energy = eco_stats.haul_stats.withdrawable_storage_amount.last() + eco_stats.haul_stats.unfulfilled_withdraw_amount.last();
-    
+
     // TODO Handle link mining.
     // Computing minimal and preferred miner and hauler bodies.
     let min_miner_body = preferred_miner_body(0, true);
     let min_hauler_body = preferred_hauler_body(0);
-    
+
     let hauler_body = preferred_hauler_body(spawn_energy_capacity);
     let miner_body = preferred_miner_body(spawn_energy_capacity, true);
-    
+
     if room_state.eco_config.is_none() {
         // TODO Handle memory wipe from an already built up state better.
         room_state.eco_config = Some(RoomEcoConfig {
@@ -76,18 +76,19 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
             builder_body: preferred_builder_body(spawn_energy),
         });
     }
-    
+
     let eco_config = u!(room_state.eco_config.as_mut());
     eco_config.hauler_body = hauler_body;
     eco_config.miner_body = miner_body;
-    
+
     let number_of_sources = room_state.sources.len() as u32;
     let single_source_energy_income = SOURCE_ENERGY_CAPACITY / ENERGY_REGEN_TIME;
-    
+
     // Checking if the room is in a condition where it cannot sustain itself.
     // The minimum is a single miner and a single hauler.
     // The hauler is a priority except for when the room has no energy income or storage,
     // then a miner needs to be spawned first.
+    // TODO If there are unassigned miners available, try them first.
     let mut bootstrapping = true;
     if hauler_stats.number_of_creeps.last() == 0 {
         // Don't spawn anything else until the issue is resolved.
@@ -101,7 +102,7 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
                 // selected in the next iteration.
                 eco_config.haulers_required = 1;
                 eco_config.hauler_spawn_priority = Priority(250);
-                
+
                 eco_config.miners_required = 1;
                 eco_config.miner_spawn_priority = Priority(200);
             } else {
@@ -111,7 +112,7 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
                 eco_config.miner_spawn_priority = Priority(250);
                 // TODO Link mining.
                 eco_config.miner_body = preferred_miner_body(spawn_energy - min_hauler_body.energy_cost(), true);
-                
+
                 eco_config.haulers_required = 1;
                 eco_config.hauler_spawn_priority = Priority(200);
                 eco_config.hauler_body = min_hauler_body;
@@ -122,7 +123,7 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
             eco_config.haulers_required = 1;
             eco_config.hauler_spawn_priority = Priority(250);
             eco_config.hauler_body = preferred_hauler_body(spawn_energy);
-            
+
             eco_config.miners_required = 1;
             eco_config.miner_spawn_priority = Priority(200);
         }
@@ -137,28 +138,32 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
         eco_config.miner_body = preferred_miner_body(min(spawn_energy_capacity, spawn_energy + haulable_energy), true);
     } else {
         bootstrapping = false;
-        
+
         // Setting the spawn priorities to normal.
         eco_config.hauler_spawn_priority = Priority(200);
         eco_config.miner_spawn_priority = Priority(200);
-        
+
         // Setting the number of miners to optimal.
         eco_config.miners_required = single_source_energy_income.div_ceil(eco_config.miner_body.energy_harvest_power()) * number_of_sources;
+
+        // There should always be at least two haulers.
+        eco_config.haulers_required = max(2, eco_config.haulers_required);
     }
-    
+
     // Energy to spare is decided by the amount in storage as well as the average unfulfilled
     // withdraw requests.
     let unfulfilled_haul_amount_balance = eco_stats.haul_stats.unfulfilled_withdraw_amount.small_sample_avg::<i32>()
         - eco_stats.haul_stats.unfulfilled_deposit_amount.small_sample_avg::<i32>();
+    // TODO Check just energy, not everything.
     let has_energy_to_spare = unfulfilled_haul_amount_balance > MIN_AVG_ENERGY_TO_SPARE as i32;
-    
+
     let ticks_to_downgrade = u!(room_state.controller).downgrade_tick - game_tick();
     let max_ticks_to_downgrade = u!(controller_downgrade(room_state.rcl));
     // TODO Once everything is built, it should be kept close to fully upgraded.
     //      On RCL 5-7, it should be kept rather high, but building should also take place.
     //      On RCL 4 and lower, it's sufficient to just barely keep it from downgrading.
     let controller_downgrade_level_critical = ticks_to_downgrade < max_ticks_to_downgrade / 4;
-    
+
     if !bootstrapping {
         // Increasing or decreasing the required number of haulers depending on the average amount of
         // resources to carry in unfulfilled requests as well as the number if idle haulers.
@@ -179,7 +184,7 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
         // TODO Possibly also check if there is energy to spare.
         // TODO If there is a lot of energy in decaying piles, but also no storage, spawn more
         //      haulers to contain it.
-        if eco_config.haulers_required > 1 && hauler_stats.number_of_idle_creeps.small_sample_avg::<f32>() >= 1.5 {
+        if eco_config.haulers_required > 2 && hauler_stats.number_of_idle_creeps.small_sample_avg::<f32>() >= 1.5 {
             // If there is at least 1.5 idle hauler on average, decrease the number of required haulers.
             eco_config.haulers_required -= 1;
         } else if hauler_stats.number_of_idle_creeps.small_sample_avg::<f32>() < 0.5 && unfulfilled_fulfillable_haul_amount > eco_config.hauler_body.store_capacity() / 2 {
@@ -236,7 +241,7 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
             }
         }
     }
-    
+
     if DEBUG {
         info!("Average haul stats / small sample haul stats / current haul stats:");
         info!(
@@ -278,23 +283,23 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
         }
 
         let energy_income = number_of_sources as f32 * single_source_energy_income as f32;
-        
+
         let hauling_body_energy_usage = eco_config.haulers_required as f32 * eco_config.hauler_body.body_energy_usage();
         let mining_body_energy_usage = eco_config.miners_required as f32 * eco_config.miner_body.body_energy_usage();
         let building_body_energy_usage = eco_config.builders_required as f32 * eco_config.builder_body.body_energy_usage();
         let upgrading_body_energy_usage = eco_config.upgraders_required as f32 * eco_config.upgrader_body.body_energy_usage();
-        
+
         let body_energy_usage = hauling_body_energy_usage + mining_body_energy_usage + building_body_energy_usage + upgrading_body_energy_usage;
         let building_work_energy_usage = eco_config.builders_required as f32 * eco_config.builder_body.build_energy_usage() as f32;
         let upgrading_work_energy_usage = eco_config.upgraders_required as f32 * eco_config.upgrader_body.upgrade_energy_usage() as f32;
         let work_energy_usage = building_work_energy_usage + upgrading_work_energy_usage;
         let energy_usage = body_energy_usage + work_energy_usage;
-        
+
         let total_construction_site_energy_needed: u32 = room_state
             .construction_site_queue
             .iter().map(|cs| u!(cs.structure_type.construction_cost()))
             .sum();
-        
+
         info!("Bootstrapping: {}, Energy to spare: {}, Controller critical: {}", bootstrapping, has_energy_to_spare, controller_downgrade_level_critical);
         info!("Spawn energy: {}/{}", spawn_energy, spawn_energy_capacity);
         info!("Energy income: {:.2}E/t", energy_income);
@@ -314,7 +319,7 @@ impl RoomEcoConfig {
         self.upgraders_required = 0;
         self.builders_required = 0;
     }
-    
+
     /*
     pub fn new(room_state: &RoomState) -> Self {
         let eco_stats = u!(room_state.eco_stats.as_ref());
@@ -599,8 +604,10 @@ pub fn preferred_miner_body(spawn_energy: u32, drop_mining: bool) -> CreepBody {
 pub fn preferred_drop_miner_body(spawn_energy: u32) -> CreepBody {
     if spawn_energy >= 550 {
         vec![(Move, 1), (Work, 5)].into()
-    } else if spawn_energy >= 300 {
-        vec![(Move, 2), (Work, 2)].into()
+    } else if spawn_energy >= 400 {
+        vec![(Move, 2), (Work, 3)].into()
+    } else if spawn_energy >= 250 {
+        vec![(Move, 1), (Work, 2)].into()
     } else {
         // Smallest possible drop miner.
         vec![(Move, 1), (Work, 1)].into()
@@ -625,9 +632,11 @@ pub fn preferred_upgrader_body(spawn_energy: u32) -> CreepBody {
 }
 
 pub fn preferred_builder_body(spawn_energy: u32) -> CreepBody {
-    if spawn_energy >= 550 {
-        vec![(Move, 2), (Work, 3), (Carry, 1)].into()
+    if spawn_energy >= 450 {
+        vec![(Move, 1), (Work, 2), (Carry, 4)].into()
+    } else if spawn_energy >= 400 {
+        vec![(Move, 1), (Work, 2), (Carry, 3)].into()
     } else {
-        vec![(Move, 1), (Work, 2), (Carry, 1)].into()
+        vec![(Move, 1), (Work, 1), (Carry, 3)].into()
     }
 }

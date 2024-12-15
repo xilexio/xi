@@ -102,10 +102,10 @@ pub async fn build_structures(room_name: RoomName) {
                     //      if there is one.
 
                     // Travelling to the construction site.
-                    let travel_spec = TravelSpec {
-                        target: cs_data.xy.to_pos(room_name),
-                        range: CREEP_RANGED_ACTION_RANGE,
-                    };
+                    let travel_spec = TravelSpec::new(
+                        cs_data.xy.to_pos(room_name),
+                        CREEP_RANGED_ACTION_RANGE
+                    );
 
                     if let Err(err) = travel(&creep_ref, travel_spec.clone()).await {
                         warn!("Builder could not reach its destination: {err}");

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Generic priority. Higher is more important.
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Deserialize, Serialize)]
 #[repr(transparent)]
 pub struct Priority(pub u8);
 
@@ -34,5 +34,11 @@ impl std::ops::Add<u8> for Priority {
 impl std::fmt::Display for Priority {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "!{}", self.0)
+    }
+}
+
+impl From<Priority> for u8 {
+    fn from(value: Priority) -> Self {
+        value.0
     }
 }

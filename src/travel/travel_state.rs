@@ -15,6 +15,8 @@ pub struct TravelState {
     pub(crate) arrived: bool,
     /// Broadcast that the creep arrived at travel spec location.
     pub arrival_broadcast: Broadcast<Result<Position, XiError>>,
+    // /// Number of ticks for which the creep was unable to make any progress when moving.
+    // pub no_progress_ticks: u32,
 }
 
 impl TravelState {

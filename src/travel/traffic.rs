@@ -21,7 +21,7 @@ use crate::geometry::grid_direction::{direction_to_offset, GridDirection};
 use crate::geometry::rect::{ball, Rect};
 use crate::geometry::room_xy::RoomXYUtils;
 use crate::travel::surface::Surface;
-use crate::travel::travel::creep_arrival_pos;
+use crate::travel::travel::find_path;
 use crate::utils::result_utils::ResultUtils;
 
 const DEBUG: bool = true;
@@ -29,7 +29,7 @@ const DEBUG: bool = true;
 enum RepathData {
     Fatigued,
     Adjusted {
-        distance_matrix: RoomMatrixSlice<u16>,
+        distance_matrix: RoomMatrixSlice<u32>,
         target_rect: Rect,
         path_reused: bool
     },
@@ -37,21 +37,61 @@ enum RepathData {
 
 pub fn register_creep_pos(creep_ref: &CreepRef) {
     let mut creep = creep_ref.borrow_mut();
-    creep.travel_state.pos = u!(creep.screeps_obj()).pos();
-    if let Some(creep_pos) = creep_arrival_pos(&mut creep) {
-        local_debug!("Creep {} arrived at {}.", creep.name, creep_pos.f());
-        creep.travel_state.path.clear();
-        creep.travel_state.arrived = true;
-        creep.travel_state.arrival_broadcast.broadcast(Ok(creep_pos));
-    }
-    if let Some(next_pos) = creep.travel_state.path.last() {
-        let next_pos_dist = next_pos.get_range_to(creep.travel_state.pos);
-        if next_pos_dist != 1 {
+    let creep_pos = u!(creep.screeps_obj()).pos();
+    creep.travel_state.pos = creep_pos;
+    
+    let mut repath_required = false;
+    if let Some(&expected_pos) = creep.travel_state.path.last() {
+        if creep.travel_state.pos == expected_pos {
+            creep.travel_state.path.pop();
+
+            if let Some(&next_pos) = creep.travel_state.path.last() {
+                let next_pos_dist = next_pos.get_range_to(creep.travel_state.pos);
+                if next_pos_dist != 1 {
+                    // TODO Repath.
+                    warn!(
+                        "Creep {} is {} tiles from the next position on the path, {}.",
+                        creep.name, next_pos_dist, next_pos.f()
+                    );
+                    repath_required = true;
+                }
+            }
+        } else {
+            // Sometimes the creep may fail to move somewhere as a result of external interference.
             // TODO Repath.
-            warn!(
-                "Creep {} is {} tiles from the next position on the path ({}).",
-                creep.name, next_pos_dist, next_pos.f()
+            local_debug!(
+                "Creep {} failed to move from {} to {}.",
+                creep.name, creep_pos.f(), expected_pos.f()
             );
+            repath_required = true;
+        }
+    }
+    
+    if let Some(travel_spec) = creep.travel_state.spec.as_ref() {
+        if travel_spec.is_in_target_rect(creep_pos) {
+            local_debug!(
+                "Creep {} arrived at {} (target was {} with range {}).",
+                creep.name,
+                creep_pos.f(),
+                travel_spec.target.f(),
+                travel_spec.range
+            );
+            creep.travel_state.path.clear();
+            creep.travel_state.arrived = true;
+            creep.travel_state.arrival_broadcast.broadcast(Ok(creep_pos));
+        } else if repath_required {
+            local_debug!("Repathing.");
+            match find_path(creep_pos, travel_spec) {
+                Ok(path) => {
+                    // Reusing the existing broadcast.
+                    local_debug!("Chosen path: {:?}.", creep.travel_state.path);
+                    creep.travel_state.path = path;
+                }
+                Err(e) => {
+                    local_debug!("Failed to repath creep {}.", creep.name);
+                    creep.travel_state.arrival_broadcast.broadcast(Err(e));
+                }
+            }
         }
     }
 }
@@ -107,32 +147,39 @@ pub async fn move_creeps() {
         for_each_creep(|creep_ref| {
             let mut creep = creep_ref.borrow_mut();
 
-            if let Some(pos) = creep.travel_state.path.pop() {
+            if let Some(&next_pos) = creep.travel_state.path.last() {
                 let creep_id = u!(creep.screeps_id());
                 let fatigued = fatigued_creeps.contains(&creep_id);
                 if DEBUG {
                     if let Some(travel_spec) = creep.travel_state.spec.as_ref() {
                         local_debug!(
-                            "Moving creep {} towards {}. Next tile: {}. Fatigued: {}.",
-                            creep.name, travel_spec.target.f(), pos.f(), fatigued
+                            "Moving creep {} towards {} (range {}). Current tile is {} and next tile is {}. Fatigued: {}.",
+                            creep.name,
+                            travel_spec.target.f(),
+                            travel_spec.range,
+                            creep.travel_state.pos.f(),
+                            next_pos.f(),
+                            fatigued
                         );
                     } else {
                         local_debug!(
-                            "Moving creep {} out of the way to {}. Fatigued: {}.",
-                            creep.name, pos.f(), fatigued
+                            "Moving creep {} out of the way from {} to {}. Fatigued: {}.",
+                            creep.name,
+                            creep.travel_state.pos.f(),
+                            next_pos.f(),
+                            fatigued
                         );
                     }
                 }
-                if fatigued {
+                if next_pos == creep.travel_state.pos {
+                    // `creep_pos` being equal to the current position means the creep is supposed
+                    // to stay put for a tick as a result of conflict resolution. In this case,
+                    // the position is simply removed from the path.
+                    creep.travel_state.path.pop();
+                } else if !fatigued {
                     // If the creep is fatigued, it cannot move. Returning next position to
-                    // the path.
-                    creep.travel_state.path.push(pos);
-                } else if pos != creep.travel_state.pos {
-                    // `pos` being equal to the current position means the creep is supposed to
-                    // stay put for a tick as a result of conflict resolution. In this case,
-                    // the position is simply removed from the path. Otherwise, the creep moves
-                    // along the path.
-                    let direction = u!(creep.travel_state.pos.get_direction_to(pos));
+                    // the path. Otherwise, the creep moves along the path.
+                    let direction = u!(creep.travel_state.pos.get_direction_to(next_pos));
                     let result = creep.move_direction(direction);
                     if result.is_err() {
                         result.warn_if_err(&format!(
@@ -141,7 +188,7 @@ pub async fn move_creeps() {
                             direction
                         ));
                         // If the move failed, returning the pos to the next position.
-                        creep.travel_state.path.push(pos);
+                        creep.travel_state.path.push(next_pos);
                     }
                 }
             }
@@ -208,12 +255,16 @@ where
             (0, i32::MAX),
             (0, i32::MAX),
         ];
+        
         // The cost of a move intent.
-        let intent_cost = 1000u16;
+        let intent_cost = 1000u32;
         // The cost of one tick worth of travelling or waiting.
-        let ttl_cost = 200u16;
-        // The cost of staying put.
-        let no_progress_cost = 10000u16;
+        let ttl_cost = 1000u32;
+        
+        // A shortest path in 3 x 3 square can have at most 4 moves. This can cost as much as
+        // 4 * 49 * 5 * TTL cost. This value has to be higher than that to take priority.
+        // On the other hand, this times maximum priority times 5 must fit in the type.
+        let no_progress_cost = 1000 * ttl_cost;
 
         let room_state = u!(room_states.get(&creep_pos.room_name()));
         // Creating the matrix of costs.
@@ -231,8 +282,6 @@ where
 
         // We extend to a 3x4 or 4x4 matrix if the path is at least 2 tiles long
         // (excluding the current tile).
-        let mut target_rect;
-        let mut path_reused = true;
         let path_len = creep.get_travel_state().path.len();
         if DEBUG && path_len != 0 {
             let dist = creep.get_travel_state().path[path_len - 1].get_range_to(creep.get_travel_state().pos);
@@ -246,6 +295,9 @@ where
                 );
             }
         }
+        
+        let mut target_rect;
+        let mut path_reused = true;
         // TODO Handle cross-room movement.
         if path_len >= 2 {
             let two_tiles_further = creep.get_travel_state().path[path_len - 2].xy();
@@ -259,7 +311,12 @@ where
             path_reused = false;
         }
 
+        let target_rect_priority;
+        let progress_priority;
         if let Some(travel_spec) = creep.get_travel_state().spec.as_ref() {
+            target_rect_priority = travel_spec.target_rect_priority.into();
+            progress_priority = travel_spec.progress_priority.into();
+            
             // Repathing if the target is on creep's or adjacent tile.
             if travel_spec.target.get_range_to(creep_pos) <= 1 + travel_spec.range as u32 {
                 // Unless something is wrong with pathfinding, if the target has not
@@ -273,29 +330,11 @@ where
                     creep.get_name()
                 );
             }
+        } else {
+            target_rect_priority = 0;
+            progress_priority = 0;
         }
 
-        // TODO remember it and if we want repath or extend path
-        // TODO xi::travel::traffic:
-        //      TravelState {
-        //          pos: Position { packed: 2054625303, x: RoomCoordinate(24), y: RoomCoordinate(23), room_name: RoomName { packed: 31351, real: "W5N8" } },
-        //          spec: Some(TravelSpec {
-        //              target: Position { packed: 2054626074, x: RoomCoordinate(27), y: RoomCoordinate(26), room_name: RoomName { packed: 31351, real: "W5N8" } },
-        //              range: 1
-        //          }),
-        //          path: [
-        //              Position { packed: 2054626074, x: RoomCoordinate(27), y: RoomCoordinate(26), room_name: RoomName { packed: 31351, real: "W5N8" } },
-        //              Position { packed: 2054626073, x: RoomCoordinate(27), y: RoomCoordinate(25), room_name: RoomName { packed: 31351, real: "W5N8" } },
-        //              Position { packed: 2054625816, x: RoomCoordinate(26), y: RoomCoordinate(24), room_name: RoomName { packed: 31351, real: "W5N8" } },
-        //              Position { packed: 2054625559, x: RoomCoordinate(25), y: RoomCoordinate(23), room_name: RoomName { packed: 31351, real: "W5N8" } }
-        //          ],
-        //          arrived: false,
-        //          arrival_broadcast: Broadcast { cid: UId(18), value: RefCell { value: None }, last_try_tick: 0 }
-        //      }
-        //      (W5N8,24,23)
-        //      Rect { top_left: RoomXY { x: RoomCoordinate(26), y: RoomCoordinate(25) }, bottom_right: RoomXY { x: RoomCoordinate(28), y: RoomCoordinate(27) } }
-        //      Rect { top_left: RoomXY { x: RoomCoordinate(23), y: RoomCoordinate(22) }, bottom_right: RoomXY { x: RoomCoordinate(26), y: RoomCoordinate(24) } }
-        //      xi::utils::unwrap: Unwrapping failed on Result::Err at src\travel\traffic.rs:268,23 in xi::travel::traffic: Err(InvalidRectError).
         local_debug!("{:?} {} {:?} {:?}", creep.get_travel_state(), creep_pos.f(), target_rect, slice);
         target_rect = u!(target_rect.intersection(slice));
 
@@ -304,19 +343,23 @@ where
         // To obtain it, we must first compute the distance matrix on up to 4x4 slice
         // containing the target position up to 2 tiles away.
         // To compute this, we need to set movement costs of each tile.
-        let mut movement_costs = RoomMatrixSlice::new(slice, u16::MAX);
+        let mut movement_costs = RoomMatrixSlice::new(slice, u32::MAX);
         for xy in slice.iter() {
             let surface = room_state.tile_surface(xy);
-            if surface != Surface::Obstacle {
+            if surface != Surface::Obstacle && !extra_obstacles.contains(&xy.to_pos(creep_pos.room_name())) {
                 if target_rect.contains(xy) {
                     // Being within the target area does not use up TTL since
                     // the creep is still able to do what it needs to do.
-                    // It also has zero cost of intents to get to the target area.
+                    // It also has zero cost of intents or progress to get to the target area.
                     movement_costs.set(xy, 0);
                 } else {
-                    // TODO Immovable creeps.
-                    let tile_ttl = creep.get_ticks_per_tile(surface) as u16;
-                    movement_costs.set(xy, intent_cost + tile_ttl * ttl_cost)
+                    let tile_ttl = creep.get_ticks_per_tile(surface) as u32;
+                    let no_progress_cost_multiplier = if target_rect.contains(creep_pos.xy()) {
+                        target_rect_priority
+                    } else {
+                        progress_priority
+                    };
+                    movement_costs.set(xy, no_progress_cost_multiplier as u32 * no_progress_cost + intent_cost + tile_ttl * ttl_cost);
                 }
             }
         }
@@ -336,7 +379,7 @@ where
             };
             let surface = room_state.tile_surface(xy);
             if surface != Surface::Obstacle && !extra_obstacles.contains(&xy.to_pos(creep_pos.room_name())) {
-                a!(dm.get(xy) != obstacle_cost::<u16>());
+                a!(dm.get(xy) != obstacle_cost::<u32>());
                 let pos = xy.to_pos(creep_pos.room_name());
                 // TTL cost of movement into the given tile.
                 let tile_cost = if direction != GridDirection::Center {
@@ -344,10 +387,10 @@ where
                     if target_rect.contains(xy) {
                         // Simply moving to another location where work can be done.
                         // Slightly preferring tiles from which the creep can move faster.
-                        intent_cost + creep.get_ticks_per_tile(surface) as u16
+                        intent_cost + creep.get_ticks_per_tile(surface) as u32
                     } else {
                         // Wasting a number of ticks on travel instead of work.
-                        intent_cost + creep.get_ticks_per_tile(surface) as u16 * ttl_cost
+                        intent_cost + creep.get_ticks_per_tile(surface) as u32 * ttl_cost
                     }
                 } else if target_rect.contains(xy) {
                     // The creep is already at the target
@@ -357,13 +400,19 @@ where
                     // the minimal cost is a single TTL lost.
                     // However, this could lead to waiting forever in the case when the tile
                     // the creep was waiting for is not being emptied by itself.
-                    // TODO Sometimes it can be computed how long will it take, e.g., when there
-                    //      are two creeps on a collision course on a road, it's preferable that
-                    //      one of them simply stays put for 1 tick. This requires knowledge where
-                    //      creeps intend to be in 2 ticks.
-                    //      Another viable solution is scaling the no progress cost with how many
-                    //      ticks has the creep already waited.
-                    ttl_cost + no_progress_cost
+                    // To avoid this, TTL cost is prioritized.
+                    // TODO Sometimes it is okay to wait. For each field around that contains
+                    //      a fatigued creep, consider "moving" into it with a cost of staying put
+                    //      and wasting a few TTL. To avoid deadlocks, creep needs to have
+                    //      "patience" to not do this after it failed for a few ticks in a row.
+                    //      It may be preferable to go behind a slow creep instead of going into
+                    //      a swamp and still being behind.
+                    // TODO Do something so that if there is a 3x3 ball of upgraders, a hauler can
+                    //      still shove one of them away to deliver the energy. Maybe some kind of
+                    //      priority over creeps that are not in their target? Somehow make cost of
+                    //      moving smaller if no progress can be made anyway. Maybe using two
+                    //      passes?
+                    ttl_cost
                 };
                 // Cost of movement after.
                 let pos = xy.to_pos(creep_pos.room_name());
@@ -454,7 +503,6 @@ where
             if path_reused {
                 // This is the case where the creep needs to get back on path.
                 // Computing the next point on the path that is further away than 2 tiles.
-                let path_len = creep.get_travel_state().path.len();
                 // Adding the rest of the path, keeping in mind that it is a stack.
                 path.extend(creep.get_travel_state().path.iter().rev().skip(2));
                 // TODO Check if continuous.
@@ -504,10 +552,10 @@ mod tests {
             Position::new_from_raw(12, 10, test_room_name),
             Position::new_from_raw(11, 10, test_room_name),
         ];
-        test_creep_1.borrow_mut().get_travel_state_mut().spec = Some(TravelSpec {
-            target: Position::new_from_raw(12, 10, test_room_name),
-            range: 0,
-        });
+        test_creep_1.borrow_mut().get_travel_state_mut().spec = Some(TravelSpec::new(
+            Position::new_from_raw(12, 10, test_room_name),
+            0
+        ));
 
         let test_creep_2 = Rc::new(RefCell::new(TestCreep::new(
             2,
@@ -518,10 +566,10 @@ mod tests {
             Position::new_from_raw(10, 10, test_room_name),
             Position::new_from_raw(11, 10, test_room_name),
         ];
-        test_creep_2.borrow_mut().get_travel_state_mut().spec = Some(TravelSpec {
-            target: Position::new_from_raw(10, 10, test_room_name),
-            range: 0,
-        });
+        test_creep_2.borrow_mut().get_travel_state_mut().spec = Some(TravelSpec::new(
+            Position::new_from_raw(10, 10, test_room_name),
+            0
+        ));
 
         creeps_by_target_pos.insert(test_creep_1.borrow().get_travel_state().pos, (1, test_creep_1.clone()));
         creeps_by_target_pos.insert(test_creep_2.borrow().get_travel_state().pos, (2, test_creep_2.clone()));
@@ -572,10 +620,10 @@ mod tests {
             Position::new_from_raw(10, 10, test_room_name),
             vec![Part::Work, Part::Move].into()
         )));
-        test_idle_creep.borrow_mut().get_travel_state_mut().spec = Some(TravelSpec {
-            target: Position::new_from_raw(10, 10, test_room_name),
-            range: 1,
-        });
+        test_idle_creep.borrow_mut().get_travel_state_mut().spec = Some(TravelSpec::new(
+            Position::new_from_raw(10, 10, test_room_name),
+            1
+        ));
 
         let test_moving_creep = Rc::new(RefCell::new(TestCreep::new(
             2,
@@ -585,10 +633,10 @@ mod tests {
         test_moving_creep.borrow_mut().get_travel_state_mut().path = vec![
             Position::new_from_raw(10, 10, test_room_name)
         ];
-        test_moving_creep.borrow_mut().get_travel_state_mut().spec = Some(TravelSpec {
-            target: Position::new_from_raw(10, 10, test_room_name),
-            range: 0,
-        });
+        test_moving_creep.borrow_mut().get_travel_state_mut().spec = Some(TravelSpec::new(
+            Position::new_from_raw(10, 10, test_room_name),
+            0
+        ));
 
         creeps_by_target_pos.insert(test_idle_creep.borrow().get_travel_state().pos, (1, test_idle_creep.clone()));
         creeps_by_target_pos.insert(test_moving_creep.borrow().get_travel_state().pos, (2, test_moving_creep.clone()));

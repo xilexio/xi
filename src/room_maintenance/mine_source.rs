@@ -80,15 +80,16 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
         };
         
         // Travel spec for the miner. Will not change unless structures change.
+        let target_rect_priority = Priority(220);
         let travel_spec = match mining_kind {
-            MiningKind::DropMining => TravelSpec {
-                target: source_data.xy.to_pos(room_name),
-                range: 1,
-            },
-            _ => TravelSpec {
-                target: u!(source_data.work_xy).to_pos(room_name),
-                range: 0,
-            },
+            MiningKind::DropMining => TravelSpec::new(
+                source_data.xy.to_pos(room_name),
+                1
+            ).with_target_rect_priority(target_rect_priority),
+            _ => TravelSpec::new(
+                u!(source_data.work_xy).to_pos(room_name),
+                0
+            ).with_target_rect_priority(target_rect_priority),
         };
 
         let spawn_pool_options = SpawnPoolOptions::default()

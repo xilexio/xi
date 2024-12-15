@@ -30,6 +30,6 @@ pub enum XiError {
     RoomVisibilityError,
     #[error("spawn request tick is in the past")]
     SpawnRequestTickInThePast,
-    #[error("no path found")]
-    NoPathFound,
+    #[error("path not found")]
+    PathNotFound,
 }

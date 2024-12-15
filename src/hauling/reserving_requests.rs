@@ -105,14 +105,6 @@ pub fn find_haul_requests(
                 creep_pos.f(),
                 creep_ttl
             );
-            debug!("Available withdraw requests:");
-            for request in haul_requests.withdraw_requests.values() {
-                debug!("* {}", request.borrow());
-            }
-            debug!("Available deposit requests:");
-            for request in haul_requests.deposit_requests.values() {
-                debug!("* {}", request.borrow());
-            }
         }
 
         let mut withdraw_requests = Vec::new();

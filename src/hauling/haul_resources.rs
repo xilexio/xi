@@ -10,11 +10,12 @@ use crate::travel::travel::travel;
 use crate::u;
 use log::debug;
 use screeps::StructureType::Storage;
-use screeps::RoomName;
+use screeps::{Position, RoomName};
 use crate::creeps::actions::{pickup_when_able, transfer_when_able, withdraw_when_able};
 use crate::creeps::creep_body::CreepBody;
 use crate::creeps::creep_role::CreepRole::Hauler;
 use crate::hauling::requests::HaulRequestTargetKind::PickupTarget;
+use crate::hauling::requests::with_haul_requests;
 use crate::hauling::reserving_requests::{find_haul_requests, ReservedRequests};
 use crate::hauling::store_anywhere_or_drop::store_anywhere_or_drop;
 use crate::hauling::transfers::TransferStage::AfterAllTransfers;
@@ -22,6 +23,7 @@ use crate::kernel::wait_until_some::wait_until_some;
 use crate::spawning::spawn_pool::{SpawnPool, SpawnPoolOptions};
 use crate::spawning::spawn_schedule::{PreferredSpawn, SpawnRequest};
 use crate::travel::travel_spec::TravelSpec;
+use crate::utils::priority::Priority;
 use crate::utils::result_utils::ResultUtils;
 use crate::utils::sampling::is_sample_tick;
 
@@ -89,6 +91,17 @@ pub async fn haul_resources(room_name: RoomName) {
             });
         });
         */
+        
+        with_haul_requests(room_name, |haul_requests| {
+            debug!("Available withdraw requests:");
+            for request in haul_requests.withdraw_requests.values() {
+                debug!("* {}", request.borrow());
+            }
+            debug!("Available deposit requests:");
+            for request in haul_requests.deposit_requests.values() {
+                debug!("* {}", request.borrow());
+            }
+        });
 
         spawn_pool.with_spawned_creeps(|creep_ref| async move {
             let carry_capacity = u!(creep_ref.borrow_mut().carry_capacity());
@@ -146,10 +159,7 @@ pub async fn haul_resources(room_name: RoomName) {
 async fn fulfill_requests(creep_ref: &CreepRef, mut reserved_requests: ReservedRequests) -> Result<(), XiError> {
     // TODO This only works for singleton withdraw and store requests.
     if let Some(mut withdraw_request) = reserved_requests.withdraw_requests.pop() {
-        let withdraw_travel_spec = TravelSpec {
-            target: withdraw_request.request.borrow().pos,
-            range: 1,
-        };
+        let withdraw_travel_spec = hauler_travel_spec(withdraw_request.request.borrow().pos);
 
         let result: Result<(), XiError> = async {
             // Creep may die on the way.
@@ -185,10 +195,7 @@ async fn fulfill_requests(creep_ref: &CreepRef, mut reserved_requests: ReservedR
     }
 
     if let Some(mut store_request) = reserved_requests.deposit_requests.pop() {
-        let store_travel_spec = TravelSpec {
-            target: store_request.request.borrow().pos,
-            range: 1,
-        };
+        let store_travel_spec = hauler_travel_spec(store_request.request.borrow().pos);
 
         let result = async {
             // Creep may die on the way.
@@ -220,6 +227,15 @@ async fn fulfill_requests(creep_ref: &CreepRef, mut reserved_requests: ReservedR
     }
 
     Ok(())
+}
+
+fn hauler_travel_spec(target: Position) -> TravelSpec {
+    TravelSpec {
+        target,
+        range: 1,
+        progress_priority: Priority(200),
+        target_rect_priority: Priority(200),
+    }
 }
 
 // TODO This function is not used. Extract closest spawn code from it and delete.
