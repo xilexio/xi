@@ -3,6 +3,7 @@ use screeps::{ResourceType, RoomName, CREEP_RANGED_ACTION_RANGE};
 use screeps::game::get_object_by_id_typed;
 use crate::creeps::creep_body::CreepBody;
 use crate::creeps::creep_role::CreepRole::Builder;
+use crate::geometry::position_utils::PositionUtils;
 use crate::geometry::room_xy::RoomXYUtils;
 use crate::hauling::requests::HaulRequest;
 use crate::hauling::requests::HaulRequestKind::DepositRequest;
@@ -22,7 +23,7 @@ use crate::utils::priority::Priority;
 use crate::utils::result_utils::ResultUtils;
 
 pub async fn build_structures(room_name: RoomName) {
-    let mut base_spawn_request = u!(with_room_state(room_name, |room_state| {
+    let base_spawn_request = u!(with_room_state(room_name, |room_state| {
         // TODO
         let preferred_spawns = room_state
             .spawns
@@ -62,28 +63,30 @@ pub async fn build_structures(room_name: RoomName) {
 
         if let Some(cs_data) = cs_data {
             // Initializing the spawn pool.
-            // TODO Move the pool outside and just configure the number of creeps to zero when not needed.
-            let (builders_required, builder_body) = wait_until_some(|| with_room_state(room_name, |room_state| {
-                room_state
-                    .eco_config
-                    .as_ref()
-                    .map(|config| {
-                        (config.builders_required, config.builder_body.clone())
-                    })
-            }).flatten()).await;
-            base_spawn_request.body = builder_body;
+            let travel_spec = TravelSpec::new(cs_data.xy.to_pos(room_name), CREEP_RANGED_ACTION_RANGE);
+            
             let spawn_pool_options = SpawnPoolOptions::default()
-                .target_number_of_creeps(builders_required);
-            let mut spawn_pool = Some(SpawnPool::new(room_name, base_spawn_request.clone(), spawn_pool_options.clone()));
-
+                .travel_spec(Some(travel_spec.clone()));
+            let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request.clone(), spawn_pool_options.clone());
+            
             loop {
-                let top_priority_cs_data_correct = u!(with_room_state(room_name, |room_state| {
-                    room_state
-                    .construction_site_queue
-                    .first()
-                    .map(|current_cs_data| current_cs_data.id == cs_data.id)
-                    .unwrap_or(false)
-                }));
+                let (top_priority_cs_data_correct, (builders_required, builder_body)) = wait_until_some(|| with_room_state(room_name, |room_state| {
+                    Some((
+                        room_state
+                            .construction_site_queue
+                            .first()
+                            .map(|current_cs_data| current_cs_data.id == cs_data.id)?,
+                        room_state
+                            .eco_config
+                            .as_ref()
+                            .map(|config| {
+                                (config.builders_required, config.builder_body.clone())
+                            })?
+                    ))
+                }).flatten()).await;
+                spawn_pool.target_number_of_creeps = builders_required;
+                spawn_pool.base_spawn_request.body = builder_body;
+                
                 if !top_priority_cs_data_correct {
                     trace!(
                         "Current top priority construction site does not match the {} being build. Restarting the loop.",
@@ -93,73 +96,76 @@ pub async fn build_structures(room_name: RoomName) {
                     break;
                 }
                 
-                u!(spawn_pool.as_mut()).with_spawned_creeps(|creep_ref| async move {
-                    let capacity = u!(creep_ref.borrow_mut().carry_capacity());
-                    let creep_id = u!(creep_ref.borrow_mut().screeps_id());
-                    let build_energy_consumption = creep_ref.borrow_mut().build_energy_consumption();
-                    
-                    // TODO After spawning the builder, making it pick up the energy from storage
-                    //      if there is one.
+                trace!(
+                    "Building {} at {} with {} creeps.",
+                    cs_data.structure_type, cs_data.xy.to_pos(room_name).f(), builders_required
+                );
+                
+                spawn_pool.with_spawned_creeps(|creep_ref| {
+                    let travel_spec = travel_spec.clone();
+                    async move {
+                        let capacity = u!(creep_ref.borrow_mut().carry_capacity());
+                        let creep_id = u!(creep_ref.borrow_mut().screeps_id());
+                        let build_energy_consumption = creep_ref.borrow_mut().build_energy_consumption();
 
-                    // Travelling to the construction site.
-                    let travel_spec = TravelSpec::new(
-                        cs_data.xy.to_pos(room_name),
-                        CREEP_RANGED_ACTION_RANGE
-                    );
+                        // TODO After spawning the builder, making it pick up the energy from storage
+                        //      if there is one.
 
-                    if let Err(err) = travel(&creep_ref, travel_spec.clone()).await {
-                        warn!("Builder could not reach its destination: {err}");
-                        // Trying next tick (if the creep didn't die).
-                        sleep(1).await;
-                    }
-
-                    let mut store_request = None;
-
-                    // Building the construction site.
-                    loop {
-                        let cs = get_object_by_id_typed(&cs_data.id);
-                        if cs.is_none() {
-                            // The building is finished or the construction site stopped existing.
-                            // This future runs after the build_structures future, but this can run
-                            // between ticks where construction sites are recreated.
-                            break;
+                        // Travelling to the construction site.
+                        if let Err(err) = travel(&creep_ref, travel_spec.clone()).await {
+                            warn!("Builder could not reach its destination: {err}");
+                            // Trying next tick (if the creep didn't die).
+                            sleep(1).await;
                         }
-                        
-                        // This can only fail if the creep died, but then this process would be killed.
-                        if u!(creep_ref.borrow_mut().used_capacity(Some(ResourceType::Energy), AfterAllTransfers)) >= build_energy_consumption {
-                            creep_ref
-                                .borrow_mut()
-                                .build(u!(cs.as_ref()))
-                                .warn_if_err("Failed to build the construction site");
 
-                            // TODO Handle cancellation by drop (when creep dies).
-                            store_request = None;
-                        } else {
-                            with_room_state(room_name, |room_state| {
-                                if let Some(eco_stats) = room_state.eco_stats.as_mut() {
-                                    eco_stats.register_idle_creep(Builder, &creep_ref);
-                                }
-                            });
-                            
-                            if store_request.is_none() {
-                                // TODO Request the energy in advance.
-                                let mut new_store_request = HaulRequest::new(
-                                    DepositRequest,
-                                    room_name,
-                                    ResourceType::Energy,
-                                    creep_id,
-                                    CreepTarget,
-                                    false,
-                                    creep_ref.borrow_mut().travel_state.pos
-                                );
-                                new_store_request.amount = capacity;
-                                new_store_request.priority = Priority(30);
+                        let mut store_request = None;
 
-                                store_request = Some(schedule_haul(new_store_request, store_request.take()));
+                        // Building the construction site.
+                        loop {
+                            let cs = get_object_by_id_typed(&cs_data.id);
+                            if cs.is_none() {
+                                // The building is finished or the construction site stopped existing.
+                                // This future runs after the build_structures future, but this can run
+                                // between ticks where construction sites are recreated.
+                                break;
                             }
-                        }
 
-                        sleep(1).await;
+                            // This can only fail if the creep died, but then this process would be killed.
+                            if u!(creep_ref.borrow_mut().used_capacity(Some(ResourceType::Energy), AfterAllTransfers)) >= build_energy_consumption {
+                                creep_ref
+                                    .borrow_mut()
+                                    .build(u!(cs.as_ref()))
+                                    .warn_if_err("Failed to build the construction site");
+
+                                // TODO Handle cancellation by drop (when creep dies).
+                                store_request = None;
+                            } else {
+                                with_room_state(room_name, |room_state| {
+                                    if let Some(eco_stats) = room_state.eco_stats.as_mut() {
+                                        eco_stats.register_idle_creep(Builder, &creep_ref);
+                                    }
+                                });
+
+                                if store_request.is_none() {
+                                    // TODO Request the energy in advance.
+                                    let mut new_store_request = HaulRequest::new(
+                                        DepositRequest,
+                                        room_name,
+                                        ResourceType::Energy,
+                                        creep_id,
+                                        CreepTarget,
+                                        false,
+                                        creep_ref.borrow_mut().travel_state.pos
+                                    );
+                                    new_store_request.amount = capacity;
+                                    new_store_request.priority = Priority(30);
+
+                                    store_request = Some(schedule_haul(new_store_request, store_request.take()));
+                                }
+                            }
+
+                            sleep(1).await;
+                        }
                     }
                 });
                 

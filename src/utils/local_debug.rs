@@ -2,6 +2,9 @@
 #[macro_export]
 macro_rules! local_debug (
     ($($arg:tt)+) => (
-        if DEBUG { use log::debug; debug!($($arg)+) }
+        if DEBUG {
+            use log::debug;
+            debug!($($arg)+)
+        }
     );
 );

@@ -125,7 +125,7 @@ pub fn kill_tree<T>(process_handle: ProcessHandle<T>, result: T) {
     }
 
     for pid in killed_pids {
-        local_debug!("Killing {}.", pid);
+        local_debug!("Killing {} along with the tree of {}.", pid, process_handle.pid);
         awaiting_pids.remove(&pid);
         kill_without_result_or_cleanup(pid);
     }
@@ -192,6 +192,10 @@ fn kill_without_result_or_cleanup(pid: PId) {
             }
             process
         };
+
+        // Dropping the kernel since the process is about to be dropped, along with structures that
+        // kill other processes on drop.
+        drop(kern);
 
         trace!("Killed {}.", process);
     } else {
@@ -369,6 +373,7 @@ static KERNEL: Mutex<Option<Kernel>> = Mutex::new(None);
 
 /// Returns a guarded reference to the kernel. It cannot be used in two places at once.
 fn kernel() -> MappedMutexGuard<'static, RawMutex, Kernel> {
+    // TODO This fails when killing a process.
     let mut maybe_kernel = KERNEL.try_lock().unwrap();
     if maybe_kernel.is_none() {
         cold();

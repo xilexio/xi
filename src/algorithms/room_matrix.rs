@@ -110,7 +110,9 @@ where
                     write!(f, " ")?;
                 }
             }
-            writeln!(f)?;
+            if y != ROOM_SIZE - 1 {
+                writeln!(f)?;
+            }
         }
         Ok(())
     }

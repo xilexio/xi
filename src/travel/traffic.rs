@@ -245,15 +245,15 @@ where
         // the middle.
         // It does not matter that the indices are repeated as long as the cost is MAX.
         let mut costs = [
-            (0, i32::MAX),
-            (0, i32::MAX),
-            (0, i32::MAX),
-            (0, i32::MAX),
-            (0, i32::MAX),
-            (0, i32::MAX),
-            (0, i32::MAX),
-            (0, i32::MAX),
-            (0, i32::MAX),
+            (0, u32::MAX),
+            (0, u32::MAX),
+            (0, u32::MAX),
+            (0, u32::MAX),
+            (0, u32::MAX),
+            (0, u32::MAX),
+            (0, u32::MAX),
+            (0, u32::MAX),
+            (0, u32::MAX),
         ];
         
         // The cost of a move intent.
@@ -418,7 +418,12 @@ where
                 let pos = xy.to_pos(creep_pos.room_name());
                 costs[direction as usize] = (
                     get_pos_index(pos),
-                    (dm.get(xy) + tile_cost) as i32
+                    dm.get(xy) + tile_cost
+                );
+                
+                local_debug!(
+                    "Movement costs for {} from {} to {}: {}.",
+                    creep.get_name(), creep_pos.f(), pos.f(), dm.get(xy) + tile_cost
                 );
 
                 // If there is some other creep willing to travel to this tile,
@@ -437,7 +442,12 @@ where
             target_rect,
             path_reused,
         };
-
+        
+        local_debug!(
+            "Movement costs for {} from {}: {:?}.",
+            creep.get_name(), creep_pos.f(), costs
+        );
+        
         drop(creep);
         creeps_and_repath_data.push((conflicted_creep_ref, repath_data));
         creeps_movement_costs.push(costs);
@@ -451,6 +461,8 @@ where
         .into_iter()
         .map(|(pos, i)| (i, pos))
         .collect::<FxHashMap<_, _>>();
+    
+    local_debug!("index_to_pos = {:?}", index_to_pos);
 
     // Adjusting the paths of conflicted creeps. The path may contain the position at which the
     // creep already is, indicating no move this tick.

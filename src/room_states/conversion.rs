@@ -12,7 +12,7 @@ impl TryFrom<&StructuresMap> for RoomMatrix<PackedTileStructures> {
         for (structure_type, pos_set) in value {
             for pos in pos_set.iter() {
                 let tile_structures: &mut PackedTileStructures = matrix.get_mut(*pos);
-                tile_structures.merge_structure(*structure_type)?;
+                *tile_structures = tile_structures.merge_structure(*structure_type)?;
             }
         }
         

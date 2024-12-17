@@ -300,7 +300,7 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
             .iter().map(|cs| u!(cs.structure_type.construction_cost()))
             .sum();
 
-        info!("Bootstrapping: {}, Energy to spare: {}, Controller critical: {}", bootstrapping, has_energy_to_spare, controller_downgrade_level_critical);
+        info!("Bootstrapping: {}, Energy to spare: {}, Controller critical: {} ({}/{})", bootstrapping, has_energy_to_spare, controller_downgrade_level_critical, ticks_to_downgrade, max_ticks_to_downgrade);
         info!("Spawn energy: {}/{}", spawn_energy, spawn_energy_capacity);
         info!("Energy income: {:.2}E/t", energy_income);
         info!("Predicted energy usage and other stats:");

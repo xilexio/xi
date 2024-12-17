@@ -4,6 +4,7 @@ use std::ops::{AddAssign, Sub, SubAssign};
 use log::debug;
 use num_traits::{Bounded, Zero};
 use rustc_hash::{FxHashMap, FxHashSet};
+use crate::a;
 
 const DEBUG: bool = false;
 
@@ -134,7 +135,8 @@ where
                 // Cost being the maximum means the edge does not exist.
                 if cost != C::max_value() && !z.contains(&t_outside_z) {
                     // Computing the delta for the edge.
-                    let edge_delta = cost - s_potentials[s] + neg_t_potentials[t_outside_z];
+                    a!(cost + neg_t_potentials[t_outside_z] >= s_potentials[s]);
+                    let edge_delta = cost + neg_t_potentials[t_outside_z] - s_potentials[s];
                     // Updating the minimum delta ingoing into t_outside_z and recording that we
                     // came from S vertex matched with t.
                     match min_ingoing.entry(t_outside_z) {
@@ -186,6 +188,7 @@ where
             }
             // Updating the `min_ingoing` map since the deltas between Z and T - Z have changed.
             for (_, delta) in min_ingoing.iter_mut() {
+                a!(*delta >= min_delta);
                 *delta -= min_delta;
             }
             // `next_t` being the initial MAX would indicate that there are no edges between Z and

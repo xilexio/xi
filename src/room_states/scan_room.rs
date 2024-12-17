@@ -126,7 +126,6 @@ pub fn update_room_state_from_scan(room_name: RoomName, force_update: bool, stat
     if structures_changed {
         debug!("Structures in room {room_name} changed.");
         state.structures = structures;
-        state.structures_matrix = u!((&state.structures).try_into());
         state.spawns.clear();
         state.extensions.clear();
 
@@ -150,6 +149,8 @@ pub fn update_room_state_from_scan(room_name: RoomName, force_update: bool, stat
         }
         // TODO sort lists of structures
         // TODO fast filler data
+        
+        state.update_structures_matrix();
         
         // Informing waiting processes that the structure changed.
         state.structures_broadcast.broadcast(());

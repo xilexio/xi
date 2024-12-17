@@ -144,7 +144,9 @@ where
                     write!(f, " ")?;
                 }
             }
-            writeln!(f)?;
+            if y != self.rect.bottom_right.y.u8() {
+                writeln!(f)?;
+            }
         }
         Ok(())
     }

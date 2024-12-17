@@ -1,21 +1,21 @@
 use serde::{Deserialize, Serialize};
 use derive_more::Constructor;
 use screeps::{
-    game, 
-    ConstructionSite, 
-    Mineral, 
-    ObjectId, 
-    Position, 
-    ResourceType, 
-    RoomName, 
-    RoomXY, 
-    Source, 
-    StructureContainer, 
-    StructureController, 
-    StructureExtension, 
-    StructureLink, 
-    StructureSpawn, 
-    StructureType, 
+    game,
+    ConstructionSite,
+    Mineral,
+    ObjectId,
+    Position,
+    ResourceType,
+    RoomName,
+    RoomXY,
+    Source,
+    StructureContainer,
+    StructureController,
+    StructureExtension,
+    StructureLink,
+    StructureSpawn,
+    StructureType,
     Terrain,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -218,7 +218,7 @@ impl RoomState {
         self.structure_xy(structure_type)
             .map(|xy| xy.to_pos(self.room_name))
     }
-    
+
     pub fn tile_surface(&self, xy: RoomXY) -> Surface {
         let tile_structures = self.structures_matrix.get(xy);
         trace!("tile_structures[{}] = {:?}, terrain[{}] = {:?}", xy, tile_structures, xy, self.terrain.get(xy));
@@ -245,6 +245,10 @@ impl RoomState {
                 }
             }
         }
+    }
+    
+    pub fn update_structures_matrix(&mut self) {
+        self.structures_matrix = u!((&self.structures).try_into());
     }
 }
 
