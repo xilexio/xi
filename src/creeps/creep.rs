@@ -2,25 +2,7 @@ use log::warn;
 use rustc_hash::FxHashMap;
 use crate::travel::travel_state::TravelState;
 use crate::{log_err, u};
-use screeps::{
-    game,
-    ConstructionSite,
-    Direction,
-    HasId,
-    MaybeHasId,
-    MoveToOptions,
-    ObjectId,
-    PolyStyle,
-    Position,
-    RawObjectId,
-    Resource,
-    ResourceType,
-    SharedCreepProperties,
-    Source,
-    StructureController,
-    Transferable,
-    Withdrawable,
-};
+use screeps::{game, ConstructionSite, Direction, HasId, MaybeHasId, MoveToOptions, ObjectId, PolyStyle, Position, RawObjectId, Repairable, Resource, ResourceType, SharedCreepProperties, Source, StructureController, Transferable, Withdrawable};
 use crate::creeps::creep_body::CreepBody;
 use crate::creeps::creep_role::CreepRole;
 use crate::creeps::generic_creep::GenericCreep;
@@ -243,6 +225,13 @@ impl Creep {
         self.screeps_obj()?.build(construction_site).or(Err(CreepBuildFailed))
     }
     
+    pub fn repair<T>(&mut self, target: &T) -> Result<(), XiError>
+    where
+        T: ?Sized + Repairable
+    {
+        self.screeps_obj()?.repair(target).or(Err(CreepRepairFailed))
+    }
+    
     // Current information about the creep
 
     pub fn fatigue(&mut self) -> Result<u32, XiError> {
@@ -256,19 +245,19 @@ impl Creep {
     pub fn used_capacity(&mut self, resource_type: Option<ResourceType>, transfer_stage: TransferStage) -> Result<u32, XiError> {
         let id = self.screeps_id()?;
         let obj = self.screeps_obj()?;
-        Ok(get_used_capacity_with_object(obj, id, resource_type, transfer_stage))
+        Ok(get_used_capacity_with_object(obj, id.into(), resource_type, transfer_stage))
     }
     
     pub fn free_capacity(&mut self, transfer_stage: TransferStage) -> Result<u32, XiError> {
         let id = self.screeps_id()?;
         let obj = self.screeps_obj()?;
-        Ok(get_free_capacity_with_object(obj, id, None, transfer_stage))
+        Ok(get_free_capacity_with_object(obj, id.into(), None, transfer_stage))
     }
     
     pub fn used_capacities(&mut self, transfer_stage: TransferStage) -> Result<FxHashMap<ResourceType, u32>, XiError> {
         let id = self.screeps_id()?;
         let obj = self.screeps_obj()?;
-        Ok(get_used_capacities_with_object(obj, id, transfer_stage))
+        Ok(get_used_capacities_with_object(obj, id.into(), transfer_stage))
     }
 
     /// Zero indicates a dead creep.

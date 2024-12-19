@@ -59,7 +59,7 @@ use std::iter::{empty, once};
 use num_traits::clamp;
 use thiserror::Error;
 
-pub const MIN_RAMPART_RCL: u8 = 5;
+pub const MIN_RAMPART_RCL: u8 = 6;
 pub const SOURCE_AND_CONTROLLER_ROAD_RCL: u8 = 3;
 pub const ALL_ROAD_RCL: u8 = 6;
 

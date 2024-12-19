@@ -9,6 +9,7 @@ use screeps::{
     CREEP_SPAWN_TIME,
     HARVEST_POWER,
     MOVE_POWER,
+    REPAIR_POWER,
     UPGRADE_CONTROLLER_POWER,
 };
 use std::cmp::max;
@@ -20,6 +21,9 @@ use rustc_hash::FxHashMap;
 use enum_iterator::all;
 use crate::travel::surface::Surface;
 use crate::utils::part_extras::PartExtras;
+
+/// Cost of repairing something with a single `WORK` part.
+const REPAIR_COST_PER_PART: u32 = 1;
 
 // TODO Should cache of ticks_per_tile and others be here or in creep? Probably better here.
 // TODO Serialize this in a string and then cache all stats.
@@ -45,8 +49,7 @@ impl CreepBody {
     pub fn parts_vec(&self) -> Vec<Part> {
         self.parts
             .iter()
-            .map(|(part, (count, _))| repeat(*part).take(*count as usize))
-            .flatten()
+            .flat_map(|(part, (count, _))| repeat(*part).take(*count as usize))
             .collect()
     }
 
@@ -111,11 +114,20 @@ impl CreepBody {
     pub fn build_energy_usage(&self) -> u32 {
         self.count_parts(Work) as u32 * BUILD_POWER
     }
+    
+    pub fn repair_energy_usage(&self) -> u32 {
+        self.count_parts(Work) as u32 * REPAIR_COST_PER_PART
+    }
+    
+    pub fn repair_power(&self) -> u32 {
+        self.count_parts(Work) as u32 * REPAIR_POWER
+    }
 
     pub fn upgrade_energy_usage(&self) -> u32 {
         self.count_parts(Work) as u32 * UPGRADE_CONTROLLER_POWER
     }
 
+    /// How many energy units per tick can a creep with this body mine.
     pub fn energy_harvest_power(&self) -> u32 {
         self.count_parts(Work) as u32 * HARVEST_POWER
     }
@@ -188,7 +200,10 @@ impl From<Vec<(Part, u8)>> for CreepBody {
 
 #[cfg(test)]
 mod tests {
+    use num_traits::abs;
     use screeps::Part::{Move, Work};
+    use screeps::{REPAIR_COST, REPAIR_POWER};
+    use crate::creeps::creep_body::REPAIR_COST_PER_PART;
     use crate::travel::surface::Surface;
 
     #[test]
@@ -210,5 +225,10 @@ mod tests {
         
         assert_eq!(crate::creeps::creep_body::CreepBody::from(vec![(Work, 1)]).ticks_per_tile(Surface::Plain), u8::MAX);
         assert_eq!(crate::creeps::creep_body::CreepBody::from(vec![(Work, 1)]).ticks_per_tile(Surface::Swamp), u8::MAX);
+    }
+    
+    #[test]
+    fn test_constants_consistency() {
+        assert!(abs(REPAIR_COST_PER_PART as f32 - (REPAIR_POWER as f32 * REPAIR_COST)) < 1e-6);
     }
 }

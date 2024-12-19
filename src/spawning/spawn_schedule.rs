@@ -2,10 +2,12 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 use rustc_hash::FxHashMap;
-use screeps::{Direction, ObjectId, Position, RoomName, StructureSpawn};
+use screeps::{ObjectId, RoomName, StructureSpawn};
 use crate::creeps::creep_role::CreepRole;
 use crate::creeps::creep_body::CreepBody;
 use crate::creeps::creeps::CreepRef;
+use crate::room_states::room_state::RoomState;
+use crate::spawning::preferred_spawn::{best_spawns, PreferredSpawn};
 use crate::utils::priority::Priority;
 use crate::utils::uid::UId;
 
@@ -85,14 +87,16 @@ pub struct SpawnRequest {
     pub tick: (u32, u32),
 }
 
-#[derive(Debug, Clone)]
-pub struct PreferredSpawn {
-    /// ID of the spawn to spawn from.
-    pub id: ObjectId<StructureSpawn>,
-    /// Allowed directions in which the creep should move from the spawn upon spawning.
-    pub directions: Vec<Direction>,
-    /// Extra energy cost incurred by selecting this spawn.
-    pub extra_cost: u32,
-    /// Position of the spawn.
-    pub pos: Position,
+/// A spawn request with empty body, zero tick and no spawn preference.
+/// To be modified before actual spawning.
+pub fn generic_base_spawn_request(room_state: &RoomState, role: CreepRole) -> SpawnRequest {
+    let preferred_spawns = best_spawns(room_state, None);
+    
+    SpawnRequest {
+        role,
+        body: CreepBody::empty(),
+        priority: Priority(100),
+        preferred_spawns,
+        tick: (0, 0),
+    }
 }

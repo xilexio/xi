@@ -10,12 +10,19 @@ use js_sys::JsString;
 use log::{debug, error, trace, warn};
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::game::{construction_sites, rooms};
-use screeps::StructureType::{
-    Container, Extension, Extractor, Factory, Lab, Link, Nuker, Observer, PowerSpawn, Rampart, Road, Spawn, Storage,
-    Terminal, Tower, Wall,
+use screeps::StructureType::*;
+use screeps::{
+    game,
+    ConstructionSite,
+    HasPosition,
+    MaybeHasId,
+    ObjectId,
+    RoomName,
+    RoomXY,
+    Structure,
+    StructureType,
 };
-use screeps::{game, HasPosition, MaybeHasId, RoomName, RoomXY, StructureType};
-use crate::room_states::room_state::{ConstructionSiteData, StructuresMap};
+use crate::room_states::room_state::StructuresMap;
 
 const DEBUG: bool = true;
 
@@ -39,6 +46,13 @@ const PRIORITY_OF_STRUCTURES: [StructureType; 16] = [
     Rampart,
     Wall,
 ];
+
+#[derive(Clone, Debug)]
+pub struct ConstructionSiteData {
+    pub id: ObjectId<ConstructionSite>,
+    pub structure_type: StructureType,
+    pub xy: RoomXY,
+}
 
 // Places construction sites in a room and removes incorrect ones. Removes incorrect buildings.
 // Sets the construction site queue in the room state.
@@ -228,7 +242,7 @@ struct StructuresDiff {
 
 fn room_structures_diff_from_current_rcl_structures(
     planned_structures: &StructuresMap,
-    existing_structures: &StructuresMap
+    existing_structures: &FxHashMap<StructureType, FxHashMap<RoomXY, ObjectId<Structure>>>
 ) -> StructuresDiff {
     let mut extra_structures = FxHashMap::<_, Vec<_>>::default();
     let mut missing_structures_by_priority = Vec::new();
@@ -236,8 +250,10 @@ fn room_structures_diff_from_current_rcl_structures(
     for structure_type in PRIORITY_OF_STRUCTURES {
         let existing_structure_xys = existing_structures
             .get(&structure_type)
+            .iter()
+            .flat_map(|structure_xys| structure_xys.keys())
             .cloned()
-            .unwrap_or_default();
+            .collect::<FxHashSet<_>>();
         let planned_structure_xys = planned_structures
             .get(&structure_type)
             .cloned()

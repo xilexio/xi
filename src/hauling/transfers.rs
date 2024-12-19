@@ -76,12 +76,12 @@ where
     T: HasStore + MaybeHasId + JsCast,
 {
     let object = get_object_by_id_typed(&object_id).ok_or(XiError::ObjectDoesNotExist)?;
-    Ok(get_used_capacity_with_object(&object, object_id, resource_type, transfer_stage))
+    Ok(get_used_capacity_with_object(&object, object_id.into(), resource_type, transfer_stage))
 }
 
-pub fn get_used_capacity_with_object<T>(object: &T, object_id: ObjectId<T>, resource_type: Option<ResourceType>, transfer_stage: TransferStage) -> u32
+pub fn get_used_capacity_with_object<T>(object: &T, object_id: RawObjectId, resource_type: Option<ResourceType>, transfer_stage: TransferStage) -> u32
 where
-    T: HasStore + MaybeHasId + JsCast,
+    T: ?Sized + HasStore,
 {
     let mut amount = object.store().get_used_capacity(resource_type) as i32;
     if transfer_stage != BeforeAnyTransfers {
@@ -117,16 +117,16 @@ where
     T: HasStore + MaybeHasId + JsCast,
 {
     let object = get_object_by_id_typed(&object_id).ok_or(XiError::ObjectDoesNotExist)?;
-    Ok(get_used_capacities_with_object(&object, object_id, transfer_stage))
+    Ok(get_used_capacities_with_object(&object, object_id.into(), transfer_stage))
 }
 
 pub fn get_used_capacities_with_object<T>(
     object: &T,
-    object_id: ObjectId<T>,
+    object_id: RawObjectId,
     transfer_stage: TransferStage
 ) -> FxHashMap<ResourceType, u32>
 where
-    T: HasStore + MaybeHasId + JsCast,
+    T: ?Sized + HasStore,
 {
     let mut amounts = FxHashMap::default();
     let store = object.store();
@@ -161,19 +161,19 @@ where
     T: HasStore + MaybeHasId + JsCast,
 {
     let object = get_object_by_id_typed(&object_id).ok_or(XiError::ObjectDoesNotExist)?;
-    Ok(get_free_capacity_with_object(&object, object_id, resource_type, transfer_stage))
+    Ok(get_free_capacity_with_object(&object, object_id.into(), resource_type, transfer_stage))
 }
 
-pub fn get_free_capacity_with_object<T>(object: &T, object_id: ObjectId<T>, resource_type: Option<ResourceType>, transfer_stage: TransferStage) -> u32
+pub fn get_free_capacity_with_object<T>(object: &T, object_id: RawObjectId, resource_type: Option<ResourceType>, transfer_stage: TransferStage) -> u32
 where
-    T: HasStore + MaybeHasId + JsCast,
+    T: ?Sized + HasStore,
 {
     // A generic store will have positive generic capacity.
     if object.store().get_capacity(None) == 0 {
         if let Some(resource_type) = resource_type {
             // In a specialized store, only the given resource counts towards used capacity.
             let mut free_capacity = object.store().get_free_capacity(Some(resource_type));
-            let transfers = current_tick_transfers(object_id.into(), resource_type);
+            let transfers = current_tick_transfers(object_id, resource_type);
             if transfer_stage == AfterOutgoingTransfers || transfer_stage == AfterAllTransfers {
                 free_capacity += transfers.outgoing as i32;
             }

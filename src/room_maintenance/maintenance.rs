@@ -7,10 +7,12 @@ use log::{debug, info};
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::{game, RoomName};
 use crate::construction::build_structures::build_structures;
+use crate::construction::repair_structures::repair_structures;
+use crate::construction::triage_repair_sites::triage_repair_sites;
 use crate::consts::FAR_FUTURE;
 use crate::economy::gather_eco_samples::gather_eco_samples;
 use crate::economy::update_eco_config::update_eco_config;
-use crate::room_maintenance::filling_spawns::fill_spawns;
+use crate::room_maintenance::fill_structures_with_energy::fill_structures_with_energy;
 use crate::hauling::haul_resources::haul_resources;
 use crate::spawning::spawn_room_creeps::{spawn_room_creeps, update_spawn_list};
 use crate::u;
@@ -58,11 +60,6 @@ pub async fn maintain_rooms() {
     }
 }
 
-struct Miner {
-    creep_name: Option<String>,
-    creep_ticks_to_live: u32,
-}
-
 async fn maintain_room(room_name: RoomName) {
     with_room_state(room_name, |room_state| {
         let structures_broadcast = room_state.structures_broadcast.clone_primed();
@@ -85,9 +82,9 @@ async fn maintain_room(room_name: RoomName) {
 
         // Schedule filling the spawns and extensions.
         schedule(
-            &format!("fill_spawns_{}", room_name),
+            &format!("fill_structures_with_energy_{}", room_name),
             current_priority() - 1,
-            fill_spawns(room_name)
+            fill_structures_with_energy(room_name)
         );
 
         // Schedule mining sources inside the room, independently for each source.
@@ -145,6 +142,21 @@ async fn maintain_room(room_name: RoomName) {
             &format!("build_structures_{}", room_name),
             current_priority() - 1,
             build_structures(room_name)
+        );
+        
+        // Order structures to be repaired in the room.
+        // TODO Shouldn't this be more global?
+        schedule(
+            &format!("select_repair_sites_{}", room_name),
+            current_priority() - 1,
+            triage_repair_sites(room_name)
+        );
+        
+        // Repair structures in the room and spawn repairers.
+        schedule(
+            &format!("repair_structures_{}", room_name),
+            current_priority() - 2,
+            repair_structures(room_name)
         );
     });
 

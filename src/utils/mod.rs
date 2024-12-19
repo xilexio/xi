@@ -21,3 +21,4 @@ pub mod permutation;
 pub mod sampling;
 pub mod avg_vector;
 pub mod debug_mark;
+pub mod decay;

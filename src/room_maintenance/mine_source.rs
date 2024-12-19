@@ -16,12 +16,12 @@ use crate::geometry::room_xy::RoomXYUtils;
 use crate::hauling::requests::HaulRequest;
 use crate::hauling::requests::HaulRequestKind::WithdrawRequest;
 use crate::hauling::requests::HaulRequestTargetKind::PickupTarget;
-use crate::hauling::requests::RequestAmountChange::Increase;
 use crate::hauling::scheduling_hauls::schedule_haul;
 use crate::kernel::wait_until_some::wait_until_some;
 use crate::room_states::utils::run_future_until_structures_change;
+use crate::spawning::preferred_spawn::best_spawns;
 use crate::spawning::spawn_pool::{SpawnPool, SpawnPoolOptions};
-use crate::spawning::spawn_schedule::{PreferredSpawn, SpawnRequest};
+use crate::spawning::spawn_schedule::SpawnRequest;
 use crate::travel::travel_spec::TravelSpec;
 use crate::utils::priority::Priority;
 use crate::utils::resource_decay::decay_per_tick;
@@ -44,21 +44,11 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
         let (base_spawn_request, source_data) = u!(with_room_state(room_name, |room_state| {
             let source_data = room_state.sources[source_ix].clone();
 
-            // TODO
-            let preferred_spawns = room_state
-                .spawns
-                .iter()
-                .map(|spawn_data| PreferredSpawn {
-                    id: spawn_data.id,
-                    directions: Vec::new(),
-                    extra_cost: 0,
-                    pos: spawn_data.xy.to_pos(room_name),
-                })
-                .collect::<Vec<_>>();
+            let preferred_spawns = best_spawns(room_state, source_data.work_xy);
 
             // TODO
-            let best_spawn_xy = u!(room_state.spawns.first()).xy;
-            let best_spawn_pos = best_spawn_xy.to_pos(room_name);
+            // let best_spawn_xy = u!(room_state.spawns.first()).xy;
+            // let best_spawn_pos = best_spawn_xy.to_pos(room_name);
 
             // let travel_ticks = predicted_travel_ticks(best_spawn_pos, work_pos, 1, 0, &body);
 
@@ -134,16 +124,17 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                 spawn_pool.target_number_of_creeps = min(source_data.drop_mining_xys.len() as u32, source_miners_required);
                 spawn_pool.base_spawn_request.body = miner_body;
                 spawn_pool.base_spawn_request.priority = miner_spawn_priority;
-
+                
                 // Keeping a miner or multiple miners spawned and mining.
                 spawn_pool.with_spawned_creeps(|creep_ref| {
                     let travel_spec = travel_spec.clone();
                     async move {
                         let miner = creep_ref.as_ref();
+                        let energy_income = creep_ref.borrow().body.energy_harvest_power();
 
                         // Moving towards the location.
                         while let Err(err) = travel(&creep_ref, travel_spec.clone()).await {
-                            warn!("Miner could not reach its destination: {err}");
+                            warn!("Miner could not reach its destination: {err}.");
                             // Trying next tick (if the creep didn't die).
                             sleep(1).await;
                         }
@@ -188,8 +179,8 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                                             creep_pos
                                         );
                                         new_pickup_request.amount = amount;
-                                        new_pickup_request.amount_change = Increase;
-                                        new_pickup_request.decay = decay_per_tick(amount);
+                                        let decay = decay_per_tick(amount);
+                                        new_pickup_request.change = energy_income as i32 - decay as i32;
                                         new_pickup_request.priority = Priority(100);
     
                                         // Ordering a hauler to get dropped energy, updating the existing request.

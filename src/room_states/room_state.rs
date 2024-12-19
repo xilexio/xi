@@ -1,20 +1,21 @@
+use std::iter::{Flatten, Map};
+use std::option::IntoIter;
 use serde::{Deserialize, Serialize};
 use derive_more::Constructor;
 use screeps::{
     game,
-    ConstructionSite,
     Mineral,
     ObjectId,
     Position,
+    RawObjectId,
     ResourceType,
     RoomName,
     RoomXY,
     Source,
+    Structure,
     StructureContainer,
     StructureController,
-    StructureExtension,
     StructureLink,
-    StructureSpawn,
     StructureType,
     Terrain,
 };
@@ -25,6 +26,8 @@ use log::{info, trace};
 use js_sys::{Object, Reflect};
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix::RoomMatrix;
+use crate::construction::place_construction_sites::ConstructionSiteData;
+use crate::construction::triage_repair_sites::{StructureToRepair, TriagedRepairSites};
 use crate::creeps::creeps::CreepRef;
 use crate::economy::room_eco_config::RoomEcoConfig;
 use crate::economy::room_eco_stats::RoomEcoStats;
@@ -52,7 +55,8 @@ pub struct RoomState {
     pub mineral: Option<MineralData>,
     // TODO ids of structures for owned rooms, where extensions and spawns and links are split by location, e.g., fastFillerExtensions
     // TODO for unowned rooms, ids are not as important (if at all)
-    pub structures: StructuresMap,
+    #[serde(skip)]
+    pub structures: FxHashMap<StructureType, FxHashMap<RoomXY, ObjectId<Structure>>>,
     #[serde(skip)]
     pub structures_matrix: RoomMatrix<PackedTileStructures>,
     pub plan: Option<Plan>,
@@ -62,14 +66,14 @@ pub struct RoomState {
     pub current_rcl_structures: StructuresMap,
     #[serde(skip)]
     pub construction_site_queue: Vec<ConstructionSiteData>,
+    #[serde(skip)]
+    pub structures_to_repair: FxHashMap<StructureType, Vec<StructureToRepair>>,
+    #[serde(skip)]
+    pub triaged_repair_sites: TriagedRepairSites,
     // Information about fast filler and its extensions.
     // pub fast_filler: Option<FastFiller>,
     // Information about extensions outside of fast filler, ordered by the distance to the storage.
     // pub outer_extensions: Option<Vec<Extension>>,
-    #[serde(skip)]
-    pub spawns: Vec<StructureData<StructureSpawn>>,
-    #[serde(skip)]
-    pub extensions: Vec<StructureData<StructureExtension>>,
     /// Broadcast signalled each time the set of structures in the room changes.
     #[serde(skip)]
     pub structures_broadcast: Broadcast<()>,
@@ -91,13 +95,6 @@ pub enum RoomDesignation {
     Invader,
     Portal,
     Highway
-}
-
-#[derive(Clone, Debug)]
-pub struct ConstructionSiteData {
-    pub id: ObjectId<ConstructionSite>,
-    pub structure_type: StructureType,
-    pub xy: RoomXY,
 }
 
 #[derive(Deserialize, Serialize, Copy, Clone, Debug, Constructor)]
@@ -127,12 +124,6 @@ pub struct MineralData {
     pub id: ObjectId<Mineral>,
     pub xy: RoomXY,
     pub mineral_type: ResourceType,
-}
-
-#[derive(Debug, Clone, Constructor)]
-pub struct StructureData<T> {
-    pub id: ObjectId<T>,
-    pub xy: RoomXY,
 }
 
 pub type StructuresMap = FxHashMap<StructureType, FxHashSet<RoomXY>>;
@@ -193,8 +184,8 @@ impl RoomState {
             plan: None,
             planner: None,
             construction_site_queue: Vec::new(),
-            spawns: Vec::new(),
-            extensions: Vec::new(),
+            structures_to_repair: FxHashMap::default(),
+            triaged_repair_sites: TriagedRepairSites::default(),
             structures_broadcast: Broadcast::default(),
             resources: RoomResources::default(),
             essential_creeps: None,
@@ -208,8 +199,9 @@ impl RoomState {
     pub fn structure_xy(&self, structure_type: StructureType) -> Option<RoomXY> {
         self.structures
             .get(&structure_type)
-            .and_then(|xys| xys.iter().next())
-            .cloned()
+            .and_then(|structures_data| {
+                structures_data.keys().next().cloned()
+            })
     }
 
     /// Returns the `Position` of the first structure of the given type.
@@ -217,6 +209,15 @@ impl RoomState {
     pub fn structure_pos(&self, structure_type: StructureType) -> Option<Position> {
         self.structure_xy(structure_type)
             .map(|xy| xy.to_pos(self.room_name))
+    }
+
+    // TODO The return type is ugly, change it to impl Iterator<Item = (RoomXY, RawObjectId)> + use<'_> later.
+    pub fn structures_with_type<T>(&self, structure_type: StructureType) -> Map<Flatten<IntoIter<&FxHashMap<RoomXY, ObjectId<Structure>>>>, fn((&RoomXY, &ObjectId<Structure>)) -> (RoomXY, ObjectId<T>)> {
+        self.structures
+            .get(&structure_type)
+            .into_iter()
+            .flatten()
+            .map(|(&xy, &id)| (xy, RawObjectId::from(id).into()))
     }
 
     pub fn tile_surface(&self, xy: RoomXY) -> Surface {
@@ -246,7 +247,7 @@ impl RoomState {
             }
         }
     }
-    
+
     pub fn update_structures_matrix(&mut self) {
         self.structures_matrix = u!((&self.structures).try_into());
     }

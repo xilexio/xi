@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::cmp::{max, min};
 use std::fmt::Display;
 use std::rc::Rc;
 use log::trace;
@@ -54,27 +55,16 @@ pub(crate) struct HaulRequest {
     pub pos: Position,
     /// The amount of resource to be withdrawn or deposited. When zero, the request is fulfilled.
     pub amount: u32,
-    /// How will the amount change in the near future.
-    pub amount_change: RequestAmountChange,
-    /// How many units of the resource are lost to decay per tick.
-    pub decay: u32,
-    /// Priority 
+    /// How will the amount change in the near future in terms of change per tick.
+    /// Zero if the change is unpredictable (e.g., storage).
+    pub change: i32,
+    /// Maximum amount sufficient number of ticks has passed.
+    pub max_amount: u32,
+    /// Priority.
     pub priority: Priority,
     /// The amount that is reserved to be withdrawn or deposited.
     /// May exceed `amount` if the `amount` has decreased.
     pub(crate) reserved_amount: u32,
-}
-
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
-pub enum RequestAmountChange {
-    /// The amount will not change until the request is fulfilled.
-    NoChange,
-    /// The amount may change unpredictably.
-    UnknownChange,
-    /// The amount will be increasing until the request is fulfilled, although possibly erratically.
-    Increase,
-    /// The amount will decrease until it disappears or the request is fulfilled.
-    Decrease,
 }
 
 /// Haul request identifier that cancels the request on drop.
@@ -130,7 +120,7 @@ impl Display for HaulRequest {
                     self.reserved_amount,
                     self.amount,
                     self.resource_type,
-                    self.amount_change,
+                    self.change,
                     self.priority,
                     self.target
                 )
@@ -145,7 +135,7 @@ impl Display for HaulRequest {
                     self.reserved_amount,
                     self.amount,
                     self.resource_type,
-                    self.amount_change,
+                    self.change,
                     self.priority,
                     self.target,
                     self.kind
@@ -174,8 +164,8 @@ impl HaulRequest {
             pos,
             resource_type,
             amount: 0,
-            amount_change: RequestAmountChange::NoChange,
-            decay: 0,
+            change: 0,
+            max_amount: u32::MAX,
             priority: Priority(100),
             reserved_amount: 0,
         }
@@ -187,6 +177,10 @@ impl HaulRequest {
 
     pub fn unreserved_amount(&self) -> i32 {
         self.amount as i32 - self.reserved_amount as i32
+    }
+    
+    pub fn predicted_amount(&self, ticks: u32) -> u32 {
+        min(self.max_amount, max(0, self.amount as i32 + self.change * ticks as i32) as u32)
     }
 }
 

@@ -1,6 +1,6 @@
 use std::cmp::{max, min};
 use log::info;
-use screeps::{controller_downgrade, ENERGY_REGEN_TIME, SOURCE_ENERGY_CAPACITY};
+use screeps::{controller_downgrade, CREEP_LIFE_TIME, ENERGY_REGEN_TIME, SOURCE_ENERGY_CAPACITY};
 use screeps::Part::{Carry, Move, Work};
 use serde::{Deserialize, Serialize};
 use crate::creeps::creep_body::CreepBody;
@@ -15,6 +15,9 @@ const DEBUG: bool = true;
 const MIN_AVG_ENERGY_TO_SPARE: u32 = 200;
 
 const MIN_SAFE_LAST_CREEP_TTL: u32 = 300;
+
+// TODO Measure it instead.
+const REPAIRER_EFFICIENCY: f32 = 0.75;
 
 /// Structure containing parameters for the room economy that decide the distribution of resources
 /// as well as composition of creeps.
@@ -42,6 +45,11 @@ pub struct RoomEcoConfig {
     pub builders_required: u32,
     /// The body of a builder.
     pub builder_body: CreepBody,
+    
+    /// The number of repairers to spawn.
+    pub repairers_required: u32,
+    /// The body of a repairer.
+    pub repairer_body: CreepBody,
 }
 
 pub fn update_or_create_eco_config(room_state: &mut RoomState) {
@@ -74,6 +82,8 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
             upgrader_body: preferred_upgrader_body(spawn_energy),
             builders_required: 0,
             builder_body: preferred_builder_body(spawn_energy),
+            repairers_required: 0,
+            repairer_body: preferred_repairer_body(spawn_energy),
         });
     }
 
@@ -220,6 +230,8 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
 
         // If there is enough energy to spare, spawn upgraders. They have smaller priority than
         // builders. However, if the controller is close to downgrading, prioritize the upgrader.
+        // TODO Spawning a single upgrader should have higher priority when the controller is
+        //      critical.
         if !room_state.construction_site_queue.is_empty() && !controller_downgrade_level_critical {
             eco_config.upgraders_required = 0;
         } else {
@@ -240,6 +252,11 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
                 eco_config.upgrader_body = preferred_upgrader_body(spawn_energy);
             }
         }
+        
+        // TODO Include in energy calculations. Prioritize over building. Prioritize over upgrading if critical unless controller also critical.
+        let single_repairer_total_repairer_hits = ((eco_config.repairer_body.repair_power() * CREEP_LIFE_TIME) as f32 * REPAIRER_EFFICIENCY) as u32;
+        let repairer_required = !room_state.triaged_repair_sites.critical.is_empty() || room_state.triaged_repair_sites.total_hits_to_repair >= single_repairer_total_repairer_hits;
+        eco_config.repairers_required = repairer_required as u32;
     }
 
     if DEBUG {
@@ -638,5 +655,15 @@ pub fn preferred_builder_body(spawn_energy: u32) -> CreepBody {
         vec![(Move, 1), (Work, 2), (Carry, 3)].into()
     } else {
         vec![(Move, 1), (Work, 1), (Carry, 3)].into()
+    }
+}
+
+pub fn preferred_repairer_body(spawn_energy: u32) -> CreepBody {
+    if spawn_energy >= 450 {
+        vec![(Move, 3), (Work, 2), (Carry, 4)].into()
+    } else if spawn_energy >= 400 {
+        vec![(Move, 2), (Work, 2), (Carry, 2)].into()
+    } else {
+        vec![(Move, 1), (Work, 1), (Carry, 1)].into()
     }
 }

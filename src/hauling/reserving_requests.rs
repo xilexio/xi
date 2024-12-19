@@ -6,7 +6,6 @@ use crate::{local_debug, u};
 use crate::geometry::position_utils::PositionUtils;
 use crate::hauling::requests::{with_haul_requests, ReservedHaulRequest};
 use crate::hauling::requests::HaulRequestTargetKind::StorageTarget;
-use crate::hauling::requests::RequestAmountChange::Increase;
 
 const DEBUG: bool = true;
 
@@ -79,6 +78,8 @@ the distance to the target if no withdraw request was used.
  */
 // TODO Pick up smaller piles when there is nothing else to do. Or just move towards expected energy
 //      source or storage.
+// TODO Ignore increasing deposit below a certain threshold, but if idle still move towards it.
+//      If stopping being idle, execute it before continuing.
 pub fn find_haul_requests(
     room_name: RoomName,
     creep_store: &FxHashMap<ResourceType, u32>,
@@ -173,16 +174,27 @@ pub fn find_haul_requests(
                     if withdrawable_amount <= 0 {
                         return None;
                     }
-                    // Not undertaking increasing requests that do not fill the creep.
-                    if borrowed_request.amount_change == Increase && (withdrawable_amount as u32) < creep_capacity {
-                        return None;
+                    let dist = borrowed_request.pos.get_range_to(creep_pos);
+                    if borrowed_request.change > 0 {
+                        // Not undertaking increasing requests that do not (yet) fill the creep.
+                        // TODO Take actual speed into consideration.
+                        if borrowed_request.predicted_amount(dist) < creep_capacity {
+                            return None;
+                        }
+                    } else if borrowed_request.change < 0 {
+                        // Not undertaking decaying requests that will leave too small of a pile
+                        // upon arrival.
+                        // TODO Take actual speed into consideration.
+                        if borrowed_request.predicted_amount(dist) < MIN_DECAYING_AMOUNT {
+                            return None;
+                        }
                     }
                     // TODO Reward requests with higher amount.
                     // TODO Ignore too small requests from loose piles and let them decay.
                     // TODO Reward decaying requests if deciding to pick them up.
                     // TODO Also include all possible requests available when standing on one of
                     //      neighboring tiles.
-                    Some((id, withdrawable_amount as u32, borrowed_request.pos.get_range_to(creep_pos)))
+                    Some((id, withdrawable_amount as u32, dist))
                 })
                 .max_by_key(|&(_, withdrawable_amount, dist)| (Reverse(dist), withdrawable_amount));
 

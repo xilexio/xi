@@ -1,16 +1,17 @@
 use log::debug;
 use crate::room_states::room_states::map_and_replace_room_state;
 use crate::{local_debug, u};
-use rustc_hash::{FxHashMap, FxHashSet};
-use screeps::StructureType::{Extension, Spawn};
+use rustc_hash::FxHashMap;
 use screeps::{find, game, HasId, HasPosition, Mineral, ObjectId, OwnedStructureProperties, Position, ResourceType, RoomName, Source, StructureController};
 use screeps::ResourceType::Energy;
 use screeps::Terrain::Wall;
+use crate::construction::triage_repair_sites::StructureToRepair;
 use crate::economy::room_eco_stats::RoomEcoStats;
 use crate::errors::XiError;
 use crate::geometry::room_xy::RoomXYUtils;
-use crate::room_states::room_state::{ControllerData, MineralData, RoomDesignation, RoomResources, RoomState, SourceData, StructureData};
+use crate::room_states::room_state::{ControllerData, MineralData, RoomDesignation, RoomResources, RoomState, SourceData};
 use crate::utils::game_tick::game_tick;
+use crate::utils::multi_map_utils::MultiMapUtils;
 
 const DEBUG: bool = true;
 
@@ -93,20 +94,39 @@ pub fn update_room_state_from_scan(room_name: RoomName, force_update: bool, stat
         });
     }
     let mut structures = FxHashMap::default();
+    state.structures_to_repair.clear();
     let mut structures_changed = force_update;
+    // Note that it also finds the controller and other such structures.
     for structure in room.find(find::STRUCTURES, None) {
-        let structure_type = structure.as_structure().structure_type();
+        let structure = structure.as_structure();
+        let structure_type = structure.structure_type();
         let xy = structure.pos().xy();
+        let id = structure.id();
         structures
             .entry(structure_type)
-            .or_insert_with(FxHashSet::default)
-            .insert(xy);
+            .or_insert_with(FxHashMap::default)
+            .insert(xy, id);
+        
+        let hits = structure.hits();
+        let hits_max = structure.hits_max();
+        
+        if hits < hits_max {
+            state.structures_to_repair.push_or_insert(structure_type, StructureToRepair {
+                id,
+                xy,
+                hits,
+                hits_max,
+            });
+        }
 
-        if let Some(xys) = state.structures.get(&structure_type) {
-            if !xys.contains(&xy) {
-                structures_changed = true;
-            }
-        } else {
+        let is_in_state = state
+            .structures
+            .get(&structure_type)
+            .map_or(false, |state_xys| {
+                state_xys.get(&xy).map_or(false, |&state_id| state_id == id)
+            });
+
+        if !is_in_state {
             structures_changed = true;
         }
     }
@@ -126,32 +146,11 @@ pub fn update_room_state_from_scan(room_name: RoomName, force_update: bool, stat
     if structures_changed {
         debug!("Structures in room {room_name} changed.");
         state.structures = structures;
-        state.spawns.clear();
-        state.extensions.clear();
 
-        // Updating sorted lists of structures.
-        for structure in room.find(find::STRUCTURES, None) {
-            let structure_type = structure.as_structure().structure_type();
-            let xy = structure.pos().xy();
-            if state.designation == RoomDesignation::Owned {
-                if structure_type == Spawn {
-                    // TODO Something is wrong as it ends up being 17 same spawns.
-                    state
-                        .spawns
-                        .push(StructureData::new(structure.as_structure().id().into_type(), xy));
-                }
-                if structure_type == Extension {
-                    state
-                        .extensions
-                        .push(StructureData::new(structure.as_structure().id().into_type(), xy));
-                }
-            }
-        }
-        // TODO sort lists of structures
-        // TODO fast filler data
-        
+        // TODO Fast filler data.
+
         state.update_structures_matrix();
-        
+
         // Informing waiting processes that the structure changed.
         state.structures_broadcast.broadcast(());
     }

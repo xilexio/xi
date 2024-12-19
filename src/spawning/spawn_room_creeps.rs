@@ -7,9 +7,11 @@ use crate::room_states::room_states::with_room_state;
 use crate::u;
 use log::{debug, trace, warn};
 use rustc_hash::{FxHashMap, FxHashSet};
-use screeps::{game, ObjectId, RoomName, SpawnOptions, StructureSpawn};
+use screeps::{game, ObjectId, RawObjectId, RoomName, SpawnOptions, StructureSpawn};
 use std::collections::Bound;
-use crate::spawning::spawn_schedule::{with_spawn_schedule, PreferredSpawn, SpawnEvent};
+use screeps::StructureType::Spawn;
+use crate::spawning::preferred_spawn::PreferredSpawn;
+use crate::spawning::spawn_schedule::{with_spawn_schedule, SpawnEvent};
 use crate::utils::result_utils::ResultUtils;
 
 const DEBUG: bool = true;
@@ -202,18 +204,20 @@ pub fn update_spawn_list(room_name: RoomName) {
                 .drain()
                 .collect::<FxHashMap<_, _>>();
 
-            for spawn_data in room_state.spawns.iter() {
-                if let Some(spawn_schedule) = spawns_in_progress.remove(&spawn_data.id) {
+            // TODO Can the expression right of `in` be made into a RoomState method?
+            for (xy, &id) in room_state.structures.get(&Spawn).iter().flat_map(|spawns_data| spawns_data.iter()) {
+                let id = RawObjectId::from(id).into();
+                if let Some(spawn_schedule) = spawns_in_progress.remove(&id) {
                     // Old spawn schedule.
                     room_spawn_schedule
                         .spawns_in_progress
-                        .insert(spawn_data.id, spawn_schedule);
+                        .insert(id, spawn_schedule);
                 } else {
-                    debug!("Registering a new spawn {} at {} in {}.", spawn_data.id, spawn_data.xy, room_name);
+                    debug!("Registering a new spawn {} at {} in {}.", id, xy, room_name);
                     // New spawn schedule for a new spawn.
                     room_spawn_schedule
                         .spawns_in_progress
-                        .insert(spawn_data.id, None);
+                        .insert(id, None);
                 }
             }
 

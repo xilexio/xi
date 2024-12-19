@@ -1,3 +1,4 @@
+use log::warn;
 use thiserror::Error;
 
 #[derive(Error, Debug, Copy, Clone)]
@@ -24,6 +25,8 @@ pub enum XiError {
     CreepUpgradeControllerFailed,
     #[error("creep failed to build the construction site")]
     CreepBuildFailed,
+    #[error("creep failed to repair a structure")]
+    CreepRepairFailed,
     #[error("object does not exist in the game")]
     ObjectDoesNotExist,
     #[error("failed to scan the room due to lack of visibility")]
@@ -32,4 +35,10 @@ pub enum XiError {
     SpawnRequestTickInThePast,
     #[error("path not found")]
     PathNotFound,
+}
+
+impl XiError {
+    pub fn warn(&self, description: &str) {
+        warn!("{}: {:?}.", description, self);
+    }
 }

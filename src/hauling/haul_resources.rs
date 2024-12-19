@@ -1,8 +1,5 @@
-use crate::creeps::creep_role::CreepRole;
 use crate::creeps::creeps::CreepRef;
 use crate::errors::XiError;
-use crate::utils::game_tick::game_tick;
-use crate::geometry::room_xy::RoomXYUtils;
 use crate::kernel::sleep::sleep;
 use crate::priorities::HAULER_SPAWN_PRIORITY;
 use crate::room_states::room_states::with_room_state;
@@ -20,8 +17,9 @@ use crate::hauling::reserving_requests::{find_haul_requests, ReservedRequests};
 use crate::hauling::store_anywhere_or_drop::store_anywhere_or_drop;
 use crate::hauling::transfers::TransferStage::AfterAllTransfers;
 use crate::kernel::wait_until_some::wait_until_some;
+use crate::spawning::preferred_spawn::best_spawns;
 use crate::spawning::spawn_pool::{SpawnPool, SpawnPoolOptions};
-use crate::spawning::spawn_schedule::{PreferredSpawn, SpawnRequest};
+use crate::spawning::spawn_schedule::SpawnRequest;
 use crate::travel::travel_spec::TravelSpec;
 use crate::utils::priority::Priority;
 use crate::utils::result_utils::ResultUtils;
@@ -37,19 +35,13 @@ pub async fn haul_resources(room_name: RoomName) {
     let base_spawn_request = u!(with_room_state(room_name, |room_state| {
         // Any spawn is good.
         // TODO Remove directions reserved for the fast filler.
-        let preferred_spawns = room_state
-            .spawns
-            .iter()
-            .map(|spawn_data| PreferredSpawn {
-                id: spawn_data.id,
-                directions: Vec::new(),
-                extra_cost: 0,
-                pos: spawn_data.xy.to_pos(room_name),
-            })
-            .collect::<Vec<_>>();
+        let preferred_spawns = best_spawns(
+            room_state,
+            room_state.structure_xy(Storage)
+        );
 
         SpawnRequest {
-            role: CreepRole::Hauler,
+            role: Hauler,
             body: CreepBody::empty(),
             priority: HAULER_SPAWN_PRIORITY,
             preferred_spawns,
@@ -235,54 +227,5 @@ fn hauler_travel_spec(target: Position) -> TravelSpec {
         range: 1,
         progress_priority: Priority(200),
         target_rect_priority: Priority(200),
-    }
-}
-
-// TODO This function is not used. Extract closest spawn code from it and delete.
-fn hauler_spawn_request(room_name: RoomName) -> SpawnRequest {
-    // Prefer being spawned closer to the storage.
-    let (preferred_spawns, body) = u!(with_room_state(room_name, |room_state| {
-        let mut spawns = room_state
-            .spawns
-            .iter()
-            .map(|spawn_data| {
-                (
-                    spawn_data.xy,
-                    PreferredSpawn {
-                        id: spawn_data.id,
-                        directions: Vec::new(),
-                        extra_cost: 0,
-                        pos: spawn_data.xy.to_pos(room_name),
-                    },
-                )
-            })
-            .collect::<Vec<_>>();
-        if let Some(storage_xy) = room_state
-            .structures
-            .get(&Storage)
-            .and_then(|xys| xys.iter().next().cloned())
-        {
-            spawns.sort_by_key(|(spawn_xy, _)| spawn_xy.dist(storage_xy));
-        }
-
-        let preferred_spawns = spawns
-            .into_iter()
-            .map(|(_, preferred_spawn)| preferred_spawn)
-            .collect::<Vec<_>>();
-
-        let body = CreepBody::empty(); // TODO
-
-        (preferred_spawns, body)
-    }));
-
-    let min_preferred_tick = game_tick();
-    let max_preferred_tick = game_tick() + 1000;
-
-    SpawnRequest {
-        role: CreepRole::Hauler,
-        body,
-        priority: HAULER_SPAWN_PRIORITY,
-        preferred_spawns,
-        tick: (min_preferred_tick, max_preferred_tick),
     }
 }

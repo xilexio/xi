@@ -8,6 +8,7 @@ pub enum CreepRole {
     Hauler,
     Upgrader,
     Builder,
+    Repairer,
 }
 
 impl Default for CreepRole {
@@ -30,6 +31,7 @@ impl CreepRole {
             CreepRole::Scout => "scout",
             CreepRole::Upgrader => "upgrader",
             CreepRole::Builder => "builder",
+            CreepRole::Repairer => "repairer",
         }
     }
 
@@ -40,6 +42,7 @@ impl CreepRole {
             "scout" => Some(CreepRole::Scout),
             "upgrader" => Some(CreepRole::Upgrader),
             "builder" => Some(CreepRole::Builder),
+            "repairer" => Some(CreepRole::Repairer),
             _ => None
         }
     }

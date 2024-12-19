@@ -2,10 +2,10 @@ use screeps::{RoomObject, Withdrawable};
 
 pub struct UncheckedWithdrawable<'a>(pub &'a RoomObject);
 
-impl<'a> AsRef<RoomObject> for UncheckedWithdrawable<'a> {
+impl AsRef<RoomObject> for UncheckedWithdrawable<'_> {
     fn as_ref(&self) -> &RoomObject {
         self.0
     }
 }
 
-impl<'a> Withdrawable for UncheckedWithdrawable<'a> {}
+impl Withdrawable for UncheckedWithdrawable<'_> {}
