@@ -30,7 +30,7 @@ where
     })
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub(crate) struct RoomSpawnSchedule {
     /// Future spawns ordered by preferred tick.
     pub future_spawns: BTreeMap<u32, FxHashMap<SId, SpawnEvent>>,
@@ -42,7 +42,8 @@ pub(crate) struct RoomSpawnSchedule {
 }
 
 /// A scheduled spawn.
-pub(crate) struct SpawnEvent {
+#[derive(Debug)]
+pub struct SpawnEvent {
     pub request: SpawnRequest,
     pub promise: SpawnPromiseRef,
     pub energy_cost: u32,
@@ -71,6 +72,10 @@ impl SpawnPromise {
             cancelled: false,
             creep: None,
         }
+    }
+    
+    pub fn is_pending(&self) -> bool {
+        !self.cancelled && self.creep.is_none()
     }
 }
 

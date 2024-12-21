@@ -37,7 +37,7 @@ pub fn schedule_creep(room_name: RoomName, request: SpawnRequest) -> Result<Spaw
             .entry(preferred_spawn_start_tick)
             .or_default()
             .insert(id, spawn_event);
-
+        
         Ok(spawn_promise_ref)
     })
 }

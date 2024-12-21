@@ -48,17 +48,20 @@ pub fn register_creep_pos(creep_ref: &CreepRef) {
             if let Some(&next_pos) = creep.travel_state.path.last() {
                 let next_pos_dist = next_pos.get_range_to(creep.travel_state.pos);
                 if next_pos_dist != 1 {
-                    // TODO Repath.
                     warn!(
                         "Creep {} is {} tiles from the next position on the path, {}.",
                         creep.name, next_pos_dist, next_pos.f()
                     );
                     repath_required = true;
                 }
+            } else if creep.travel_state.pos.xy().is_on_boundary() {
+                // Multi-room travel is split by rooms and has separate repathing after reaching
+                // next room.
+                // TODO Remove after multi-room pathing is implemented.
+                repath_required = true;
             }
         } else {
             // Sometimes the creep may fail to move somewhere as a result of external interference.
-            // TODO Repath.
             local_debug!(
                 "Creep {} failed to move from {} to {}.",
                 creep.name, creep_pos.f(), expected_pos.f()

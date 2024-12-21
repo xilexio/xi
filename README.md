@@ -23,6 +23,13 @@ Build and deployment to selected target present in `screeps.toml`:
 cargo screeps deploy -m mmo
 ```
 
+## Flag orders
+
+The bot can be partially controlled manually using flags. The action performed
+depends on the prefix of the flag's name.
+* `claim` flags placed on a controller make the nearest RCL3+ room spawn a 
+  claimer, move it to that room and claim it,
+
 [screeps]: https://screeps.com
 [cargo-screeps]: https://github.com/rustyscreeps/cargo-screeps
 [screeps-game-api]: https://github.com/rustyscreeps/screeps-game-api

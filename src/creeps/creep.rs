@@ -232,6 +232,10 @@ impl Creep {
         self.screeps_obj()?.repair(target).or(Err(CreepRepairFailed))
     }
     
+    pub fn claim(&mut self, target: &StructureController) -> Result<(), XiError> {
+        self.screeps_obj()?.claim_controller(target).or(Err(CreepClaimFailed))
+    }
+    
     // Current information about the creep
 
     pub fn fatigue(&mut self) -> Result<u32, XiError> {

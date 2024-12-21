@@ -8,6 +8,7 @@ use crate::errors::XiError;
 use crate::creeps::creep_body::CreepBody;
 use crate::errors::XiError::PathNotFound;
 use crate::geometry::position_utils::PositionUtils;
+use crate::geometry::room_xy::RoomXYUtils;
 use crate::travel::step_utils::StepUtils;
 use crate::travel::surface::Surface;
 use crate::travel::travel_spec::TravelSpec;
@@ -54,26 +55,41 @@ pub fn find_path(start_pos: Position, travel_spec: &TravelSpec) -> Result<Vec<Po
     local_debug!("Path from {} to {}: {:?}.", start_pos.f(), travel_spec.target.f(), steps);
     // TODO Check if the full path was actually found.
     if let Vectorized(mut steps) = steps {
-        // TODO Multi-room travel.
         let room_name = start_pos.room_name();
-        // Removing the last step while the second-to-last is in the target rect.
-        while steps.get(steps.len() - 2).map_or(false, |step| travel_spec.is_in_target_rect(step.pos(room_name))) {
-            steps.pop();
+
+        if room_name == travel_spec.target.room_name() {
+            // Removing the last step while the second-to-last is in the target rect.
+            while steps.get(steps.len() - 2).map_or(false, |step| travel_spec.is_in_target_rect(step.pos(room_name))) {
+                steps.pop();
+            }
         }
-        
+
         // The path coming from `find_path_to` is not a stack.
         steps.reverse();
-        
-        // TODO Multi-room travel.
-        let path = steps.into_iter()
+
+        // TODO Multi-room path.
+        let mut path = steps.into_iter()
                 .map(|step| step.pos(room_name))
                 .collect::<Vec<_>>();
-        
-        if path.first().map_or(false, |&pos| travel_spec.is_in_target_rect(pos)) {
-            Ok(path)
+
+        if room_name == travel_spec.target.room_name() {
+            if path.first().map_or(false, |&pos| travel_spec.is_in_target_rect(pos)) {
+                Ok(path)
+            } else {
+                local_debug!("The last tile in the path is not in target rect. Only a partial path was found.");
+                Err(PathNotFound)
+            }
         } else {
-            local_debug!("The last tile in the path is not in target rect. Only a partial path was found.");
-            Err(PathNotFound)
+            let ends_on_room_boundary = path.first().map_or(false, |&pos| {
+                pos.xy().is_on_boundary()
+            });
+            if ends_on_room_boundary {
+                path[0] = path[0].matching_boundary_pos();
+                Ok(path)
+            } else {
+                local_debug!("The last tile in the path is not on the room boundary.");
+                Err(PathNotFound)
+            }
         }
     } else {
         unreachable!();

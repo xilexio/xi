@@ -158,6 +158,8 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
 
         // There should always be at least two haulers.
         eco_config.haulers_required = max(2, eco_config.haulers_required);
+        // TODO Remove.
+        eco_config.haulers_required = max(4, eco_config.haulers_required);
     }
 
     // Energy to spare is decided by the amount in storage as well as the average unfulfilled

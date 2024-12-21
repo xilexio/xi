@@ -22,7 +22,7 @@ pub fn spawn_room_creeps(room_name: RoomName) {
     // let resources = room_resources(room_name);
 
     // TODO update spawn_start_tick as now+1 when there is not enough energy
-
+    
     let current_tick = game_tick();
 
     with_spawn_schedule(room_name, |room_spawn_schedule| {
@@ -44,16 +44,32 @@ pub fn spawn_room_creeps(room_name: RoomName) {
         
         if DEBUG {
             debug!(
-                "Room {} has {} idle spawns and {} current spawn events. Current spawns:",
-                room_name, idle_spawns.len(), room_spawn_schedule.current_spawns.len()
+                "Room {} has {} idle spawns, {} current spawn events and {} future spawn events.",
+                room_name,
+                idle_spawns.len(),
+                room_spawn_schedule.current_spawns.len(),
+                room_spawn_schedule.future_spawns.values().map(|events| events.len()).sum::<usize>()
             );
-            for current_spawn in room_spawn_schedule.current_spawns.values() {
+            debug!("Current spawns:");
+            for spawn_event in room_spawn_schedule.current_spawns.values() {
                 debug!(
                     "* {}, {}, {}",
-                    current_spawn.request.role,
-                    current_spawn.request.body,
-                    current_spawn.request.priority
+                    spawn_event.request.role,
+                    spawn_event.request.body,
+                    spawn_event.request.priority
                 );
+            }
+            debug!("Future spawns:");
+            for (tick, events) in room_spawn_schedule.future_spawns.iter() {
+                for (_, spawn_event) in events.iter() {
+                    debug!(
+                        "* {}, {}, {} in {} ticks",
+                        tick - game_tick(),
+                        spawn_event.request.role,
+                        spawn_event.request.body,
+                        spawn_event.request.priority
+                    );
+                }
             }
         }
 

@@ -111,6 +111,7 @@ pub async fn place_construction_sites() {
                     .collect::<FxHashSet<_>>();
 
                 // Removing extra structures.
+                // TODO Remove all previous owner's structures.
                 let mut number_of_spawns = room_state
                     .structures
                     .get(&Spawn)

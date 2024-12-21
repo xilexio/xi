@@ -24,6 +24,7 @@ where
     fn restricted_around(self, rect: Rect) -> impl Iterator<Item = RoomXY>;
     fn exit_distance(self) -> u8;
     fn max_exit_distance(self) -> u8;
+    fn is_on_boundary(&self) -> bool;
     fn midpoint(self, other: Self) -> Self;
 
     fn sub(self, other: Self) -> (i8, i8);
@@ -93,6 +94,10 @@ impl RoomXYUtils for RoomXY {
             max(self.x.u8(), self.y.u8()),
             max(ROOM_SIZE - 1 - self.x.u8(), ROOM_SIZE - 1 - self.y.u8()),
         )
+    }
+    
+    fn is_on_boundary(&self) -> bool {
+        self.x.u8() == 0 || self.y.u8() == 0 || self.x.u8() == ROOM_SIZE - 1 || self.y.u8() == ROOM_SIZE - 1
     }
 
     fn midpoint(self, other: Self) -> Self {

@@ -4,6 +4,7 @@ use crate::construction::place_construction_sites::place_construction_sites;
 use crate::utils::game_tick::{first_tick, game_tick};
 use crate::global_state::{load_global_state, save_global_state};
 use crate::room_maintenance::maintenance::maintain_rooms;
+use crate::flags::flag_orders::execute_flag_orders;
 use crate::priorities::{CLEANUP_CREEPS_PRIORITY, PLACING_CONSTRUCTION_SITES_PRIORITY, MOVE_CREEPS_PRIORITY, ROOM_MAINTENANCE_PRIORITY, ROOM_PLANNING_PRIORITY, ROOM_SCANNING_PRIORITY, VISUALIZATIONS_PRIORITY, DEFEND_ROOMS_PRIORITY};
 use crate::room_planning::plan_rooms::plan_rooms;
 use crate::room_states::scan_rooms::scan_rooms;
@@ -67,6 +68,12 @@ pub fn setup() {
         "maintain_rooms",
         ROOM_MAINTENANCE_PRIORITY,
         maintain_rooms(),
+    );
+    schedule(
+        "execute_flag_orders",
+        // TODO
+        Priority(50),
+        execute_flag_orders()
     );
     schedule(
         "defend_rooms",

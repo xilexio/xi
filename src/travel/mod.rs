@@ -4,3 +4,4 @@ pub mod travel_spec;
 pub mod surface;
 pub mod traffic;
 pub mod step_utils;
+pub mod nearest_room;

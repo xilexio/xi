@@ -34,6 +34,7 @@ mod economy;
 mod room_maintenance;
 mod travel;
 mod defense;
+mod flags;
 
 // `wasm_bindgen` to expose the function to JS.
 #[wasm_bindgen]
