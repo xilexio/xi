@@ -11,17 +11,7 @@ use log::{debug, error, trace, warn};
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::game::{construction_sites, rooms};
 use screeps::StructureType::*;
-use screeps::{
-    game,
-    ConstructionSite,
-    HasPosition,
-    MaybeHasId,
-    ObjectId,
-    RoomName,
-    RoomXY,
-    Structure,
-    StructureType,
-};
+use screeps::{game, ConstructionSite, HasPosition, MaybeHasId, ObjectId, Position, RoomName, RoomXY, Structure, StructureType};
 use crate::room_states::room_state::StructuresMap;
 
 const DEBUG: bool = true;
@@ -51,7 +41,7 @@ const PRIORITY_OF_STRUCTURES: [StructureType; 16] = [
 pub struct ConstructionSiteData {
     pub id: ObjectId<ConstructionSite>,
     pub structure_type: StructureType,
-    pub xy: RoomXY,
+    pub pos: Position,
 }
 
 // Places construction sites in a room and removes incorrect ones. Removes incorrect buildings.
@@ -68,15 +58,17 @@ pub async fn place_construction_sites() {
             // The construction sites may be removed by stomping on them so there is a need to
             // fetch them anew.
             for construction_site in construction_sites().values() {
-                let room_name = u!(construction_site.room()).name();
-                let id = u!(construction_site.try_id());
-                let xy = construction_site.pos().xy();
-                let structure_type = construction_site.structure_type();
-                construction_sites_by_room.push_or_insert(room_name, ConstructionSiteData {
-                    id,
-                    structure_type,
-                    xy
-                });
+                // TODO Handle the alternative where the room is None, i.e., not visible.
+                if let Some(room_name) = construction_site.room().map(|room| room.name()) {
+                    let id = u!(construction_site.try_id());
+                    let pos = construction_site.pos();
+                    let structure_type = construction_site.structure_type();
+                    construction_sites_by_room.push_or_insert(room_name, ConstructionSiteData {
+                        id,
+                        structure_type,
+                        pos
+                    });
+                }
             }
 
             if room_state.current_rcl_structures.is_empty() {
@@ -171,7 +163,7 @@ pub async fn place_construction_sites() {
                 xys_not_for_new_cs.extend(
                     extra_construction_sites
                         .iter()
-                        .map(|cs| cs.xy)
+                        .map(|cs| cs.pos.xy())
                 );
 
                 let construction_sites_left_to_limit = max(
@@ -181,17 +173,22 @@ pub async fn place_construction_sites() {
 
                 // Registering the correct construction sites in the room state.
                 room_state.construction_site_queue = correct_construction_sites;
-
+                
+                // Adding the extra construction sites.
+                room_state
+                    .construction_site_queue
+                    .extend(room_state.extra_construction_sites.iter().cloned());
+                
                 // Removing invalid construction sites.
                 // TODO Do not remove construction site with decent progress on them.
                 for cs in extra_construction_sites {
                     let construction_site = u!(game::get_object_by_id_typed(&cs.id));
                     construction_site.remove().warn_if_err(&format!(
                         "Failed to remove a construction site of {:?} in {} at {}",
-                        cs.structure_type, room_name, cs.xy
+                        cs.structure_type, room_name, cs.pos.xy()
                     ));
                 }
-
+                
                 // Placing construction sites with the top priority.
                 // Taking only the `construction_sites_left_to_limit` because the next iteration
                 // of this function every extra structure and construction site will be removed
@@ -293,7 +290,7 @@ fn construction_sites_diff_from_top_priority_missing_structures(
 ) -> ConstructionSitesDiff {
     let mut existing_cs_map = existing_construction_sites
         .into_iter()
-        .map(|cs| (cs.xy, cs))
+        .map(|cs| (cs.pos.xy(), cs))
         .collect::<FxHashMap<_, _>>();
 
     let mut correct_construction_sites = Vec::new();

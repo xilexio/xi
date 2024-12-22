@@ -162,7 +162,7 @@ impl Creep {
     }
 
     pub fn unchecked_withdraw(&mut self, target_id: RawObjectId, resource_type: ResourceType, amount: u32, limited_transfer: bool) -> Result<(), XiError> {
-        let target = erased_object_by_id(target_id)?;
+        let target = erased_object_by_id(&target_id)?;
         let unchecked_target = UncheckedWithdrawable(&target);
         self.withdraw(target_id.into(), &unchecked_target, resource_type, amount, limited_transfer)
     }
@@ -206,7 +206,7 @@ impl Creep {
     }
 
     pub fn unchecked_transfer(&mut self, target_id: RawObjectId, resource_type: ResourceType, amount: u32, limited_transfer: bool) -> Result<(), XiError> {
-        let target = erased_object_by_id(target_id)?;
+        let target = erased_object_by_id(&target_id)?;
         let unchecked_target = UncheckedTransferable(&target);
         self.transfer(target_id.into(), &unchecked_target, resource_type, amount, limited_transfer)
     }

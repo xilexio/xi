@@ -86,22 +86,6 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
             .travel_spec(Some(travel_spec.clone()));
         let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, spawn_pool_options);
 
-        // TODO xi::kernel::kernel: Running P18-mine_source_W5N8_X14_Y13 (!198/P15).
-        //      xi::room_states::utils: Structures changed. Killing the process P31.
-        //      xi::kernel::kernel: Killed P31-loop_until_structures_change (!199/P18).
-        //      xi::spawning::spawn_pool: Dropping a spawn pool element in W5N8 for Miner.
-        //      Caught exception: RuntimeError: unreachable
-        //      Stacktrace: RuntimeError: unreachable
-        //          at std::panicking::rust_panic_with_hook::h5a293743c3d3b934 (wasm-function[1887]:199)
-        //          at std::panicking::begin_panic_handler::{{closure}}::h6b29e7e43d527cf2 (wasm-function[2006]:175)
-        //          at rust_begin_unwind (wasm-function[2668]:40)
-        //          at core::panicking::panic_fmt::h05cda0e388c956d8 (wasm-function[2669]:38)
-        //          at core::panicking::panic::h0b48879becc7f3f9 (wasm-function[2449]:61)
-        //          at core::option::unwrap_failed::h0fa93bcd6e14296a (wasm-function[2859]:10)
-        //          at xi::kernel::kernel::kernel::h539fd6b54557d319 (wasm-function[827]:679)
-        //          at xi::kernel::kernel::kill_without_result_or_cleanup::h7ce2639ae986f34e (wasm-function[218]:28)
-        //          at ::drop::he18f155e26fe6c72 (wasm-function[488]:974)
-        //          at core::ptr::drop_in_place::h01dcf0c2e84148aa (wasm-function[1366]:95)
         run_future_until_structures_change(room_name, async move {
             loop {
                 let (source_miners_required, miner_body, miner_spawn_priority) = wait_until_some(|| with_room_state(room_name, |room_state| {

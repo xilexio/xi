@@ -3,7 +3,6 @@ use screeps::{ResourceType, RoomName, CREEP_RANGED_ACTION_RANGE};
 use screeps::game::get_object_by_id_typed;
 use crate::creeps::creep_role::CreepRole::Builder;
 use crate::geometry::position_utils::PositionUtils;
-use crate::geometry::room_xy::RoomXYUtils;
 use crate::hauling::requests::HaulRequest;
 use crate::hauling::requests::HaulRequestKind::DepositRequest;
 use crate::hauling::requests::HaulRequestTargetKind::CreepTarget;
@@ -44,7 +43,7 @@ pub async fn build_structures(room_name: RoomName) {
 
         if let Some(cs_data) = cs_data {
             // Initializing the spawn pool.
-            let travel_spec = TravelSpec::new(cs_data.xy.to_pos(room_name), CREEP_RANGED_ACTION_RANGE);
+            let travel_spec = TravelSpec::new(cs_data.pos, CREEP_RANGED_ACTION_RANGE);
 
             let spawn_pool_options = SpawnPoolOptions::default()
                 .travel_spec(Some(travel_spec.clone()));
@@ -79,7 +78,7 @@ pub async fn build_structures(room_name: RoomName) {
 
                 trace!(
                     "Building {} at {} with {} creeps.",
-                    cs_data.structure_type, cs_data.xy.to_pos(room_name).f(), builders_required
+                    cs_data.structure_type, cs_data.pos.f(), builders_required
                 );
 
                 spawn_pool.with_spawned_creeps(|creep_ref| {

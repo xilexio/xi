@@ -453,7 +453,7 @@ impl SpawnPoolElement {
             }
         }
 
-        if self.respawn && self.prespawned_creep.is_none() {
+        if self.respawn && self.prespawned_creep.is_none() && !base_spawn_request.preferred_spawns.is_empty() {
             // Scheduling the spawning of a creep if `respawn` is true, both as prespawning when
             // there is already a creep alive and when there is none. The difference is that in
             // the latter case, we want the creep spawned as fast as possible.

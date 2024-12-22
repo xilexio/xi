@@ -29,6 +29,8 @@ The bot can be partially controlled manually using flags. The action performed
 depends on the prefix of the flag's name.
 * `claim` flags placed on a controller make the nearest RCL3+ room spawn a 
   claimer, move it to that room and claim it,
+* `build` flags placed on construction sites in other rooms make the nearest RCL3+
+  room build them.
 
 [screeps]: https://screeps.com
 [cargo-screeps]: https://github.com/rustyscreeps/cargo-screeps

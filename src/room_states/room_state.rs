@@ -65,6 +65,8 @@ pub struct RoomState {
     /// Structures to be built at current RCL.
     pub current_rcl_structures: StructuresMap,
     #[serde(skip)]
+    pub extra_construction_sites: Vec<ConstructionSiteData>,
+    #[serde(skip)]
     pub construction_site_queue: Vec<ConstructionSiteData>,
     #[serde(skip)]
     pub structures_to_repair: FxHashMap<StructureType, Vec<StructureToRepair>>,
@@ -183,6 +185,7 @@ impl RoomState {
             structures_matrix: RoomMatrix::default(),
             plan: None,
             planner: None,
+            extra_construction_sites: Vec::new(),
             construction_site_queue: Vec::new(),
             structures_to_repair: FxHashMap::default(),
             triaged_repair_sites: TriagedRepairSites::default(),
@@ -230,7 +233,7 @@ impl RoomState {
         } else {
             // TODO This is ugly and inefficient. Include construction sites in structures_map,
             //      instead.
-            if self.construction_site_queue.iter().any(|x| x.xy == xy && x.structure_type != StructureType::Container && x.structure_type != StructureType::Road && x.structure_type != StructureType::Rampart) {
+            if self.construction_site_queue.iter().any(|cs| cs.pos.room_name() == self.room_name && cs.pos.xy() == xy && cs.structure_type != StructureType::Container && cs.structure_type != StructureType::Road && cs.structure_type != StructureType::Rampart) {
                 Surface::Obstacle
             } else {
                 match self.terrain.get(xy) {

@@ -56,8 +56,6 @@ pub async fn triage_repair_sites(room_name: RoomName) {
         u!(with_room_state(room_name, |room_state| {
             let mut triaged_repair_sites = TriagedRepairSites::default();
 
-            triaged_repair_sites.critical = vec![];
-
             for (&structure_type, structures_to_repair) in room_state.structures_to_repair.iter() {
                 let min_non_critical_hits;
                 if let (Some(decay_amount), Some(decay_ticks)) = (structure_type.decay_amount(), structure_type.decay_amount()) {

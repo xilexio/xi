@@ -17,7 +17,7 @@ pub async fn withdraw_when_able(creep_ref: &CreepRef, target_id: RawObjectId, re
         if [borrowed_creep.last_withdraw_tick, borrowed_creep.last_pickup_tick, borrowed_creep.last_transfer_tick].contains(&game_tick()) {
             borrowed_creep.screeps_obj()?;
             // Checking if the target still exists.
-            erased_object_by_id(target_id)?;
+            erased_object_by_id(&target_id)?;
             drop(borrowed_creep);
             sleep(1).await;
         } else {
@@ -35,11 +35,11 @@ pub async fn pickup_when_able(creep_ref: &CreepRef, target_id: RawObjectId) -> R
         if [borrowed_creep.last_withdraw_tick, borrowed_creep.last_pickup_tick, borrowed_creep.last_transfer_tick].contains(&game_tick()) {
             borrowed_creep.screeps_obj()?;
             // Checking if the target still exists.
-            erased_object_by_id(target_id)?;
+            erased_object_by_id(&target_id)?;
             drop(borrowed_creep);
             sleep(1).await;
         } else {
-            let resource = erased_object_by_id(target_id)?.unchecked_into::<Resource>();
+            let resource = erased_object_by_id(&target_id)?.unchecked_into::<Resource>();
             borrowed_creep.pickup(&resource)?;
             return Ok(());
         }
@@ -54,7 +54,7 @@ pub async fn transfer_when_able(creep_ref: &CreepRef, target_id: RawObjectId, re
         if [borrowed_creep.last_withdraw_tick, borrowed_creep.last_pickup_tick, borrowed_creep.last_transfer_tick].contains(&game_tick()) {
             borrowed_creep.screeps_obj()?;
             // Checking if the target still exists.
-            erased_object_by_id(target_id)?;
+            erased_object_by_id(&target_id)?;
             drop(borrowed_creep);
             sleep(1).await;
         } else {

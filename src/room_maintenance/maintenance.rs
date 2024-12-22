@@ -106,14 +106,14 @@ async fn maintain_room(room_name: RoomName) {
         );
         
         schedule(
-            &format!("gather_eco_samples{}", room_name),
+            &format!("gather_eco_samples_{}", room_name),
             current_priority() - 2,
             gather_eco_samples(room_name)
         );
 
         // Update stats and decide on resource distribution within the room.
         schedule(
-            &format!("update_eco_config{}", room_name),
+            &format!("update_eco_config_{}", room_name),
             current_priority() - 3,
             update_eco_config(room_name)
         );

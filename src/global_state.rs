@@ -1,6 +1,6 @@
 use crate::room_states::room_states::{with_room_states, RoomStates};
 use js_sys::JsString;
-use log::{error, trace};
+use log::{error, info, trace};
 use screeps::{raw_memory, MEMORY_SIZE_LIMIT};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, FromInto, PickFirst};
@@ -58,8 +58,12 @@ fn serialize_global_state() -> Result<String, serde_json::Error> {
 pub fn load_global_state() {
     #[cfg(feature = "memory_wipe")]
     let raw_memory_str = "{}";
+    #[cfg(feature = "memory_wipe")]
+    info!("Wiping the memory.");
     #[cfg(not(feature = "memory_wipe"))]
     let raw_memory_str = raw_memory::get().as_string().unwrap();
+    #[cfg(not(feature = "memory_wipe"))]
+    info!("Loading the global state.");
     
     match deserialize_global_state(&raw_memory_str) {
         Ok(()) => {
