@@ -1,10 +1,16 @@
 use std::cmp::{max, min};
+use std::fmt::Display;
+use std::ops::Add;
 use log::info;
-use screeps::{controller_downgrade, CREEP_LIFE_TIME, ENERGY_REGEN_TIME, SOURCE_ENERGY_CAPACITY};
+use screeps::{controller_downgrade, BUILD_POWER, CREEP_LIFE_TIME, CREEP_RANGED_ACTION_RANGE, ENERGY_REGEN_TIME, SOURCE_ENERGY_CAPACITY, UPGRADE_CONTROLLER_POWER};
 use screeps::Part::{Carry, Move, Work};
+use screeps::StructureType::Storage;
 use serde::{Deserialize, Serialize};
+use crate::consts::REPAIR_COST_PER_PART;
 use crate::creeps::creep_body::CreepBody;
-use crate::creeps::creep_role::CreepRole::{Builder, Hauler, Miner, Upgrader};
+use crate::creeps::creep_role::CreepRole;
+use crate::creeps::creep_role::CreepRole::{Builder, Hauler, Miner, Repairer, Upgrader};
+use crate::geometry::room_xy::RoomXYUtils;
 use crate::room_states::room_state::RoomState;
 use crate::u;
 use crate::utils::game_tick::game_tick;
@@ -18,6 +24,8 @@ const MIN_SAFE_LAST_CREEP_TTL: u32 = 300;
 
 // TODO Measure it instead.
 const REPAIRER_EFFICIENCY: f32 = 0.75;
+
+const MIN_HAULERS_REQUIRED: u32 = 2;
 
 /// Structure containing parameters for the room economy that decide the distribution of resources
 /// as well as composition of creeps.
@@ -52,7 +60,48 @@ pub struct RoomEcoConfig {
     pub repairer_body: CreepBody,
 }
 
+// TODO Stats on spawn usage or total parts.
+#[derive(Debug, Default, Clone, Copy)]
+struct ResourceUsage {
+    category: CreepRole,
+    creeps: f32,
+    work_energy: f32,
+    body_cost: f32,
+    hauling_throughput: f32,
+}
+
+impl Add for ResourceUsage {
+    type Output = ResourceUsage;
+
+    fn add(self, other: ResourceUsage) -> ResourceUsage {
+        ResourceUsage {
+            category: self.category,
+            creeps: self.creeps + other.creeps,
+            work_energy: self.work_energy + other.work_energy,
+            body_cost: self.body_cost + other.body_cost,
+            hauling_throughput: self.hauling_throughput + other.hauling_throughput,
+        }
+    }
+}
+
+impl Display for ResourceUsage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}: {:.2}Cr, {:.2}E/t + {:.2}E/t, {:.2}R",
+            self.category,
+            self.creeps,
+            -self.work_energy,
+            -self.body_cost / CREEP_LIFE_TIME as f32,
+            self.hauling_throughput
+        )
+    }
+}
+
 pub fn update_or_create_eco_config(room_state: &mut RoomState) {
+    // ----- Computing the stats required to make any decision. -----
+    
+    let room_name = room_state.room_name;
     let eco_stats = u!(room_state.eco_stats.as_ref());
     let miner_stats = eco_stats.creep_stats(Miner);
     let hauler_stats = eco_stats.creep_stats(Hauler);
@@ -61,6 +110,184 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
     let spawn_energy_capacity = room_state.resources.spawn_energy_capacity;
     let haulable_energy = eco_stats.haul_stats.withdrawable_storage_amount.last() + eco_stats.haul_stats.unfulfilled_withdraw_amount.last();
 
+    let storage_pos = {
+        if let Some(storage_pos) = room_state.structure_pos(Storage) {
+            storage_pos
+        } else {
+            u!(room_state.planned_structure_pos(Storage))
+        }
+    };
+    let controller_work_pos = u!(u!(room_state.controller).work_xy).to_pos(room_state.room_name);
+
+    let number_of_sources = room_state.sources.len() as u32;
+    let single_source_energy_income = SOURCE_ENERGY_CAPACITY / ENERGY_REGEN_TIME;
+    
+    // Controller data.
+    let ticks_to_downgrade = u!(room_state.controller).downgrade_tick - game_tick();
+    let max_ticks_to_downgrade = u!(controller_downgrade(room_state.rcl));
+
+    // Computing an approximate energy and hauling throughput usage, trying to err on the lower side
+    // if the data is incomplete.
+    // The usual routes are:
+    // - from sources (including remotes) to storage (or future storage since this is where
+    //   the extensions are)
+    // - from storage to controller (if there is no storage yet, it is directly from sources,
+    //   but then it is fine to have more haulers anyway)
+    // - if there are construction sites, compute the average distance to construction sites
+    //   that will be active in the next 1500 ticks
+    // Only already spawned creeps should be taken into account. Also, for mining before
+    // the storage has been built, the number of Work parts should be counted.
+    // TODO Compute a stat with efficiency of usage of hauling throughput. Partially filled
+    //      hauler counts as less. Idling hauler counts as zero. Hauler moving without anything
+    //      also counts as zero (but then no need to double the required throughput).
+    // TODO Compute the actual distances, with pathfinding.
+    // TODO Compute a stat with how much energy was actually extracted.
+    // TODO Register piles to pick up and also keep track of how much is wasted on decay from
+    //      the piles from drop mining (but that's for later).
+
+    let miner_stats = eco_stats.creep_stats(Miner);
+    let mut mining_usage = ResourceUsage {
+        category: Miner,
+        creeps: miner_stats.number_of_active_creeps.last() as f32 - miner_stats.number_of_idle_creeps.last() as f32,
+        body_cost: miner_stats.total_body_cost.last() as f32,
+        ..ResourceUsage::default()
+    };
+    // info!("Sources - position, haul distance, income, body usage, hauling throughput required:");
+    for source_data in room_state.sources.iter() {
+        if let Some(total_harvest_power) = eco_stats.total_harvest_power_by_source.get(&source_data.id) {
+            // TODO It might be better to expect full 10E/t from a source.
+            let income = total_harvest_power.last() as f32;
+            mining_usage.work_energy -= total_harvest_power.last() as f32;
+            let haul_dist = u!(source_data.work_xy).to_pos(room_name).get_range_to(storage_pos).saturating_sub(1);
+            mining_usage.hauling_throughput += 2.0 * haul_dist as f32 * income;
+            // let max_hauling_throughput_required = 2 * haul_dist * single_source_energy_income;
+            
+            // info!(
+            //     "* {} - {}t, {}/{}E/t, {:.2}E/t, {}/{}R",
+            //     source_data.xy,
+            //     haul_dist,
+            //     income,
+            //     single_source_energy_income,
+            //     body_usage,
+            //     hauling_throughput_required,
+            //     max_hauling_throughput_required
+            // );
+        }
+    }
+
+    let builder_stats = eco_stats.creep_stats(Builder);
+    let mut building_usage = ResourceUsage {
+        category: Builder,
+        creeps: builder_stats.number_of_active_creeps.last() as f32 - builder_stats.number_of_idle_creeps.last() as f32,
+        body_cost: builder_stats.total_body_cost.last() as f32,
+        ..ResourceUsage::default()
+    };
+    if let Some(cs) = room_state.construction_site_queue.first() {
+        // info!("Current construction site - position, haul distance, usage + body usage, hauling throughput required:");
+        let haul_dist = cs.pos.get_range_to(storage_pos).saturating_sub(CREEP_RANGED_ACTION_RANGE as u32 + 1);
+        building_usage.work_energy += (builder_stats.total_primary_part_count.last() * BUILD_POWER) as f32;
+        building_usage.hauling_throughput += 2.0 * haul_dist as f32 * building_usage.work_energy;
+        // info!(
+        //     "* {} - {}t, {}E/t + {:.2}E/t, {}R",
+        //     cs.pos.xy(),
+        //     haul_dist,
+        //     usage,
+        //     body_usage,
+        //     hauling_throughput_required
+        // );
+    }
+
+    let upgrader_stats = eco_stats.creep_stats(Upgrader);
+    let mut upgrading_usage = ResourceUsage {
+        category: Upgrader,
+        creeps: upgrader_stats.number_of_active_creeps.last() as f32 - upgrader_stats.number_of_idle_creeps.last() as f32,
+        body_cost: upgrader_stats.total_body_cost.last() as f32,
+        ..ResourceUsage::default()
+    };
+    {
+        // info!("Upgrading - position, haul distance, usage + body usage, hauling throughput required:");
+        let haul_dist = controller_work_pos.get_range_to(storage_pos).saturating_sub(CREEP_RANGED_ACTION_RANGE as u32 + 1);
+        upgrading_usage.work_energy += (upgrader_stats.total_primary_part_count.last() * UPGRADE_CONTROLLER_POWER) as f32;
+        upgrading_usage.hauling_throughput += 2.0 * haul_dist as f32 * upgrading_usage.work_energy;
+        // info!(
+        //     "* {} - {}t, {}E/t + {:.2}E/t, {}R",
+        //     controller_work_pos.xy(),
+        //     haul_dist,
+        //     usage,
+        //     body_usage,
+        //     hauling_throughput_required
+        // );
+    }
+
+    let repairer_stats = eco_stats.creep_stats(Repairer);
+    let mut repairing_usage = ResourceUsage {
+        category: Repairer,
+        creeps: repairer_stats.number_of_active_creeps.last() as f32 - repairer_stats.number_of_idle_creeps.last() as f32,
+        body_cost: repairer_stats.total_body_cost.last() as f32,
+        ..ResourceUsage::default()
+    };
+    if room_state.triaged_repair_sites.critical.is_empty() || !room_state.triaged_repair_sites.regular.is_empty() {
+        // info!("Repairs required - average haul distance, usage + body usage, hauling throughput required:");
+        // TODO Repairing is difficult to estimate in terms of hauling throughput. It is not
+        //      very big, but it needs to be measured and averaged over a long time to get any
+        //      real info.
+        let haul_dist = 10;
+        repairing_usage.work_energy += (repairer_stats.total_primary_part_count.last() * REPAIR_COST_PER_PART) as f32;
+        repairing_usage.hauling_throughput += 2.0 * haul_dist as f32 * repairing_usage.work_energy;
+        // info!(
+        //     "* {}t, {}E/t + {:.2}E/t, {}R",
+        //     haul_dist,
+        //     usage,
+        //     body_usage,
+        //     hauling_throughput_required
+        // );
+    }
+    
+    let total_usage = mining_usage + building_usage + upgrading_usage + repairing_usage;
+    
+    info!("Room {} usage stats:", room_name);
+    for usage in [mining_usage, building_usage, upgrading_usage, repairing_usage] {
+        info!("* {}", usage);
+    }
+    info!("Total: {}", total_usage);
+
+    // TODO Compute cost of respawned creeps.
+    // TODO Initially use all existing creeps. Work on increasing number to max(calculated, current).
+    // TODO Add a hauler if needed due to usage but also if predicted throughput time measured efficiency needs so. Ordering depends on the second.
+    // TODO Can only add or remove one required creep at a time.
+
+    info!("Hauling throughput available: {:.2}R, {:.2}R, {}R", eco_stats.total_haul_capacity.avg::<f32>(), eco_stats.total_haul_capacity.small_sample_avg::<f32>(), eco_stats.total_used_haul_capacity.last());
+    info!("Hauling throughput used: {:.2}R, {:.2}R, {}R", eco_stats.total_used_haul_capacity.avg::<f32>(), eco_stats.total_used_haul_capacity.small_sample_avg::<f32>(), eco_stats.total_used_haul_capacity.last());
+
+    if let Some(cs) = room_state.construction_site_queue.first() {
+        // TODO Information how much of the construction site is complete.
+        info!(
+            "First construction site: {} at {}.",
+            cs.structure_type,
+            cs.pos.xy()
+        );
+    }
+    
+    if let Some(repair_site) = room_state.triaged_repair_sites.critical.first() {
+        info!(
+            "First critical repair required: {} at {}, missing {}/{} hits.",
+            repair_site.structure_type,
+            repair_site.xy,
+            repair_site.hits_to_repair,
+            repair_site.target_hits
+        );
+    } else if let Some(repair_site) = room_state.triaged_repair_sites.regular.first() {
+        info!(
+            "First regular repair required: {} at {}, missing {}/{} hits.",
+            repair_site.structure_type,
+            repair_site.xy,
+            repair_site.hits_to_repair,
+            repair_site.target_hits
+        );
+    }
+    
+    // ----- Modification of the eco config. -----
+    
     // TODO Handle link mining.
     // Computing minimal and preferred miner and hauler bodies.
     let min_miner_body = preferred_miner_body(0, true);
@@ -90,9 +317,6 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
     let eco_config = u!(room_state.eco_config.as_mut());
     eco_config.hauler_body = hauler_body;
     eco_config.miner_body = miner_body;
-
-    let number_of_sources = room_state.sources.len() as u32;
-    let single_source_energy_income = SOURCE_ENERGY_CAPACITY / ENERGY_REGEN_TIME;
 
     // Checking if the room is in a condition where it cannot sustain itself.
     // The minimum is a single miner and a single hauler.
@@ -157,9 +381,7 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
         eco_config.miners_required = single_source_energy_income.div_ceil(eco_config.miner_body.energy_harvest_power()) * number_of_sources;
 
         // There should always be at least two haulers.
-        eco_config.haulers_required = max(2, eco_config.haulers_required);
-        // TODO Remove.
-        eco_config.haulers_required = max(4, eco_config.haulers_required);
+        eco_config.haulers_required = max(MIN_HAULERS_REQUIRED, eco_config.haulers_required);
     }
 
     // Energy to spare is decided by the amount in storage as well as the average unfulfilled
@@ -168,9 +390,7 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
         - eco_stats.haul_stats.unfulfilled_deposit_amount.small_sample_avg::<i32>();
     // TODO Check just energy, not everything.
     let has_energy_to_spare = unfulfilled_haul_amount_balance > MIN_AVG_ENERGY_TO_SPARE as i32;
-
-    let ticks_to_downgrade = u!(room_state.controller).downgrade_tick - game_tick();
-    let max_ticks_to_downgrade = u!(controller_downgrade(room_state.rcl));
+    
     // TODO Once everything is built, it should be kept close to fully upgraded.
     //      On RCL 5-7, it should be kept rather high, but building should also take place.
     //      On RCL 4 and lower, it's sufficient to just barely keep it from downgrading.
@@ -196,7 +416,9 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
         // TODO Possibly also check if there is energy to spare.
         // TODO If there is a lot of energy in decaying piles, but also no storage, spawn more
         //      haulers to contain it.
-        if eco_config.haulers_required > 2 && hauler_stats.number_of_idle_creeps.small_sample_avg::<f32>() >= 1.5 {
+        // TODO A way to respond to large increase by spawning many haulers fast.
+        // TODO Protection from spawning too many haulers at once once the average idle goes up.
+        if eco_config.haulers_required > MIN_HAULERS_REQUIRED && hauler_stats.number_of_idle_creeps.small_sample_avg::<f32>() >= 1.5 {
             // If there is at least 1.5 idle hauler on average, decrease the number of required haulers.
             eco_config.haulers_required -= 1;
         } else if hauler_stats.number_of_idle_creeps.small_sample_avg::<f32>() < 0.5 && unfulfilled_fulfillable_haul_amount > eco_config.hauler_body.store_capacity() / 2 {
@@ -329,7 +551,7 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
         info!("* Upgrading: {:.2}E/t on {} creeps + {:.2}E/t on work, {}", upgrading_body_energy_usage, eco_config.upgraders_required, upgrading_work_energy_usage, eco_config.upgrader_body);
         info!("Construction sites: {} (total {}E needed)", room_state.construction_site_queue.len(), total_construction_site_energy_needed);
         info!("Energy usage: {:.2}E/t + {:.2}E/t = {:.2}E/t", body_energy_usage, work_energy_usage, energy_usage);
-        info!("Energy balance: {:.2}E/t", energy_income - energy_usage)
+        info!("Energy balance: {:.2}E/t", energy_income - energy_usage);
     }
 }
 

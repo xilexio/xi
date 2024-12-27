@@ -22,7 +22,7 @@ use screeps::{
 use rustc_hash::{FxHashMap, FxHashSet};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsValue};
-use log::{info, trace};
+use log::info;
 use js_sys::{Object, Reflect};
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::room_matrix::RoomMatrix;
@@ -222,10 +222,17 @@ impl RoomState {
             .flatten()
             .map(|(&xy, &id)| (xy, RawObjectId::from(id).into()))
     }
+    
+    pub fn planned_structure_pos(&self, structure_type: StructureType) -> Option<Position> {
+        let plan = self.plan.as_ref()?;
+        plan.tiles
+            .find_structure_xys(structure_type)
+            .first()
+            .map(|xy| xy.to_pos(self.room_name))
+    }
 
     pub fn tile_surface(&self, xy: RoomXY) -> Surface {
         let tile_structures = self.structures_matrix.get(xy);
-        trace!("tile_structures[{}] = {:?}, terrain[{}] = {:?}", xy, tile_structures, xy, self.terrain.get(xy));
         if tile_structures.road() {
             Surface::Road
         } else if !tile_structures.is_passable(self.designation == RoomDesignation::Owned) {

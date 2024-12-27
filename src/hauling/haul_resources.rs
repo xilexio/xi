@@ -1,3 +1,5 @@
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 use crate::creeps::creeps::CreepRef;
 use crate::errors::XiError;
 use crate::kernel::sleep::sleep;
@@ -6,8 +8,9 @@ use crate::room_states::room_states::with_room_state;
 use crate::travel::travel::travel;
 use crate::u;
 use log::debug;
+use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::StructureType::Storage;
-use screeps::{Position, RoomName};
+use screeps::{Creep, ObjectId, Position, RoomName};
 use crate::creeps::actions::{pickup_when_able, transfer_when_able, withdraw_when_able};
 use crate::creeps::creep_body::CreepBody;
 use crate::creeps::creep_role::CreepRole::Hauler;
@@ -26,6 +29,12 @@ use crate::utils::result_utils::ResultUtils;
 use crate::utils::sampling::is_sample_tick;
 
 const DEBUG: bool = true;
+
+#[derive(Debug)]
+struct HaulerStats {
+    carry_capacity: u32,
+    used_capacity: Rc<Cell<u32>>,
+}
 
 /// Execute hauling of resources of haulers assigned to given room.
 /// Withdraw and store requests are registered in the system and the system assigns them to free
@@ -49,7 +58,11 @@ pub async fn haul_resources(room_name: RoomName) {
         }
     }));
 
-    let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, SpawnPoolOptions::default());
+    let options = SpawnPoolOptions::default().include_all_unassigned(true);
+    let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, options);
+    
+    // A map of hauler capacities and non-idle capacities.
+    let hauler_stats: Rc<RefCell<FxHashMap<ObjectId<Creep>, HaulerStats>>> = Rc::new(RefCell::new(FxHashMap::default()));
     
     loop {
         let (haulers_required, hauler_body, hauler_spawn_priority) = wait_until_some(|| with_room_state(room_name, |room_state| {
@@ -94,44 +107,82 @@ pub async fn haul_resources(room_name: RoomName) {
                 debug!("* {}", request.borrow());
             }
         });
-
-        spawn_pool.with_spawned_creeps(|creep_ref| async move {
+        
+        spawn_pool.with_spawned_creeps(|creep_ref| {
+            let creep_id = u!(creep_ref.borrow_mut().screeps_id());
             let carry_capacity = u!(creep_ref.borrow_mut().carry_capacity());
+            let used_capacity = Rc::new(Cell::new(0));
+            hauler_stats.borrow_mut().insert(creep_id, HaulerStats {
+                carry_capacity,
+                used_capacity: used_capacity.clone(),
+            });
+            async move {
+                loop {
+                    let store = u!(creep_ref.borrow_mut().used_capacities(AfterAllTransfers));
+                    let pos = creep_ref.borrow_mut().travel_state.pos;
+                    let ttl = creep_ref.borrow_mut().ticks_to_live();
 
-            loop {
-                let store = u!(creep_ref.borrow_mut().used_capacities(AfterAllTransfers));
-                let pos = creep_ref.borrow_mut().travel_state.pos;
-                let ttl = creep_ref.borrow_mut().ticks_to_live();
+                    debug!(
+                        "{} searching for withdraw/pickup and store requests.",
+                        creep_ref.borrow().name
+                    );
 
-                debug!(
-                    "{} searching for withdraw/pickup and store requests.",
-                    creep_ref.borrow().name
-                );
+                    let reserved_requests = find_haul_requests(
+                        room_name,
+                        &store,
+                        pos,
+                        carry_capacity,
+                        ttl
+                    );
 
-                let reserved_requests = find_haul_requests(
-                    room_name,
-                    &store,
-                    pos,
-                    carry_capacity,
-                    ttl
-                );
+                    if let Some(reserved_requests) = reserved_requests {
+                        let result = fulfill_requests(&creep_ref, reserved_requests, used_capacity.clone()).await;
+                        used_capacity.set(0);
 
-                if let Some(reserved_requests) = reserved_requests {
-                    let result = fulfill_requests(&creep_ref, reserved_requests).await;
-
-                    if let Err(e) = result {
-                        debug!("Error when hauling: {:?}.", e);
+                        if let Err(e) = result {
+                            debug!("Error when hauling: {:?}.", e);
+                            sleep(1).await;
+                        }
+                    } else {
+                        // There is nothing to haul. The creep is idle.
+                        with_room_state(room_name, |room_state| {
+                            if let Some(eco_stats) = room_state.eco_stats.as_mut() {
+                                eco_stats.register_idle_creep(Hauler, &creep_ref);
+                            }
+                        });
                         sleep(1).await;
                     }
-                } else {
-                    // There is nothing to haul. The creep is idle.
-                    with_room_state(room_name, |room_state| {
-                        if let Some(eco_stats) = room_state.eco_stats.as_mut() {
-                            eco_stats.register_idle_creep(Hauler, &creep_ref);
-                        }
-                    });
-                    sleep(1).await;
                 }
+            }
+        });
+        
+        let mut total_used_capacity = 0;
+        let mut total_carry_capacity = 0;
+        
+        let mut alive_creeps_id = FxHashSet::default();
+
+        spawn_pool.for_each_creep(|creep_ref| {
+            // TODO Update eco_stats.hauled_resources and eco_stats.total_haul_capacity.
+            // Maybe keep a map hauler -> used capacity and use this used capacity for that when not idle?
+            
+            // The creep may be dead.
+            let maybe_creep_id = creep_ref.borrow_mut().screeps_id();
+            if let Ok(creep_id) = maybe_creep_id {
+                alive_creeps_id.insert(creep_id);
+                let mut borrowed_hauler_stats = hauler_stats.borrow_mut();
+                // `with_spawned_creeps` has already run, so the creep's record is initialized.
+                let hauler_stats = u!(borrowed_hauler_stats.get_mut(&creep_id));
+                total_carry_capacity += hauler_stats.carry_capacity;
+                total_used_capacity += hauler_stats.used_capacity.get();
+            }
+        });
+        
+        hauler_stats.borrow_mut().retain(|creep_id, _| alive_creeps_id.contains(&creep_id));
+
+        with_room_state(room_name, |room_state| {
+            if let Some(eco_stats) = room_state.eco_stats.as_mut() {
+                eco_stats.total_used_haul_capacity.push(total_used_capacity);
+                eco_stats.total_haul_capacity.push(total_carry_capacity);
             }
         });
 
@@ -148,7 +199,10 @@ pub async fn haul_resources(room_name: RoomName) {
     }
 }
 
-async fn fulfill_requests(creep_ref: &CreepRef, mut reserved_requests: ReservedRequests) -> Result<(), XiError> {
+/// First completes all withdraw requests and then all deposit requests. Registers `used_capacity`
+/// when performing the deposit request.
+// TODO Still register it in the last tick.
+async fn fulfill_requests(creep_ref: &CreepRef, mut reserved_requests: ReservedRequests, used_capacity: Rc<Cell<u32>>) -> Result<(), XiError> {
     // TODO This only works for singleton withdraw and store requests.
     if let Some(mut withdraw_request) = reserved_requests.withdraw_requests.pop() {
         let withdraw_travel_spec = hauler_travel_spec(withdraw_request.request.borrow().pos);
@@ -188,6 +242,8 @@ async fn fulfill_requests(creep_ref: &CreepRef, mut reserved_requests: ReservedR
 
     if let Some(mut store_request) = reserved_requests.deposit_requests.pop() {
         let store_travel_spec = hauler_travel_spec(store_request.request.borrow().pos);
+
+        used_capacity.set(creep_ref.borrow_mut().used_capacity(None, AfterAllTransfers)?);
 
         let result = async {
             // Creep may die on the way.

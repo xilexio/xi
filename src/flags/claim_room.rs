@@ -45,7 +45,7 @@ pub async fn claim_room(controller_pos: Position) {
             if let Some(claimer) = claimer {
                 debug!("Moving the claimer towards the flag.");
                 let travel_spec = TravelSpec::new(controller_pos, 1);
-                while let Err(e) = travel(&claimer, travel_spec.clone()).await {
+                while let Err(e) = travel(&claimer.as_ref(), travel_spec.clone()).await {
                     // TODO It's not accepting path since its only to room's edge.
                     e.warn(&format!("Failed to move claimer to {}.", controller_pos.f()));
                     sleep(1).await;

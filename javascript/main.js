@@ -57,9 +57,10 @@ module.exports.loop = function () {
             runLoop(wasmModule);
         } else {
             // Attempt to load the wasm only if there's enough bucket to do a bunch of work this tick.
-            if (Game.cpu.bucket < 500) {
-                console.log(`There is ${Game.cpu.bucket} CPU left in the bucket. At least 500 CPU is required to ` +
-                    `proceed with the compilation. Waiting.`);
+            const minCPU = 750;
+            if (Game.cpu.bucket < minCPU) {
+                console.log(`There is ${Game.cpu.bucket} CPU left in the bucket. At least ${minCPU} CPU is required ` +
+                    `to proceed with the compilation. Waiting.`);
                 return;
             }
 

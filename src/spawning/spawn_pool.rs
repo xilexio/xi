@@ -9,20 +9,22 @@ use std::cell::RefCell;
 use std::cmp::max;
 use std::future::Future;
 use std::rc::Rc;
-use crate::creeps::creeps::{find_idle_creep, CreepRef};
+use crate::creeps::creeps::CreepRef;
 use crate::economy::room_eco_stats::SpawnPoolStats;
 use crate::room_states::room_states::with_room_state;
-use crate::spawning::reserved_creep::ReservedCreep;
+use crate::spawning::reserved_creep::{find_unassigned_creep, ReservedCreep};
 use crate::spawning::scheduling_creeps::{cancel_scheduled_creep, schedule_creep};
 use crate::spawning::spawn_schedule::{SpawnPromise, SpawnRequest};
 use crate::travel::surface::Surface;
 use crate::travel::travel_spec::TravelSpec;
 use crate::utils::uid::UId;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SpawnPoolOptions {
     travel_spec: Option<TravelSpec>,
     target_number_of_creeps: u32,
+    include_all_unassigned: bool,
+    initial_creeps: Vec<ReservedCreep>,
 }
 
 impl Default for SpawnPoolOptions {
@@ -30,6 +32,8 @@ impl Default for SpawnPoolOptions {
         Self {
             travel_spec: None,
             target_number_of_creeps: 1,
+            include_all_unassigned: false,
+            initial_creeps: Vec::new()
         }
     }
 }
@@ -48,6 +52,20 @@ impl SpawnPoolOptions {
             ..self
         }
     }
+
+    pub fn include_all_unassigned(self, value: bool) -> Self {
+        Self {
+            include_all_unassigned: value,
+            ..self
+        }
+    }
+    
+    pub fn initial_creeps(self, value: Vec<ReservedCreep>) -> Self {
+        Self {
+            initial_creeps: value,
+            ..self
+        }
+    }
 }
 
 pub type WId = UId<'W'>;
@@ -58,6 +76,10 @@ pub type WId = UId<'W'>;
 pub struct SpawnPool {
     id: WId,
     room_name: RoomName,
+    /// Include all unassigned creeps of selected type in the room to the spawn pool when running
+    /// `with_spawned_creeps` for the first time.
+    include_all_unassigned: bool,
+    initial_creeps: Vec<ReservedCreep>,
     /// The template spawn request used to spawn creeps. Only the tick is changed in the actual
     /// request. Everything but the role may be modified.
     pub base_spawn_request: SpawnRequest,
@@ -119,6 +141,8 @@ impl SpawnPool {
         Self {
             id: WId::new(),
             room_name,
+            include_all_unassigned: options.include_all_unassigned,
+            initial_creeps: options.initial_creeps,
             base_spawn_request,
             travel_spec: options.travel_spec,
             target_number_of_creeps: options.target_number_of_creeps,
@@ -141,11 +165,42 @@ impl SpawnPool {
     /// already spawned creeps or prespawned creeps or kill their processes.
     /// The `base_spawn_request` can be modified, modifying the body of creeps that are not already
     /// spawned or scheduled. Existing and already scheduled creeps are not killed or cancelled.
+    /// The creeps' futures have smaller priority than the current process, i.e., run later.
     // TODO Cancel scheduled creeps on base_spawn_request change.
     pub fn with_spawned_creeps<G, F>(&mut self, mut creep_future_constructor: G) where
         G: FnMut(CreepRef) -> F,
         F: Future<Output = ()> + 'static,
     {
+        if self.include_all_unassigned {
+            while let Some(reserved_creep) = find_unassigned_creep(
+                self.room_name,
+                self.base_spawn_request.role,
+                self.travel_spec.as_ref().map(|travel_spec| travel_spec.target.xy())
+            ) {
+                self.initial_creeps.push(reserved_creep);
+            }
+
+            self.include_all_unassigned = false;
+        }
+        
+        while let Some(reserved_creep) = self.initial_creeps.pop() {
+            let future = creep_future_constructor(reserved_creep.as_ref());
+    
+            let wrapper_priority = current_process_wrapped_meta().borrow().priority;
+            let creep_process = schedule(
+                &format!("spawn_pool_{}_creep_process", self.base_spawn_request.role),
+                wrapper_priority.saturating_sub(1),
+                future,
+            );
+    
+            self.current_creeps_and_processes
+                .push(SpawnPoolElement {
+                    current_creep_and_process: Some((reserved_creep, creep_process)),
+                    prespawned_creep: None,
+                    respawn: false,
+                });
+        }
+
         let current_number_of_processes = self
             .current_creeps_and_processes
             .iter()
@@ -214,7 +269,8 @@ impl SpawnPool {
 
                 trace!(
                     "Restarting respawning of {} {} creeps to the spawn pool.",
-                    max(not_respawning_creeps_and_process_refs.len(), missing_processes), self.base_spawn_request.role
+                    max(not_respawning_creeps_and_process_refs.len(), missing_processes),
+                    self.base_spawn_request.role
                 );
                 for element in not_respawning_creeps_and_process_refs.drain(..).take(missing_processes) {
                     element.respawn = true;
@@ -256,11 +312,14 @@ impl SpawnPool {
     
     pub fn stats(&self) -> SpawnPoolStats {
         let mut stats = SpawnPoolStats::new(self.base_spawn_request.role);
+        let role = self.base_spawn_request.role;
         
         for element in self.current_creeps_and_processes.iter() {
             if let Some((current_creep, _)) = element.current_creep_and_process.as_ref() {
                 stats.number_of_active_creeps += 1;
                 stats.max_active_creep_ttl = max(stats.max_active_creep_ttl, current_creep.borrow_mut().ticks_to_live());
+                stats.total_primary_part_count += current_creep.borrow().body.count_parts(role.primary_part()) as u32;
+                stats.total_body_cost += current_creep.borrow().body.energy_cost();
             }
             if let Some(MaybeSpawned::Spawned(creep_ref)) = element.prespawned_creep.as_ref() {
                 stats.number_of_creeps += 1;
@@ -271,6 +330,17 @@ impl SpawnPool {
         stats.max_creep_ttl = max(stats.max_active_creep_ttl, stats.max_creep_ttl);
         
         stats
+    }
+
+    pub fn for_each_creep<F>(&self, mut f: F)
+    where
+        F: FnMut(CreepRef),
+    {
+        for element in self.current_creeps_and_processes.iter() {
+            if let Some((reserved_creep, _)) = element.current_creep_and_process.as_ref() {
+                f(reserved_creep.as_ref());
+            }
+        }
     }
 }
 
@@ -346,16 +416,16 @@ impl SpawnPoolElement {
                             "Spawn request of {} creep from the spawn pool was cancelled.",
                             base_spawn_request.role
                         );
-                    } else if let Some(creep_ref) = borrowed_spawn_promise.creep.take() {
+                    } else if let Some(reserved_creep) = borrowed_spawn_promise.creep.take() {
                         // The prespawned creep is expected to be alive now. Making it travel to the
                         // target point if there is one. Note that this happens even if the creep is
                         // being used as the new current creep right away.
                         // TODO This relies on spawn_end_tick being updated properly. Check if this is the case.
                         drop(borrowed_spawn_promise);
                         if let Some(travel_spec) = travel_spec {
-                            travel(&creep_ref, travel_spec.clone());
+                            travel(&reserved_creep.as_ref(), travel_spec.clone());
                         }
-                        self.prespawned_creep = Some(MaybeSpawned::Spawned(ReservedCreep::new(creep_ref)));
+                        self.prespawned_creep = Some(MaybeSpawned::Spawned(reserved_creep));
                         trace!(
                             "A prespawned {} creep from the spawn pool has spawned.",
                             base_spawn_request.role
@@ -407,10 +477,9 @@ impl SpawnPoolElement {
                     if self.respawn {
                         // Trying to get an existing creep before spawning a new one.
                         // If that fails, a new one will be scheduled.
-                        find_idle_creep(
+                        find_unassigned_creep(
                             room_name,
                             base_spawn_request.role,
-                            &base_spawn_request.body,
                             travel_spec.as_ref().map(|travel_spec| travel_spec.target.xy()),
                         ).inspect(|creep| {
                             debug!("Found idle {} creep.", base_spawn_request.role);
@@ -495,7 +564,6 @@ impl SpawnPoolElement {
 
             // Scheduling the creep.
             let spawn_promise = u!(schedule_creep(room_name, spawn_request.clone()));
-            // TODO Some other process may reserve this creep using find_idle_creep immediately after spawn, need to prevent that.
             self.prespawned_creep = Some(MaybeSpawned::Spawning(spawn_request, spawn_promise));
             debug!(
                 "Scheduled a prespawn of {} creep from the spawn pool.",

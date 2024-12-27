@@ -59,7 +59,8 @@ impl Creep {
         id: Option<ObjectId<screeps::Creep>>,
         role: CreepRole,
         number: CrId,
-        body: CreepBody
+        body: CreepBody,
+        pos: Position
     ) -> Self {
         let ticks_per_tile = [
             body.ticks_per_tile(Surface::Road),
@@ -67,10 +68,6 @@ impl Creep {
             body.ticks_per_tile(Surface::Swamp),
         ];
         
-        // This is an invalid position, but it does not matter as creeps are registered before
-        // updating their position.
-        let pos = Position::from_packed(0);
-
         Creep {
             name,
             id,

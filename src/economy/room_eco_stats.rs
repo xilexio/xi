@@ -1,6 +1,7 @@
 use std::cmp::max;
 use enum_iterator::all;
 use rustc_hash::FxHashMap;
+use screeps::{ObjectId, Source};
 use crate::utils::avg_vector::AvgVector;
 use crate::creeps::creep_role::CreepRole;
 use crate::hauling::haul_stats::HaulStats;
@@ -21,13 +22,21 @@ pub struct RoomEcoStats {
     pub spawn_pool_stats: FxHashMap<WId, SpawnPoolStats>,
 
     /// The number of idle creeps since last sampling by role.
+    // TODO More useful is number of non-idle ones, but that's just active minus idle.
     number_of_idle_creeps: FxHashMap<CreepRole, u32>,
 
     /// Statistics for creeps by role.
     pub creep_stats_by_role: FxHashMap<CreepRole, RoomCreepStats>,
-
     /// Tick in which last sampling took place.
     creep_stats_by_role_sample_tick: u32,
+    
+    /// Amount of energy collected from each source in the room (barring errors in harvest intent).
+    pub total_harvest_power_by_source: FxHashMap<ObjectId<Source>, AvgVector<u32>>,
+    /// Amount of resources hauled in given tick.
+    pub total_used_haul_capacity: AvgVector<u32>,
+    /// The total carry capacity of haulers in the room.
+    // TODO This is probably not really that important.
+    pub total_haul_capacity: AvgVector<u32>,
     
     /// Statistics about amount of resources in haul requests in the room.
     pub haul_stats: HaulStats,
@@ -44,6 +53,11 @@ pub struct SpawnPoolStats {
     pub max_active_creep_ttl: u32,
     /// Maximum TTL of active creeps and already spawned prespawned creeps.
     pub max_creep_ttl: u32,
+    /// The total number of primary parts of active creeps. For workers, it is the `Work` part,
+    /// for haulers the `Carry` part, etc.
+    pub total_primary_part_count: u32,
+    /// The total cost of bodies of all active creeps.
+    pub total_body_cost: u32,
 }
 
 impl SpawnPoolStats {
@@ -59,9 +73,12 @@ impl SpawnPoolStats {
         self.number_of_creeps += other.number_of_creeps;
         self.max_active_creep_ttl = max(self.max_active_creep_ttl, other.max_active_creep_ttl);
         self.max_creep_ttl = max(self.max_creep_ttl, other.max_creep_ttl);
+        self.total_primary_part_count += other.total_primary_part_count;
+        self.total_body_cost += other.total_body_cost;
     }
 }
 
+/// Averaged statistics for creeps of a certain role in the room. 
 #[derive(Debug, Default)]
 pub struct RoomCreepStats {
     /// Number of active creeps, i.e., creeps that are spawned and executing their future.
@@ -74,7 +91,12 @@ pub struct RoomCreepStats {
     pub max_creep_ttl: AvgVector<u32>,
     /// Number of idle creeps.
     pub number_of_idle_creeps: AvgVector<u32>,
-    // TODO Also unassigned creeps.
+    /// The total number of primary parts of active creeps. For workers, it is the `Work` part,
+    /// for haulers the `Carry` part, etc.
+    pub total_primary_part_count: AvgVector<u32>,
+    /// The total cost of bodies of all active creeps.
+    pub total_body_cost: AvgVector<u32>,
+    // TODO Also unassigned creeps?
 }
 
 impl RoomEcoStats {
@@ -113,6 +135,12 @@ impl RoomEcoStats {
             creep_role_stats.max_creep_ttl.push(creep_stats
                 .get(&role)
                 .map_or(0, |stats| stats.max_creep_ttl));
+            creep_role_stats.total_primary_part_count.push(creep_stats
+                .get(&role)
+                .map_or(0, |stats| stats.total_primary_part_count));
+            creep_role_stats.total_body_cost.push(creep_stats
+                .get(&role)
+                .map_or(0, |stats| stats.total_body_cost));
 
             // This division makes it rather inaccurate, but it is later averaged anyway.
             creep_role_stats.number_of_idle_creeps.push(

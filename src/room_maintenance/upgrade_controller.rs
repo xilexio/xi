@@ -52,7 +52,8 @@ pub async fn upgrade_controller(room_name: RoomName) {
     // TODO Handle prioritizing energy for the upgrading - always upgrade enough to prevent
     //      the room from downgrading, but only upgrade more if there is energy to spare.
     let spawn_pool_options = SpawnPoolOptions::default()
-        .travel_spec(Some(travel_spec.clone()));
+        .travel_spec(Some(travel_spec.clone()))
+        .include_all_unassigned(true);
     let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, spawn_pool_options);
 
     loop {
@@ -104,7 +105,7 @@ pub async fn upgrade_controller(room_name: RoomName) {
                             creep_id,
                             CreepTarget,
                             false,
-                            work_pos
+                            creep_ref.borrow().travel_state.pos
                         );
                         new_store_request.amount = capacity;
                         new_store_request.priority = Priority(40);

@@ -1,6 +1,5 @@
 use crate::kernel::sleep::sleep;
 use crate::kernel::kernel::{current_priority, kill_tree, schedule};
-use crate::room_maintenance::mine_source::mine_source;
 use crate::priorities::SPAWNING_CREEPS_PRIORITY;
 use crate::room_states::room_states::with_room_state;
 use log::{debug, info};
@@ -14,6 +13,7 @@ use crate::economy::gather_eco_samples::gather_eco_samples;
 use crate::economy::update_eco_config::update_eco_config;
 use crate::room_maintenance::fill_structures_with_energy::fill_structures_with_energy;
 use crate::hauling::haul_resources::haul_resources;
+use crate::room_maintenance::mine_sources::mine_sources;
 use crate::spawning::spawn_room_creeps::{spawn_room_creeps, update_spawn_list};
 use crate::u;
 use crate::room_maintenance::upgrade_controller::upgrade_controller;
@@ -87,16 +87,12 @@ async fn maintain_room(room_name: RoomName) {
             fill_structures_with_energy(room_name)
         );
 
-        // Schedule mining sources inside the room, independently for each source.
-        let number_of_sources = room_state.sources.len();
-        for (source_ix, source_data) in room_state.sources.iter().enumerate() {
-            debug!("Setting up mining of {} in {}.", source_data.xy, room_name);
-            schedule(
-                &format!("mine_source_{}_X{}_Y{}", room_name, source_data.xy.x, source_data.xy.y),
-                current_priority() - 1,
-                mine_source(room_name, source_ix),
-            );
-        }
+        // Schedule mining sources inside the room.
+        schedule(
+            &format!("mine_sources_{}", room_name),
+            current_priority() - 1,
+            mine_sources(room_name)
+        );
 
         // Handle scheduled hauls and control haulers.
         schedule(
@@ -107,14 +103,14 @@ async fn maintain_room(room_name: RoomName) {
         
         schedule(
             &format!("gather_eco_samples_{}", room_name),
-            current_priority() - 2,
+            current_priority() - 10,
             gather_eco_samples(room_name)
         );
 
         // Update stats and decide on resource distribution within the room.
         schedule(
             &format!("update_eco_config_{}", room_name),
-            current_priority() - 3,
+            current_priority() - 11,
             update_eco_config(room_name)
         );
 
@@ -153,6 +149,7 @@ async fn maintain_room(room_name: RoomName) {
         );
         
         // Repair structures in the room and spawn repairers.
+        // Should run after selecting the repair sites.
         schedule(
             &format!("repair_structures_{}", room_name),
             current_priority() - 2,

@@ -5,7 +5,7 @@ use crate::priorities::MINER_SPAWN_PRIORITY;
 use crate::room_states::room_states::with_room_state;
 use crate::creeps::creep_body::CreepBody;
 use crate::travel::travel::travel;
-use crate::u;
+use crate::{local_debug, u};
 use crate::utils::result_utils::ResultUtils;
 use log::{debug, warn};
 use screeps::game::get_object_by_id_typed;
@@ -20,11 +20,14 @@ use crate::hauling::scheduling_hauls::schedule_haul;
 use crate::kernel::wait_until_some::wait_until_some;
 use crate::room_states::utils::run_future_until_structures_change;
 use crate::spawning::preferred_spawn::best_spawns;
+use crate::spawning::reserved_creep::ReservedCreep;
 use crate::spawning::spawn_pool::{SpawnPool, SpawnPoolOptions};
 use crate::spawning::spawn_schedule::SpawnRequest;
 use crate::travel::travel_spec::TravelSpec;
 use crate::utils::priority::Priority;
 use crate::utils::resource_decay::decay_per_tick;
+
+const DEBUG: bool = true;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum MiningKind {
@@ -33,7 +36,9 @@ enum MiningKind {
     LinkMining,
 }
 
-pub async fn mine_source(room_name: RoomName, source_ix: usize) {
+pub async fn mine_source(room_name: RoomName, source_ix: usize, initial_miners: Vec<ReservedCreep>) {
+    let mut initial_miners = Some(initial_miners);
+    
     loop {
         // Computing a template for spawn request that will later have its tick intervals modified.
         // Also computing travel spec. The working location (and hence travel spec) depends on the
@@ -82,8 +87,13 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
             ).with_target_rect_priority(target_rect_priority),
         };
 
-        let spawn_pool_options = SpawnPoolOptions::default()
+        // TODO Manually find unassigned creeps already near sources. Then assign the rest to the
+        //      nearest source that still needs miners.
+        let mut spawn_pool_options = SpawnPoolOptions::default()
             .travel_spec(Some(travel_spec.clone()));
+        if let Some(initial_miners) = initial_miners.take() {
+            spawn_pool_options = spawn_pool_options.initial_creeps(initial_miners);
+        }
         let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request, spawn_pool_options);
 
         run_future_until_structures_change(room_name, async move {
@@ -109,10 +119,25 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                 spawn_pool.base_spawn_request.body = miner_body;
                 spawn_pool.base_spawn_request.priority = miner_spawn_priority;
                 
+                let mut total_harvest_power = 0;
+                spawn_pool.for_each_creep(|creep_ref| {
+                    total_harvest_power += creep_ref.borrow().body.energy_harvest_power();
+                });
+                with_room_state(room_name,|room_state| {
+                    if let Some(eco_stats) = room_state.eco_stats.as_mut() {
+                        eco_stats.total_harvest_power_by_source
+                            .entry(source_data.id)
+                            .or_default()
+                            .push(total_harvest_power);
+                    }
+                });
+                
                 // Keeping a miner or multiple miners spawned and mining.
                 spawn_pool.with_spawned_creeps(|creep_ref| {
                     let travel_spec = travel_spec.clone();
                     async move {
+                        local_debug!("Moving to mine {} with {}.", source_data.id, creep_ref.borrow().name);
+                        
                         let miner = creep_ref.as_ref();
                         let energy_income = creep_ref.borrow().body.energy_harvest_power();
 
@@ -128,6 +153,13 @@ pub async fn mine_source(room_name: RoomName, source_ix: usize) {
                         // Mining. We do not have to check that the miner exists, since it is done
                         // by the spawn pool.
                         loop {
+                            local_debug!(
+                                "{} reached the position. Performing {:?} on {}.",
+                                creep_ref.borrow().name,
+                                mining_kind,
+                                source_data.id
+                            );
+                            
                             let source = u!(get_object_by_id_typed(&source_data.id));
                             if source.energy() > 0 {
                                 creep_ref.borrow_mut()

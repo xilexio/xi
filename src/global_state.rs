@@ -56,6 +56,8 @@ fn serialize_global_state() -> Result<String, serde_json::Error> {
 
 /// Loads and deserializes the global state from Memory.
 pub fn load_global_state() {
+    // TODO Wiping memory when there is a flag memory_wipe.
+    // TODO Also, serializing this memory after wipe.
     #[cfg(feature = "memory_wipe")]
     let raw_memory_str = "{}";
     #[cfg(feature = "memory_wipe")]

@@ -19,11 +19,9 @@ use std::fmt::{Display, Formatter};
 use std::iter::repeat;
 use rustc_hash::FxHashMap;
 use enum_iterator::all;
+use crate::consts::REPAIR_COST_PER_PART;
 use crate::travel::surface::Surface;
 use crate::utils::part_extras::PartExtras;
-
-/// Cost of repairing something with a single `WORK` part.
-const REPAIR_COST_PER_PART: u32 = 1;
 
 // TODO Should cache of ticks_per_tile and others be here or in creep? Probably better here.
 // TODO Serialize this in a string and then cache all stats.
@@ -31,7 +29,7 @@ const REPAIR_COST_PER_PART: u32 = 1;
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CreepBody {
     /// A map from creep part types into their count and information how many are boosted.
-    // TODO It does not suffice to say just boosted, the kind of boost is important for WORK.
+    // TODO It does not suffice to say just boosted, the kind of boost is important for Work.
     pub parts: FxHashMap<Part, (u8, u8)>,
 }
 

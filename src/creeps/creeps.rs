@@ -1,5 +1,5 @@
 use rustc_hash::FxHashMap;
-use screeps::{game, RoomName, RoomXY};
+use screeps::{game, HasPosition, Position};
 use log::{info, warn};
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -9,11 +9,10 @@ use crate::creeps::creep::Creep;
 use crate::creeps::creep_body::CreepBody;
 use crate::creeps::creep_role::CreepRole;
 use crate::fresh_number::fresh_number_if_some;
-use crate::geometry::room_xy::RoomXYUtils;
 use crate::kernel::sleep::sleep;
-use crate::spawning::reserved_creep::{MaybeReserved, ReservedCreep};
+use crate::spawning::reserved_creep::{register_unassigned_creep, with_unassigned_creeps};
 use crate::travel::traffic::register_creep_pos;
-use crate::{a, u};
+use crate::u;
 use crate::utils::result_utils::ResultUtils;
 
 pub type CreepRef = Rc<RefCell<Creep>>;
@@ -50,23 +49,31 @@ pub async fn cleanup_creeps() {
                     "Found existing unregistered {} creep {}. Registering it.",
                     role, creep_name
                 );
+                // TODO Also add to unassigned.
                 
                 let creep_obj = u!(game::creeps().get(creep_name.clone()));
+                let creep_pos = creep_obj.pos();
 
                 let creep = Creep::new(
                     creep_name,
                     None,
                     role,
                     number,
-                    creep_obj.body().into()
+                    creep_obj.body().into(),
+                    creep_pos
                 );
 
                 let creep_ref = Rc::new(RefCell::new(creep));
+
+                with_unassigned_creeps(|unassigned_creeps| {
+                    register_unassigned_creep(unassigned_creeps, &creep_ref);
+                });
 
                 creeps
                     .entry(role)
                     .or_default()
                     .insert(number, creep_ref.clone());
+
             } else {
                 warn!("Could not parse role of creep {}. Killing it.", creep_name);
                 let creep = u!(game::creeps().get(creep_name.clone()));
@@ -102,7 +109,7 @@ pub async fn cleanup_creeps() {
 
 /// Registers a new creep within the creeps module. May be called on the tick the creep is spawned
 /// after `cleanup_creeps`.
-pub fn register_creep(role: CreepRole, body: CreepBody) -> CreepRef {
+pub fn register_creep(role: CreepRole, body: CreepBody, pos: Position) -> CreepRef {
     with_creeps(|creeps| {
         // Note that it may not overlap with existing creeps after a reset, so UId is insufficient.
         let number = fresh_number_if_some(creeps.get(&role));
@@ -113,7 +120,8 @@ pub fn register_creep(role: CreepRole, body: CreepBody) -> CreepRef {
             None,
             role,
             number,
-            body
+            body,
+            pos
         );
 
         let creep_ref = Rc::new(RefCell::new(creep));
@@ -124,37 +132,6 @@ pub fn register_creep(role: CreepRole, body: CreepBody) -> CreepRef {
             .insert(number, creep_ref.clone());
 
         creep_ref
-    })
-}
-
-/// Finds an unreserved creep with given role. Any alive creep can be returned, even a currently
-/// spawning one.
-// TODO Keep a map with unassigned creeps from each room.
-pub fn find_idle_creep(
-    room_name: RoomName,
-    role: CreepRole,
-    body: &CreepBody,
-    preferred_xy: Option<RoomXY>,
-) -> Option<ReservedCreep> {
-    // TODO Only return creeps assigned to given room.
-    // TODO Improve efficiency and do not return creeps that are about to expire.
-    with_creeps(|creeps| {
-        let role_creeps = creeps.get_mut(&role)?;
-        let creep_check = |&creep_ref: &&CreepRef| {
-            let creep = creep_ref.borrow_mut();
-            a!(!creep.dead);
-            !creep.is_reserved()
-        };
-        let creep_ref = if let Some(preferred_xy) = preferred_xy {
-            // TODO Check if this is guaranteed to have only alive creeps.
-            role_creeps
-                .values()
-                .filter(creep_check)
-                .min_by_key(|&creep_ref| creep_ref.borrow_mut().travel_state.pos.xy().dist(preferred_xy))?
-        } else {
-            role_creeps.values().find(creep_check)?
-        };
-        Some(ReservedCreep::new(creep_ref.clone()))
     })
 }
 

@@ -47,7 +47,7 @@ pub async fn build_structures(room_name: RoomName) {
 
             let spawn_pool_options = SpawnPoolOptions::default()
                 .travel_spec(Some(travel_spec.clone()));
-            let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request.clone(), spawn_pool_options.clone());
+            let mut spawn_pool = SpawnPool::new(room_name, base_spawn_request.clone(), spawn_pool_options);
 
             loop {
                 let (top_priority_cs_data_correct, (builders_required, builder_body)) = wait_until_some(|| with_room_state(room_name, |room_state| {

@@ -5,9 +5,9 @@ use rustc_hash::FxHashMap;
 use screeps::{ObjectId, RoomName, StructureSpawn};
 use crate::creeps::creep_role::CreepRole;
 use crate::creeps::creep_body::CreepBody;
-use crate::creeps::creeps::CreepRef;
 use crate::room_states::room_state::RoomState;
 use crate::spawning::preferred_spawn::{best_spawns, PreferredSpawn};
+use crate::spawning::reserved_creep::ReservedCreep;
 use crate::utils::priority::Priority;
 use crate::utils::uid::UId;
 
@@ -60,7 +60,7 @@ pub struct SpawnPromise {
     pub spawn_id: Option<ObjectId<StructureSpawn>>,
     pub spawn_end_tick: Option<u32>,
     pub cancelled: bool,
-    pub creep: Option<CreepRef>,
+    pub creep: Option<ReservedCreep>,
 }
 
 impl SpawnPromise {

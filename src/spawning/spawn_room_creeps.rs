@@ -7,10 +7,11 @@ use crate::room_states::room_states::with_room_state;
 use crate::u;
 use log::{debug, trace, warn};
 use rustc_hash::{FxHashMap, FxHashSet};
-use screeps::{game, ObjectId, RawObjectId, RoomName, SpawnOptions, StructureSpawn};
+use screeps::{game, HasPosition, ObjectId, RawObjectId, RoomName, SpawnOptions, StructureSpawn};
 use std::collections::Bound;
 use screeps::StructureType::Spawn;
 use crate::spawning::preferred_spawn::PreferredSpawn;
+use crate::spawning::reserved_creep::ReservedCreep;
 use crate::spawning::spawn_schedule::{with_spawn_schedule, SpawnEvent};
 use crate::utils::result_utils::ResultUtils;
 
@@ -64,10 +65,10 @@ pub fn spawn_room_creeps(room_name: RoomName) {
                 for (_, spawn_event) in events.iter() {
                     debug!(
                         "* {}, {}, {} in {} ticks",
-                        tick - game_tick(),
                         spawn_event.request.role,
                         spawn_event.request.body,
-                        spawn_event.request.priority
+                        spawn_event.request.priority,
+                        tick - game_tick()
                     );
                 }
             }
@@ -133,12 +134,14 @@ fn try_execute_spawn_event(room_name: RoomName, spawn_id: ObjectId<StructureSpaw
 
         // TODO Cleanup spawn events beforehand if structures changed.
         let spawn = u!(game::get_object_by_id_typed(&spawn_id));
+        let spawn_pos = spawn.pos();
 
         // Nonexistent creeps are cleaned up next tick. This creep will exist the next tick, unless it
         // fails to spawn.
         let creep = register_creep(
             event.request.role,
-            event.request.body.clone()
+            event.request.body.clone(),
+            spawn_pos
         );
 
         // Issuing the spawn intent.
@@ -188,7 +191,7 @@ fn try_execute_spawn_event(room_name: RoomName, spawn_id: ObjectId<StructureSpaw
                 // The creep may have died due to a destroyed spawn.
                 if !creep.borrow().dead {
                     // Assigning the creep to the promise.
-                    promise.borrow_mut().creep = Some(creep);
+                    promise.borrow_mut().creep = Some(ReservedCreep::new(creep));
                 } else {
                     // If the spawning does not succeed, logging it.
                     warn!(

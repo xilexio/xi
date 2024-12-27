@@ -1,8 +1,10 @@
 use std::fmt::{Display, Formatter};
 use enum_iterator::Sequence;
+use screeps::Part;
 
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Sequence)]
+#[derive(Debug, Default, Copy, Clone, Hash, Eq, PartialEq, Sequence)]
 pub enum CreepRole {
+    #[default]
     Scout,
     Miner,
     Hauler,
@@ -10,12 +12,6 @@ pub enum CreepRole {
     Builder,
     Repairer,
     Claimer,
-}
-
-impl Default for CreepRole {
-    fn default() -> Self {
-        CreepRole::Scout
-    }
 }
 
 impl Display for CreepRole {
@@ -47,6 +43,18 @@ impl CreepRole {
             "repairer" => Some(CreepRole::Repairer),
             "claimer" => Some(CreepRole::Claimer),
             _ => None
+        }
+    }
+    
+    pub fn primary_part(&self) -> Part {
+        match self {
+            CreepRole::Miner => Part::Work,
+            CreepRole::Hauler => Part::Carry,
+            CreepRole::Scout => Part::Move,
+            CreepRole::Upgrader => Part::Work,
+            CreepRole::Builder => Part::Work,
+            CreepRole::Repairer => Part::Work,
+            CreepRole::Claimer => Part::Claim,
         }
     }
 }
