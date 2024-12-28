@@ -66,8 +66,8 @@ pub fn schedule_missing_energy_deposit(
     
     if missing_energy > 0 {
         debug!("Scheduling haul of missing {missing_energy} energy for {id} in {room_name}.");
-        // The previous store request is replaced by this one.
-        let mut store_request = HaulRequest::new(
+        // The previous deposit request is replaced by this one.
+        let mut deposit_request = HaulRequest::new(
             DepositRequest,
             room_name,
             ResourceType::Energy,
@@ -76,10 +76,10 @@ pub fn schedule_missing_energy_deposit(
             false,
             pos
         );
-        store_request.amount = missing_energy;
+        deposit_request.amount = missing_energy;
         // TODO Far away extensions less important.
-        store_request.priority = Priority(100);
-        Some(schedule_haul(store_request, replaced_request_handle))
+        deposit_request.priority = Priority(100);
+        Some(schedule_haul(deposit_request, replaced_request_handle))
     } else {
         None
     }

@@ -58,7 +58,7 @@ pub async fn triage_repair_sites(room_name: RoomName) {
 
             for (&structure_type, structures_to_repair) in room_state.structures_to_repair.iter() {
                 let min_non_critical_hits;
-                if let (Some(decay_amount), Some(decay_ticks)) = (structure_type.decay_amount(), structure_type.decay_amount()) {
+                if let (Some(decay_amount), Some(decay_ticks)) = (structure_type.decay_amount(), structure_type.decay_ticks(true)) {
                     min_non_critical_hits = decay_amount * CRITICAL_TICKS_TO_EXPIRATION.div_ceil(decay_ticks) + 1;
                 } else {
                     min_non_critical_hits = 1;

@@ -13,6 +13,7 @@ use crate::economy::gather_eco_samples::gather_eco_samples;
 use crate::economy::update_eco_config::update_eco_config;
 use crate::room_maintenance::fill_structures_with_energy::fill_structures_with_energy;
 use crate::hauling::haul_resources::haul_resources;
+use crate::room_maintenance::manage_storage::manage_storage;
 use crate::room_maintenance::mine_sources::mine_sources;
 use crate::spawning::spawn_room_creeps::{spawn_room_creeps, update_spawn_list};
 use crate::u;
@@ -99,6 +100,13 @@ async fn maintain_room(room_name: RoomName) {
             &format!("haul_resources_{}", room_name),
             current_priority() - 1,
             haul_resources(room_name)
+        );
+        
+        // Manage resources in the Storage building.
+        schedule(
+            &format!("manage_storage_{}", room_name),
+            current_priority() - 1,
+            manage_storage(room_name)
         );
         
         schedule(

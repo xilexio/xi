@@ -8,11 +8,11 @@ pub struct TravelState {
     /// Current position, updated near the beginning of the tick.
     pub pos: Position,
     /// Specification where the creep is supposed to be.
-    pub(crate) spec: Option<TravelSpec>,
+    pub spec: Option<TravelSpec>,
     /// Path in the form of stack.
-    pub(crate) path: Vec<Position>,
+    pub path: Vec<Position>,
     /// Cached information whether the creep arrived at its destination and does not need to move.
-    pub(crate) arrived: bool,
+    pub arrived: bool,
     /// Broadcast that the creep arrived at travel spec location.
     pub arrival_broadcast: Broadcast<Result<Position, XiError>>,
     // /// Number of ticks for which the creep was unable to make any progress when moving.

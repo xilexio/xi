@@ -15,7 +15,7 @@ thread_local! {
     static SPAWN_SCHEDULES: RefCell<FxHashMap<RoomName, RoomSpawnSchedule>> = RefCell::new(FxHashMap::default());
 }
 
-pub(crate) fn with_spawn_schedule<F, R>(room_name: RoomName, f: F) -> R
+pub fn with_spawn_schedule<F, R>(room_name: RoomName, f: F) -> R
 where
     F: FnOnce(&mut RoomSpawnSchedule) -> R,
 {
@@ -31,7 +31,7 @@ where
 }
 
 #[derive(Default, Debug)]
-pub(crate) struct RoomSpawnSchedule {
+pub struct RoomSpawnSchedule {
     /// Future spawns ordered by preferred tick.
     pub future_spawns: BTreeMap<u32, FxHashMap<SId, SpawnEvent>>,
     /// Current spawns ordered by priority. Usually empty unless there are insufficient resources

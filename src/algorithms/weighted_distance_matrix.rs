@@ -26,15 +26,14 @@ where
 }
 
 /// Implementation of Dijkstra algorithm from multiple starting points.
-/// Note that the output may contain `unreachable_cost` for unreachable fields that is one less than
-/// `obstacle_cost`.
+/// Points in `start` are not treated as obstacles regardless of their cost in `cost_matrix`.
 pub fn weighted_distance_matrix<M, C>(cost_matrix: &M, start: impl Iterator<Item = RoomXY>) -> M
 where
     M: MatrixCommon<C> + Display,
     C: PrimInt + Debug,
 {
     // The special unreachable value is needed to keep track where the algorithm has not yet been.
-    let mut distances = cost_matrix.clone_filled(unreachable_cost());
+    let mut distances = cost_matrix.clone_filled(obstacle_cost());
     let mut queue: BTreeMap<C, Vec<RoomXY>> = BTreeMap::new();
 
     for xy in start {

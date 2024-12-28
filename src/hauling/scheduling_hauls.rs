@@ -55,7 +55,7 @@ pub fn schedule_haul(mut request: HaulRequest, mut replaced_haul_request_handle:
     }
 }
 
-pub(crate) fn cancel_haul_request(request: HaulRequestRef) {
+pub fn cancel_haul_request(request: HaulRequestRef) {
     let mut borrowed_request = request.borrow_mut();
     local_debug!(
         "Cancelling {:?} request {}/{} for {} {} ({} reserved).",

@@ -94,7 +94,7 @@ pub fn find_haul_requests(
             } else {
                 creep_store
                     .iter()
-                    .map(|(resource, &amount)| format!("{:?}: {}", resource, amount))
+                    .map(|(resource, &amount)| format!("{}: {}", resource, amount))
                     .collect::<Vec<_>>()
                     .join(", ")
             };
@@ -151,7 +151,7 @@ pub fn find_haul_requests(
                 .max_by_key(|&(_, depositable_amount, is_storage, dist)| (is_storage, Reverse(dist), depositable_amount));
 
             if let Some((request_id, depositable_amount, _, _)) = deposit_request_data {
-                local_debug!("Found deposit request {:?} for {}.", request_id, depositable_amount);
+                local_debug!("Found deposit request {} for {}.", request_id, depositable_amount);
                 deposit_requests.push((request_id, depositable_amount));
             }
         } else {
@@ -199,12 +199,11 @@ pub fn find_haul_requests(
                 .max_by_key(|&(_, withdrawable_amount, dist)| (Reverse(dist), withdrawable_amount));
 
             if let Some((request_id, withdrawable_amount, _)) = withdraw_request_data {
-                local_debug!("Found withdraw request {:?} for {}.", request_id, withdrawable_amount);
+                local_debug!("Found withdraw request {} for {}.", request_id, withdrawable_amount);
                 withdraw_requests.push((request_id, withdrawable_amount));
             } else {
                 // If there is no non-storage withdraw request, try to find a deposit request and
                 // a withdraw request from storage.
-
                 let eligible_storage_withdraw_request_data = haul_requests
                     .withdraw_requests
                     .iter()
@@ -234,44 +233,43 @@ pub fn find_haul_requests(
                         if max_depositable_amount <= 0 {
                             return None;
                         }
-                        let withdraw_request_data = eligible_storage_withdraw_request_data
+                        eligible_storage_withdraw_request_data
                             .iter()
                             .filter_map(|&(withdraw_request_id, withdrawable_amount, resource_type, withdraw_pos, withdraw_dist)| {
                                 if borrowed_request.resource_type != resource_type {
                                     return None;
                                 }
 
-                                let amount = min(max_depositable_amount as u32, withdrawable_amount);
+                                let deposited_amount = min(max_depositable_amount as u32, withdrawable_amount);
+                                // When it is energy, withdrawing as much as possible. When
+                                // something else, withdrawing exactly as much as is needed.
+                                let withdrawn_amount = if borrowed_request.resource_type == ResourceType::Energy {
+                                    withdrawable_amount
+                                } else {
+                                    deposited_amount
+                                };
                                 let total_dist = withdraw_dist + withdraw_pos.get_range_to(borrowed_request.pos);
 
-                                Some((withdraw_request_id, amount, total_dist))
+                                Some((withdraw_request_id, withdrawn_amount, deposited_amount, total_dist))
                             })
-                            .max_by_key(|&(_, amount, total_dist)| (Reverse(total_dist), amount));
-
-                        withdraw_request_data.map(|(withdraw_request_id, amount, total_dist)| {
-                            // When it is energy, withdrawing the full capacity. When something
-                            // else, withdrawing exactly as much as is needed.
-                            let withdrawable_amount = if borrowed_request.resource_type == ResourceType::Energy {
-                                creep_capacity
-                            } else {
-                                amount
-                            };
-                            (withdraw_request_id, deposit_request_id, withdrawable_amount, amount, total_dist)
-                        })
+                            .min_by_key(|&(_, withdrawn_amount, deposited_amount, total_dist)| (total_dist, Reverse(deposited_amount), Reverse(withdrawn_amount)))
+                            .map(|(withdraw_request_id, withdrawn_amount, deposited_amount, total_dist)| {
+                                (withdraw_request_id, deposit_request_id, withdrawn_amount, deposited_amount, total_dist)
+                            })
                     })
-                    .max_by_key(|&(_, _, _, depositable_amount, total_dist)| (Reverse(total_dist), depositable_amount));
+                    .max_by_key(|&(_, _, withdrawn_amount, deposited_amount, total_dist)| (Reverse(total_dist), deposited_amount));
 
-                if let Some((withdraw_request_id, deposit_request_id, withdrawable_amount, depositable_amount, _)) = withdraw_and_deposit_request_data {
+                if let Some((withdraw_request_id, deposit_request_id, withdrawn_amount, deposited_amount, _)) = withdraw_and_deposit_request_data {
                     // TODO Maybe not always take full creep capacity of minerals?
                     local_debug!(
-                        "Found withdraw request {:?} for {} and deposit request {:?} for {}.",
+                        "Found withdraw request {} for {} and deposit request {} for {}.",
                         withdraw_request_id,
-                        withdrawable_amount,
+                        withdrawn_amount,
                         deposit_request_id,
-                        depositable_amount
+                        deposited_amount
                     );
-                    withdraw_requests.push((withdraw_request_id, withdrawable_amount));
-                    deposit_requests.push((deposit_request_id, depositable_amount));
+                    withdraw_requests.push((withdraw_request_id, withdrawn_amount));
+                    deposit_requests.push((deposit_request_id, deposited_amount));
                 }
             }
         }

@@ -32,24 +32,31 @@ pub enum HaulRequestTargetKind {
 }
 
 #[derive(Default)]
-pub(crate) struct RoomHaulRequests {
+pub struct RoomHaulRequests {
     pub withdraw_requests: FxHashMap<HaulRequestId, HaulRequestRef>,
     pub deposit_requests: FxHashMap<HaulRequestId, HaulRequestRef>,
 }
 
 /// There can be only one haul request per withdrawal/deposit, per object, per resource type.
-pub type HaulRequestId = (RawObjectId, ResourceType);
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
+pub struct HaulRequestId(RawObjectId, ResourceType);
+
+impl Display for HaulRequestId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.0, self.1)
+    }
+}
 
 /// Generic haul request, both for withdrawing and storing.
 #[derive(Debug)]
-pub(crate) struct HaulRequest {
-    pub(crate) kind: HaulRequestKind,
+pub struct HaulRequest {
+    pub kind: HaulRequestKind,
     /// Name of the room responsible for providing the hauler.
-    pub(crate) room_name: RoomName,
-    pub(crate) target: RawObjectId,
-    pub(crate) target_kind: HaulRequestTargetKind,
-    pub(crate) limited_transfer: bool,
-    pub(crate) resource_type: ResourceType,
+    pub room_name: RoomName,
+    pub target: RawObjectId,
+    pub target_kind: HaulRequestTargetKind,
+    pub limited_transfer: bool,
+    pub resource_type: ResourceType,
     /// Best effort information on the position of the target.
     /// May change if the target is moving (e.g., creep).
     pub pos: Position,
@@ -64,20 +71,20 @@ pub(crate) struct HaulRequest {
     pub priority: Priority,
     /// The amount that is reserved to be withdrawn or deposited.
     /// May exceed `amount` if the `amount` has decreased.
-    pub(crate) reserved_amount: u32,
+    pub reserved_amount: u32,
 }
 
 /// Haul request identifier that cancels the request on drop.
 #[derive(Debug)]
 pub struct HaulRequestHandle {
-    pub(crate) request: HaulRequestRef,
-    pub(crate) droppable: bool,
+    pub request: HaulRequestRef,
+    pub droppable: bool,
 }
 
 #[derive(Debug)]
-pub(crate) struct ReservedHaulRequest {
-    pub(crate) request: HaulRequestRef,
-    pub(crate) amount: u32,
+pub struct ReservedHaulRequest {
+    pub request: HaulRequestRef,
+    pub amount: u32,
 }
 
 pub type HaulRequestRef = Rc<RefCell<HaulRequest>>;
@@ -172,7 +179,7 @@ impl HaulRequest {
     }
     
     pub fn id(&self) -> HaulRequestId {
-        (self.target, self.resource_type)
+        HaulRequestId(self.target, self.resource_type)
     }
 
     pub fn unreserved_amount(&self) -> i32 {
@@ -196,7 +203,7 @@ impl Drop for ReservedHaulRequest {
 }
 
 impl ReservedHaulRequest {
-    pub(crate) fn new(request: HaulRequestRef, amount: u32) -> Self {
+    pub fn new(request: HaulRequestRef, amount: u32) -> Self {
         // Cannot reserve an empty haul.
         a!(amount > 0);
         let mut borrowed_request = request.borrow_mut();
@@ -211,7 +218,7 @@ impl ReservedHaulRequest {
         }
     }
 
-    pub(crate) fn complete(&mut self) {
+    pub fn complete(&mut self) {
         let mut borrowed_request = self.request.borrow_mut();
         borrowed_request.amount -= self.amount;
         borrowed_request.reserved_amount -= self.amount;
