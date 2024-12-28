@@ -100,7 +100,7 @@ impl Display for ResourceUsage {
 
 pub fn update_or_create_eco_config(room_state: &mut RoomState) {
     // ----- Computing the stats required to make any decision. -----
-    
+
     let room_name = room_state.room_name;
     let eco_stats = u!(room_state.eco_stats.as_ref());
     let miner_stats = eco_stats.creep_stats(Miner);
@@ -121,7 +121,7 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
 
     let number_of_sources = room_state.sources.len() as u32;
     let single_source_energy_income = SOURCE_ENERGY_CAPACITY / ENERGY_REGEN_TIME;
-    
+
     // Controller data.
     let ticks_to_downgrade = u!(room_state.controller).downgrade_tick - game_tick();
     let max_ticks_to_downgrade = u!(controller_downgrade(room_state.rcl));
@@ -161,7 +161,7 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
             let haul_dist = u!(source_data.work_xy).to_pos(room_name).get_range_to(storage_pos).saturating_sub(1);
             mining_usage.hauling_throughput += 2.0 * haul_dist as f32 * income;
             // let max_hauling_throughput_required = 2 * haul_dist * single_source_energy_income;
-            
+
             // info!(
             //     "* {} - {}t, {}/{}E/t, {:.2}E/t, {}/{}R",
             //     source_data.xy,
@@ -242,9 +242,9 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
         //     hauling_throughput_required
         // );
     }
-    
+
     let total_usage = mining_usage + building_usage + upgrading_usage + repairing_usage;
-    
+
     info!("Room {} usage stats:", room_name);
     for usage in [mining_usage, building_usage, upgrading_usage, repairing_usage] {
         info!("* {}", usage);
@@ -267,7 +267,7 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
             cs.pos.xy()
         );
     }
-    
+
     if let Some(repair_site) = room_state.triaged_repair_sites.critical.first() {
         info!(
             "First critical repair required: {} at {}, missing {}/{} hits.",
@@ -285,9 +285,9 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
             repair_site.target_hits
         );
     }
-    
+
     // ----- Modification of the eco config. -----
-    
+
     // TODO Handle link mining.
     // Computing minimal and preferred miner and hauler bodies.
     let min_miner_body = preferred_miner_body(0, true);
@@ -390,13 +390,16 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
         - eco_stats.haul_stats.unfulfilled_deposit_amount.small_sample_avg::<i32>();
     // TODO Check just energy, not everything.
     let has_energy_to_spare = unfulfilled_haul_amount_balance > MIN_AVG_ENERGY_TO_SPARE as i32;
-    
+
     // TODO Once everything is built, it should be kept close to fully upgraded.
     //      On RCL 5-7, it should be kept rather high, but building should also take place.
     //      On RCL 4 and lower, it's sufficient to just barely keep it from downgrading.
     let controller_downgrade_level_critical = ticks_to_downgrade < max_ticks_to_downgrade / 4;
 
     if !bootstrapping {
+        // Old way to compute the number of haulers based on the amount of unfulfilled requests and
+        // idle creeps.
+        /*
         // Increasing or decreasing the required number of haulers depending on the average amount of
         // resources to carry in unfulfilled requests as well as the number if idle haulers.
         // TODO Handle large sample or preliminary calculations if needed.
@@ -426,6 +429,17 @@ pub fn update_or_create_eco_config(room_state: &mut RoomState) {
             // of a hauler capacity, increase the number of haulers.
             eco_config.haulers_required += 1;
         }
+         */
+
+        // The calculations are used to crank up the number of haulers fast even with limited data.
+        let single_hauler_throughput = eco_config.hauler_body.store_capacity();
+        let haulers_required_for_calculated_throughput = (total_usage.hauling_throughput as u32).div_ceil(single_hauler_throughput);
+        let used_haulers = hauler_stats.number_of_active_creeps.small_sample_avg::<f32>() - hauler_stats.number_of_idle_creeps.small_sample_avg::<f32>();
+        let spare_haulers = 0.5;
+        eco_config.haulers_required = max(
+            haulers_required_for_calculated_throughput,
+            (used_haulers + spare_haulers).ceil() as u32
+        );
 
         // If there are construction sites, spawn builders.
         // TODO Also make the calculations based on various storage, especially when the main storage

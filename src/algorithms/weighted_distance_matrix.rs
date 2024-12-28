@@ -9,6 +9,7 @@ use crate::utils::multi_map_utils::MultiMapUtils;
 const DEBUG: bool = false;
 
 // TODO is there any practical reason to differentiate between obstacles and unreachable?
+#[inline]
 pub fn obstacle_cost<T>() -> T
 where
     T: PrimInt,
@@ -16,6 +17,7 @@ where
     T::max_value()
 }
 
+#[inline]
 pub fn unreachable_cost<T>() -> T
 where
     T: PrimInt,
@@ -24,11 +26,14 @@ where
 }
 
 /// Implementation of Dijkstra algorithm from multiple starting points.
+/// Note that the output may contain `unreachable_cost` for unreachable fields that is one less than
+/// `obstacle_cost`.
 pub fn weighted_distance_matrix<M, C>(cost_matrix: &M, start: impl Iterator<Item = RoomXY>) -> M
 where
     M: MatrixCommon<C> + Display,
     C: PrimInt + Debug,
 {
+    // The special unreachable value is needed to keep track where the algorithm has not yet been.
     let mut distances = cost_matrix.clone_filled(unreachable_cost());
     let mut queue: BTreeMap<C, Vec<RoomXY>> = BTreeMap::new();
 
@@ -69,7 +74,7 @@ where
         
         local_debug!("queue={:?}\n{}", queue, distances);
     }
-
+    
     distances
 }
 

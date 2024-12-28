@@ -9,12 +9,12 @@ use enum_iterator::all;
 use log::warn;
 use crate::geometry::position_utils::PositionUtils;
 use crate::kernel::sleep::sleep;
-use crate::room_states::room_states::{with_room_states, RoomStates};
+use crate::room_states::room_states::{with_room_state, with_room_states, RoomStates};
 use crate::{a, local_debug, u};
 use crate::algorithms::matrix_common::MatrixCommon;
 use crate::algorithms::min_cost_weighted_matching::min_cost_weighted_matching;
 use crate::algorithms::room_matrix_slice::RoomMatrixSlice;
-use crate::algorithms::weighted_distance_matrix::{obstacle_cost, weighted_distance_matrix};
+use crate::algorithms::weighted_distance_matrix::{unreachable_cost, weighted_distance_matrix};
 use crate::creeps::creeps::{for_each_creep, CreepRef};
 use crate::creeps::generic_creep::GenericCreep;
 use crate::geometry::grid_direction::{direction_to_offset, GridDirection};
@@ -54,6 +54,16 @@ pub fn register_creep_pos(creep_ref: &CreepRef) {
                     );
                     repath_required = true;
                 }
+                
+                with_room_state(next_pos.room_name(), |room_state| {
+                    if room_state.tile_surface(next_pos.xy()) == Surface::Obstacle {
+                        warn!(
+                            "Creep {}'s next position on the path is {} and it is an obstacle.",
+                            creep.name, next_pos.f()
+                        );
+                        repath_required = true;
+                    }
+                });
             } else if creep.travel_state.pos.xy().is_on_boundary() {
                 // Multi-room travel is split by rooms and has separate repathing after reaching
                 // next room.
@@ -338,7 +348,42 @@ where
             progress_priority = 0;
         }
 
-        local_debug!("{:?} {} {:?} {:?}", creep.get_travel_state(), creep_pos.f(), target_rect, slice);
+        if DEBUG {
+            if let Some(next_pos) = creep.get_travel_state().path.last() {
+                let path_str = creep
+                    .get_travel_state()
+                    .path
+                    .iter()
+                    .map(|pos| pos.f())
+                    .collect::<Vec<_>>().join(", ");
+                local_debug!(
+                    "{} at {} wants to move to {}. Path: {}.",
+                    creep.get_name(),
+                    creep.get_travel_state().pos.f(),
+                    next_pos.f(),
+                    path_str
+                );
+            } else  {
+                local_debug!(
+                    "{} wants to stay at {}.",
+                    creep.get_name(),
+                    creep.get_travel_state().pos.f()
+                );
+            }
+            
+            if let Some(travel_spec) = creep.get_travel_state().spec.as_ref() {
+                local_debug!(
+                    "{}'s target is {} with range {}, {} tiles to destination.",
+                    creep.get_name(),
+                    travel_spec.target.f(),
+                    travel_spec.range,
+                    travel_spec.target.get_range_to(creep_pos).saturating_sub(travel_spec.range as u32)
+                );
+            } else {
+                local_debug!("No target.");
+            }
+        }
+        // local_debug!("{:?} {} {:?} {:?}", creep.get_travel_state(), creep_pos.f(), target_rect, slice);
         target_rect = u!(target_rect.intersection(slice));
 
         // The traffic costs are a 3x3 slice of the distance matrix towards the target
@@ -382,7 +427,7 @@ where
             };
             let surface = room_state.tile_surface(xy);
             if surface != Surface::Obstacle && !extra_obstacles.contains(&xy.to_pos(creep_pos.room_name())) {
-                a!(dm.get(xy) != obstacle_cost::<u32>());
+                a!(dm.get(xy) < unreachable_cost::<u32>());
                 let pos = xy.to_pos(creep_pos.room_name());
                 // TTL cost of movement into the given tile.
                 let tile_cost = if direction != GridDirection::Center {

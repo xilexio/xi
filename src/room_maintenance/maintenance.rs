@@ -108,6 +108,7 @@ async fn maintain_room(room_name: RoomName) {
         );
 
         // Update stats and decide on resource distribution within the room.
+        // This should happen after everything else.
         schedule(
             &format!("update_eco_config_{}", room_name),
             current_priority() - 11,
