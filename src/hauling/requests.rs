@@ -186,8 +186,8 @@ impl HaulRequest {
         self.amount as i32 - self.reserved_amount as i32
     }
     
-    pub fn predicted_amount(&self, ticks: u32) -> u32 {
-        min(self.max_amount, max(0, self.amount as i32 + self.change * ticks as i32) as u32)
+    pub fn predicted_unreserved_amount(&self, ticks: u32) -> u32 {
+        min(self.max_amount, max(0, self.amount as i32 + self.change * ticks as i32 - self.reserved_amount as i32) as u32)
     }
 }
 
@@ -209,8 +209,8 @@ impl ReservedHaulRequest {
         let mut borrowed_request = request.borrow_mut();
         borrowed_request.reserved_amount += amount;
         // While the reserved amount may exceed the total amount if the total amount decreases,
-        // it cannot do so when creating a new request.
-        a!(borrowed_request.reserved_amount <= borrowed_request.amount);
+        // it cannot do so when creating a new request, unless the amount is decreasing.
+        a!(borrowed_request.change > 0 || borrowed_request.reserved_amount <= borrowed_request.amount);
         drop(borrowed_request);
         ReservedHaulRequest {
             request,

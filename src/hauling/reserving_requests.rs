@@ -142,7 +142,7 @@ pub fn find_haul_requests(
                     // TODO Reward requests with higher amount.
                     // TODO Penalize requests that would not be completely fulfilled unless
                     //      the request itself is already over capacity.
-                    // TODO Penalize requests such that fulfilling possible amount would not change
+                    // TODO Penalize requests such that fulfilling possible amount would not changew
                     //      the number of full capacities to withdraw them.
                     // TODO Also include all possible requests available when standing on one of
                     //      neighboring tiles (e.g., a group of up to 6 more extensions).
@@ -174,18 +174,22 @@ pub fn find_haul_requests(
                     if withdrawable_amount <= 0 {
                         return None;
                     }
+                    let mut withdrawn_amount = withdrawable_amount as u32;
                     let dist = borrowed_request.pos.get_range_to(creep_pos);
                     if borrowed_request.change > 0 {
                         // Not undertaking increasing requests that do not (yet) fill the creep.
                         // TODO Take actual speed into consideration.
-                        if borrowed_request.predicted_amount(dist) < creep_capacity {
+                        if borrowed_request.predicted_unreserved_amount(dist) < creep_capacity {
                             return None;
                         }
+                        // Reserving withdrawal of full capacity (or max amount) even though it is
+                        // not available yet so that other creeps won't come to pick small scraps.
+                        withdrawn_amount = min(borrowed_request.max_amount, creep_capacity);
                     } else if borrowed_request.change < 0 {
                         // Not undertaking decaying requests that will leave too small of a pile
                         // upon arrival.
                         // TODO Take actual speed into consideration.
-                        if borrowed_request.predicted_amount(dist) < MIN_DECAYING_AMOUNT {
+                        if borrowed_request.predicted_unreserved_amount(dist) < MIN_DECAYING_AMOUNT {
                             return None;
                         }
                     }
@@ -194,7 +198,7 @@ pub fn find_haul_requests(
                     // TODO Reward decaying requests if deciding to pick them up.
                     // TODO Also include all possible requests available when standing on one of
                     //      neighboring tiles.
-                    Some((id, withdrawable_amount as u32, dist))
+                    Some((id, withdrawn_amount, dist))
                 })
                 .max_by_key(|&(_, withdrawable_amount, dist)| (Reverse(dist), withdrawable_amount));
 

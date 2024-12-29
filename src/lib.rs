@@ -5,6 +5,7 @@
 #![feature(btree_cursors)]
 #![feature(btree_extract_if)]
 #![feature(extract_if)]
+#![allow(clippy::comparison_chain)]
 
 use js_sys::JsString;
 use wasm_bindgen::prelude::wasm_bindgen;
