@@ -7,7 +7,7 @@ use crate::priorities::HAULER_SPAWN_PRIORITY;
 use crate::room_states::room_states::with_room_state;
 use crate::travel::travel::travel;
 use crate::u;
-use log::debug;
+use log::{debug, warn};
 use rustc_hash::{FxHashMap, FxHashSet};
 use screeps::StructureType::Storage;
 use screeps::{Creep, ObjectId, Position, RoomName};
@@ -17,7 +17,6 @@ use crate::creeps::creep_role::CreepRole::Hauler;
 use crate::hauling::requests::HaulRequestTargetKind::PickupTarget;
 use crate::hauling::requests::with_haul_requests;
 use crate::hauling::reserving_requests::{find_haul_requests, ReservedRequests};
-use crate::hauling::store_anywhere_or_drop::store_anywhere_or_drop;
 use crate::hauling::transfers::TransferStage::AfterAllTransfers;
 use crate::kernel::wait_until_some::wait_until_some;
 use crate::spawning::preferred_spawn::best_spawns;
@@ -268,9 +267,17 @@ async fn fulfill_requests(creep_ref: &CreepRef, mut reserved_requests: ReservedR
         }
         
         match result {
-            Err(XiError::CreepDead) => (),
-            Err(_) => store_anywhere_or_drop(creep_ref).await?,
-            Ok(()) => (),
+            Err(XiError::CreepDead) => {
+                warn!("Creep dead storing. This should not happen.");
+            },
+            // TODO Consider dropping non-energy later on when other resources than energy are
+            //      supported.
+            Err(_) => {
+                // TODO This is a hacky way to stop infinite loops. Fix it.
+                sleep(1).await;
+                // store_anywhere_or_drop(creep_ref).await?,
+            }
+            _ => (),
         }
     }
 

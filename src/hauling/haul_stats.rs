@@ -22,7 +22,7 @@ impl HaulStats {
                 let borrowed_request = request.borrow();
                 let is_deposit = (borrowed_request.kind == HaulRequestKind::DepositRequest) as usize;
                 let is_storage = (borrowed_request.target_kind == HaulRequestTargetKind::StorageTarget) as usize;
-                amounts[is_deposit][is_storage] += borrowed_request.amount - borrowed_request.reserved_amount;
+                amounts[is_deposit][is_storage] += borrowed_request.amount.saturating_sub(borrowed_request.reserved_amount);
             });
             self.unfulfilled_withdraw_amount.push(amounts[0][0]);
             self.unfulfilled_deposit_amount.push(amounts[1][0]);

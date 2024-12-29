@@ -211,6 +211,7 @@ pub async fn move_creeps() {
     }
 }
 
+// TODO Never resolve conflicts by shoving creeps into room border.
 fn resolve_conflicts<I, C>(
     room_states: &RoomStates,
     creeps_by_target_pos: FxHashMap<Position, (I, Rc<RefCell<C>>)>,

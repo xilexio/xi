@@ -15,7 +15,7 @@ use crate::spawning::reserved_creep::ReservedCreep;
 use crate::spawning::spawn_schedule::{with_spawn_schedule, SpawnEvent};
 use crate::utils::result_utils::ResultUtils;
 
-const DEBUG: bool = true;
+const DEBUG: bool = false;
 
 /// Issue the intents to spawn creeps in given room according to the schedule.
 /// Handle the case with insufficient resources and other events preventing spawning.
